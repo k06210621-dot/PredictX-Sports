@@ -38,6 +38,9 @@ def _get_settler():
 def convert_decimals(obj):
     if isinstance(obj, Decimal):
         return float(obj)
+    # 處理 datetime / date 物件（Postgres DATE/TIMESTAMP 欄位）
+    if hasattr(obj, 'isoformat') and callable(getattr(obj, 'isoformat')):
+        return obj.isoformat()
     if isinstance(obj, dict):
         return {k: convert_decimals(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
