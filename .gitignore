@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.venv/
+venv/
+
+# Environment
+.env
+*.env.local
+
+# macOS
+.DS_Store
+Thumbs.db
+
+# Xcode
+DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcuserdata/
+Build/
+
+# IDE
+.vscode/
+.idea/
+
+# Backup files
+自動生成文件/

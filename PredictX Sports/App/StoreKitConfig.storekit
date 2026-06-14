@@ -1,0 +1,70 @@
+{
+  "identifier" : "1A2B3C4D",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "NT$99",
+      "familyShareable" : false,
+      "groupNumber" : 1,
+      "internalPriceID" : "predictx_basic",
+      "localizations" : [
+        {
+          "description" : "每日 120 鑽石，可永久累積。已解鎖分析永久可看。支援收藏功能。",
+          "displayName" : "Basic 月費",
+          "locale" : "zh_TW"
+        }
+      ],
+      "productID" : "com.predictxsports.basic.monthly",
+      "referenceName" : "Basic 訂閱",
+      "subscriptionGroupID" : "B198B3F3",
+      "type" : "recurringSubscription"
+    },
+    {
+      "displayPrice" : "NT$299",
+      "familyShareable" : false,
+      "groupNumber" : 1,
+      "internalPriceID" : "predictx_standard",
+      "localizations" : [
+        {
+          "description" : "所有預測內容完全開放，不需消耗鑽石，無觀看限制。支援收藏功能。",
+          "displayName" : "Standard 月費",
+          "locale" : "zh_TW"
+        }
+      ],
+      "productID" : "com.predictxsports.standard.monthly",
+      "referenceName" : "Standard 訂閱",
+      "subscriptionGroupID" : "B198B3F3",
+      "type" : "recurringSubscription"
+    },
+    {
+      "displayPrice" : "NT$399",
+      "familyShareable" : false,
+      "groupNumber" : 1,
+      "internalPriceID" : "predictx_premium",
+      "localizations" : [
+        {
+          "description" : "所有功能完全開放。可接收高信心推薦推播通知。支援收藏功能。",
+          "displayName" : "Premium 月費",
+          "locale" : "zh_TW"
+        }
+      ],
+      "productID" : "com.predictxsports.premium.monthly",
+      "referenceName" : "Premium 訂閱",
+      "subscriptionGroupID" : "B198B3F3",
+      "type" : "recurringSubscription"
+    }
+  ],
+  "settings" : {
+    "autoRenewEnabled" : true,
+    "currencyCode" : "TWD",
+    "isFamilyShareable" : false,
+    "localization" : "zh_TW",
+    "subscriptionGroup" : {
+      "id" : "B198B3F3",
+      "referenceName" : "PredictX 會員方案"
+    }
+  },
+  "version" : 1
+}
