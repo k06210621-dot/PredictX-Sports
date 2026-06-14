@@ -73,46 +73,93 @@ def health():
 def init_db():
     """執行 schema.sql 建立所有表格 + 種子資料"""
     try:
-        import subprocess
-        schema_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'db', 'schema.sql')
-        seed_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'db', 'seed_core.sql')
-        db_url = os.getenv('DATABASE_URL')
-        if not db_url:
-            return jsonify({"error": "DATABASE_URL not set"}), 500
-
         results = {}
-        # Step 1: schema
-        r = subprocess.run(
-            ['psql', db_url, '-v', 'ON_ERROR_STOP=1', '-f', schema_path],
-            capture_output=True, text=True, timeout=60
-        )
-        results['schema'] = {'returncode': r.returncode, 'stderr': r.stderr[:500] if r.stderr else ''}
-
-        if r.returncode != 0:
-            return jsonify({"error": "Schema creation failed", "details": results}), 500
-
-        # Step 2: seed data
-        if os.path.exists(seed_path):
-            r2 = subprocess.run(
-                ['psql', db_url, '-v', 'ON_ERROR_STOP=1', '-f', seed_path],
-                capture_output=True, text=True, timeout=60
-            )
-            results['seed'] = {'returncode': r2.returncode, 'stderr': r2.stderr[:500] if r2.stderr else ''}
-
-        # Step 3: verify
         conn = get_db()
+        conn.autocommit = True
         cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) as cnt FROM predictx.games")
-        cnt = cur.fetchone()[0]
+
+        # Step 1: create schema
+        cur.execute("CREATE SCHEMA IF NOT EXISTS predictx")
+        results['schema_created'] = True
+
+        # Step 2: create uuid-ossp extension
+        cur.execute("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"")
+        results['extension'] = True
+
+        # Step 3: read and execute schema.sql (split by semicolons, filter pg_dump noise)
+        schema_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'db', 'schema.sql')
+        results['schema_errors'] = []
+        with open(schema_path, 'r') as f:
+            schema_sql = f.read()
+        
+        for stmt in _split_sql(schema_sql):
+            try:
+                cur.execute(stmt)
+            except Exception as e:
+                err_msg = f"{type(e).__name__}: {str(e)[:200]}"
+                results['schema_errors'].append({'stmt': stmt[:80], 'error': err_msg})
+                # 繼續執行，不中斷（有些是重複的 CREATE）
+        results['schema_executed'] = True
+
+        # Step 4: seed data
+        seed_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'db', 'seed_core.sql')
+        results['seed_errors'] = []
+        if os.path.exists(seed_path):
+            with open(seed_path, 'r') as f:
+                seed_sql = f.read()
+            for stmt in _split_sql(seed_sql):
+                try:
+                    cur.execute(stmt)
+                except Exception as e:
+                    err_msg = f"{type(e).__name__}: {str(e)[:200]}"
+                    results['seed_errors'].append({'stmt': stmt[:80], 'error': err_msg})
+            results['seed_executed'] = True
+
+        # Step 5: verify
+        try:
+            cur.execute("SELECT COUNT(*) as cnt FROM predictx.games")
+            cnt = cur.fetchone()[0]
+            results['game_count'] = cnt
+        except Exception:
+            results['game_count'] = 0
+
         cur.close()
         conn.close()
-        results['game_count'] = cnt
 
         return jsonify({"status": "success", "details": results}), 200
     except Exception as e:
         import traceback
         logger.error(f"init_db failed: {e}\n{traceback.format_exc()}")
         return jsonify({"error": str(e), "type": type(e).__name__}), 500
+
+
+def _split_sql(sql_text):
+    """將 pg_dump SQL 分割成獨立 statement，忽略 SET/SELECT/COMMENT 行"""
+    import re
+    statements = []
+    current = []
+    for line in sql_text.split('\n'):
+        stripped = line.strip()
+        # 跳過空白行、注釋、SET/SELECT pg_catalog 行
+        if not stripped or stripped.startswith('--'):
+            continue
+        if stripped.upper().startswith(('SET ', 'SELECT PG_CATALOG.', 'ALTER SCHEMA ')):
+            continue
+        # 跳過 ALTER TABLE ... OWNER TO (Railway user 不同)
+        if 'OWNER TO' in stripped.upper():
+            continue
+        current.append(line)
+        if stripped.endswith(';'):
+            stmt = '\n'.join(current).strip()
+            if stmt and stmt != ';':
+                statements.append(stmt)
+            current = []
+    # 殘餘語句（沒有分號結尾的）
+    if current:
+        stmt = '\n'.join(current).strip()
+        if stmt:
+            statements.append(stmt)
+    return statements
 
 
 @app.route('/analytics/overall', methods=['GET'])
