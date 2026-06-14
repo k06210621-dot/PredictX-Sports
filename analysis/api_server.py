@@ -53,10 +53,11 @@ def get_db():
         if database_url.startswith('postgres://'):
             database_url = database_url.replace('postgres://', 'postgresql://', 1)
         return psycopg2.connect(database_url, cursor_factory=RealDictCursor)
+    # 本機 fallback
     return psycopg2.connect(
         host=os.getenv('DB_HOST', 'localhost'),
-        port=os.getenv('DB_PORT', 5432),
-        dbname=os.getenv('DB_NAME', 'sports_db'),
+        port=int(os.getenv('DB_PORT', 5432)),
+        dbname=os.getenv('DB_NAME', 'predictx'),
         user=os.getenv('DB_USER', 'jero'),
         password=os.getenv('DB_PASSWORD', ''),
         cursor_factory=RealDictCursor
@@ -68,11 +69,56 @@ def health():
     return jsonify({"status": "healthy", "service": "PredictX Analysis API"}), 200
 
 
+@app.route('/api/init_db', methods=['POST'])
+def init_db():
+    """執行 schema.sql 建立所有表格 + 種子資料"""
+    try:
+        import subprocess
+        schema_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'db', 'schema.sql')
+        seed_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'db', 'seed_core.sql')
+        db_url = os.getenv('DATABASE_URL')
+        if not db_url:
+            return jsonify({"error": "DATABASE_URL not set"}), 500
+
+        results = {}
+        # Step 1: schema
+        r = subprocess.run(
+            ['psql', db_url, '-v', 'ON_ERROR_STOP=1', '-f', schema_path],
+            capture_output=True, text=True, timeout=60
+        )
+        results['schema'] = {'returncode': r.returncode, 'stderr': r.stderr[:500] if r.stderr else ''}
+
+        if r.returncode != 0:
+            return jsonify({"error": "Schema creation failed", "details": results}), 500
+
+        # Step 2: seed data
+        if os.path.exists(seed_path):
+            r2 = subprocess.run(
+                ['psql', db_url, '-v', 'ON_ERROR_STOP=1', '-f', seed_path],
+                capture_output=True, text=True, timeout=60
+            )
+            results['seed'] = {'returncode': r2.returncode, 'stderr': r2.stderr[:500] if r2.stderr else ''}
+
+        # Step 3: verify
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) as cnt FROM predictx.games")
+        cnt = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+        results['game_count'] = cnt
+
+        return jsonify({"status": "success", "details": results}), 200
+    except Exception as e:
+        import traceback
+        logger.error(f"init_db failed: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e), "type": type(e).__name__}), 500
+
+
 @app.route('/analytics/overall', methods=['GET'])
 def get_overall_stats():
     try:
         data = _get_stats().get_overall_hit_rates()
-        # 用 json.dumps + default=str fallback 處理所有非原生型別
         import json
         results = json.dumps([dict(row) for row in data], default=str, ensure_ascii=False)
         return app.response_class(results, mimetype='application/json'), 200
@@ -144,7 +190,6 @@ def api_games():
         games = cur.fetchall()
         cur.close()
         conn.close()
-        # 用 convert_decimals 處理所有可能的非 JSON 原生型別
         results = [convert_decimals(dict(row)) for row in games]
         return jsonify(results)
     except Exception as e:
