@@ -178,7 +178,7 @@ def get_overall_stats():
     try:
         data = _get_stats().get_overall_hit_rates()
         import json
-        results = json.dumps([dict(row) for row in data], default=str, ensure_ascii=False)
+        results = json.dumps([convert_decimals(dict(row)) for row in data], ensure_ascii=False)
         return app.response_class(results, mimetype='application/json'), 200
     except Exception as e:
         import traceback
@@ -193,7 +193,7 @@ def get_trend():
     try:
         data = _get_stats().get_hit_rate_trend(league=league, limit=limit)
         import json
-        results = json.dumps([dict(row) for row in data], default=str, ensure_ascii=False)
+        results = json.dumps([convert_decimals(dict(row)) for row in data], ensure_ascii=False)
         return app.response_class(results, mimetype='application/json'), 200
     except Exception as e:
         import traceback
