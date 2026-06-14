@@ -4,6 +4,7 @@ import sys
 import os
 import logging
 from decimal import Decimal
+import datetime
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
@@ -38,8 +39,7 @@ def _get_settler():
 def convert_decimals(obj):
     if isinstance(obj, Decimal):
         return float(obj)
-    # 處理 datetime / date 物件（Postgres DATE/TIMESTAMP 欄位）
-    if hasattr(obj, 'isoformat') and callable(getattr(obj, 'isoformat')):
+    if isinstance(obj, (datetime, datetime.date)):
         return obj.isoformat()
     if isinstance(obj, dict):
         return {k: convert_decimals(v) for k, v in obj.items()}

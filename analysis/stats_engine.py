@@ -57,10 +57,12 @@ class StatsEngine:
             WHERE ga.analysis_data->'actual_result' IS NOT NULL
             GROUP BY t.league
         """
-        cur = self.conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute(query)
-        results = cur.fetchall()
-        cur.close()
+        cur = self.conn.cursor()  # RealDictCursor 已在 conn 設定
+        try:
+            cur.execute(query)
+            results = cur.fetchall()
+        finally:
+            cur.close()
         return results
 
     def get_hit_rate_trend(self, league=None, limit=50):
@@ -97,17 +99,19 @@ class StatsEngine:
             ORDER BY match_date ASC
         """
 
-        cur = self.conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute(query, params + [limit])
-        results = cur.fetchall()
-        cur.close()
+        cur = self.conn.cursor()
+        try:
+            cur.execute(query, params + [limit])
+            results = cur.fetchall()
+        finally:
+            cur.close()
 
         # Convert date objects to strings for JSON serialization
         for r in results:
             if isinstance(r['date'], (datetime,)):
                 r['date'] = r['date'].strftime('%Y-%m-%d')
-            elif hasattr(r['date'], 'strftime'):
-                r['date'] = r['date'].strftime('%Y-%m-%d')
+            elif hasattr(r['date'], 'isoformat'):
+                r['date'] = r['date'].isoformat()
 
         return results
 
