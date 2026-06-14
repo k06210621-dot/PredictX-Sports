@@ -18,7 +18,6 @@ logger = logging.getLogger("PredictX-API")
 app = Flask(__name__)
 CORS(app)
 
-# 延遲載入分析引擎
 _stats_engine = None
 _settler_engine = None
 
@@ -53,7 +52,6 @@ def get_db():
         if database_url.startswith('postgres://'):
             database_url = database_url.replace('postgres://', 'postgresql://', 1)
         return psycopg2.connect(database_url, cursor_factory=RealDictCursor)
-    # 本機 fallback
     return psycopg2.connect(
         host=os.getenv('DB_HOST', 'localhost'),
         port=int(os.getenv('DB_PORT', 5432)),
@@ -71,51 +69,42 @@ def health():
 
 @app.route('/api/init_db', methods=['POST'])
 def init_db():
-    """執行 schema.sql 建立所有表格 + 種子資料"""
     try:
         results = {}
         conn = get_db()
         conn.autocommit = True
         cur = conn.cursor()
 
-        # Step 1: create schema
         cur.execute("CREATE SCHEMA IF NOT EXISTS predictx")
+        cur.execute("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"")
         results['schema_created'] = True
 
-        # Step 2: create uuid-ossp extension
-        cur.execute("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"")
-        results['extension'] = True
-
-        # Step 3: read and execute schema.sql (split by semicolons, filter pg_dump noise)
         schema_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'db', 'schema.sql')
-        results['schema_errors'] = []
+        seed_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'db', 'seed_core.sql')
+
         with open(schema_path, 'r') as f:
-            schema_sql = f.read()
-        
-        for stmt in _split_sql(schema_sql):
+            raw = f.read()
+        clean = _clean_pgdump(raw)
+        results['schema_errors'] = []
+        for stmt in _split_pgdump_sql(clean):
             try:
                 cur.execute(stmt)
             except Exception as e:
-                err_msg = f"{type(e).__name__}: {str(e)[:200]}"
-                results['schema_errors'].append({'stmt': stmt[:80], 'error': err_msg})
-                # 繼續執行，不中斷（有些是重複的 CREATE）
+                results['schema_errors'].append(str(e)[:200])
         results['schema_executed'] = True
 
-        # Step 4: seed data
-        seed_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'db', 'seed_core.sql')
         results['seed_errors'] = []
         if os.path.exists(seed_path):
             with open(seed_path, 'r') as f:
-                seed_sql = f.read()
-            for stmt in _split_sql(seed_sql):
+                raw_seed = f.read()
+            clean_seed = _clean_pgdump(raw_seed)
+            for stmt in _split_pgdump_sql(clean_seed):
                 try:
                     cur.execute(stmt)
                 except Exception as e:
-                    err_msg = f"{type(e).__name__}: {str(e)[:200]}"
-                    results['seed_errors'].append({'stmt': stmt[:80], 'error': err_msg})
+                    results['seed_errors'].append(str(e)[:200])
             results['seed_executed'] = True
 
-        # Step 5: verify
         try:
             cur.execute("SELECT COUNT(*) as cnt FROM predictx.games")
             cnt = cur.fetchone()[0]
@@ -133,28 +122,42 @@ def init_db():
         return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
-def _split_sql(sql_text):
-    """將 pg_dump SQL 分割成獨立 statement，忽略 SET/SELECT/COMMENT 行"""
-    import re
+def _clean_pgdump(sql_text):
+    lines = []
+    for line in sql_text.split('\n'):
+        stripped = line.strip()
+        if not stripped:
+            lines.append(line)
+            continue
+        if stripped.startswith('--'):
+            continue
+        upper = stripped.upper()
+        if upper.startswith('SET '):
+            continue
+        if upper.startswith('SELECT PG_CATALOG.'):
+            continue
+        if 'OWNER TO' in upper:
+            continue
+        lines.append(line)
+    return '\n'.join(lines)
+
+
+def _split_pgdump_sql(sql_text):
     statements = []
+    in_dollar = False
     current = []
     for line in sql_text.split('\n'):
         stripped = line.strip()
-        # 跳過空白行、注釋、SET/SELECT pg_catalog 行
-        if not stripped or stripped.startswith('--'):
-            continue
-        if stripped.upper().startswith(('SET ', 'SELECT PG_CATALOG.', 'ALTER SCHEMA ')):
-            continue
-        # 跳過 ALTER TABLE ... OWNER TO (Railway user 不同)
-        if 'OWNER TO' in stripped.upper():
-            continue
+        if '$$' in stripped and not in_dollar:
+            in_dollar = True
         current.append(line)
-        if stripped.endswith(';'):
+        if stripped.endswith(';') and not in_dollar:
             stmt = '\n'.join(current).strip()
             if stmt and stmt != ';':
                 statements.append(stmt)
             current = []
-    # 殘餘語句（沒有分號結尾的）
+        elif stripped == '$$;' and in_dollar:
+            in_dollar = False
     if current:
         stmt = '\n'.join(current).strip()
         if stmt:
