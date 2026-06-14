@@ -53,9 +53,9 @@ class StatsEngine:
                     (COUNT(*) FILTER (WHERE (ga.analysis_data->'actual_result'->>'is_hit')::boolean = true))::numeric /
                     NULLIF(COUNT(*), 0), 3
                 ) as hit_rate
-            FROM game_analysis ga
-            JOIN games g ON ga.game_id = g.game_id
-            JOIN teams t ON g.home_team_id = t.team_id
+            FROM predictx.game_analysis ga
+            JOIN predictx.games g ON ga.game_id = g.game_id
+            JOIN predictx.teams t ON g.home_team_id = t.team_id
             WHERE ga.analysis_data->'actual_result' IS NOT NULL
             GROUP BY t.league
         """
@@ -84,9 +84,9 @@ class StatsEngine:
                 SELECT
                     g.match_date,
                     (ga.analysis_data->'actual_result'->>'is_hit')::boolean as is_hit
-                FROM game_analysis ga
-                JOIN games g ON ga.game_id = g.game_id
-                JOIN teams t ON g.home_team_id = t.team_id
+                FROM predictx.game_analysis ga
+                JOIN predictx.games g ON ga.game_id = g.game_id
+                JOIN predictx.teams t ON g.home_team_id = t.team_id
                 WHERE ga.analysis_data->'actual_result' IS NOT NULL
                 {league_filter}
                 ORDER BY g.match_date DESC

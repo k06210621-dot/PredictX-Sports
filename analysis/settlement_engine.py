@@ -23,7 +23,7 @@ class SettlementEngine:
             print("Re-settling ALL games...")
             query = """
                 SELECT g.game_id, g.home_team_score, g.away_team_score, ga.analysis_data, ht.league
-                FROM games g
+                FROM predictx.games g
                 JOIN game_analysis ga ON g.game_id = ga.game_id
                 JOIN teams ht ON g.home_team_id = ht.team_id
                 WHERE g.home_team_score IS NOT NULL
@@ -32,7 +32,7 @@ class SettlementEngine:
         else:
             query = """
                 SELECT g.game_id, g.home_team_score, g.away_team_score, ga.analysis_data, ht.league
-                FROM games g
+                FROM predictx.games g
                 JOIN game_analysis ga ON g.game_id = ga.game_id
                 JOIN teams ht ON g.home_team_id = ht.team_id
                 WHERE (LOWER(g.status) = 'final')

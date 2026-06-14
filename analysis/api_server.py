@@ -225,13 +225,13 @@ def api_games():
                 ga.analysis_data->>'predicted_score' AS ai_predicted_score,
                 (ga.analysis_data->'actual_result'->>'is_hit')::boolean AS ai_is_hit,
                 ga.analysis_data->'actual_result'->>'actual_score' AS ai_actual_score
-            FROM games g
-            JOIN teams th ON g.home_team_id = th.team_id
-            LEFT JOIN team_aliases th_a ON th.team_id = th_a.team_id
-            JOIN teams ta ON g.away_team_id = ta.team_id
-            LEFT JOIN team_aliases ta_a ON ta.team_id = ta_a.team_id
-            LEFT JOIN game_status gs ON g.game_id = gs.game_id
-            LEFT JOIN game_analysis ga ON g.game_id = ga.game_id
+            FROM predictx.games g
+            JOIN predictx.teams th ON g.home_team_id = th.team_id
+            LEFT JOIN predictx.team_aliases th_a ON th.team_id = th_a.team_id
+            JOIN predictx.teams ta ON g.away_team_id = ta.team_id
+            LEFT JOIN predictx.team_aliases ta_a ON ta.team_id = ta_a.team_id
+            LEFT JOIN predictx.game_status gs ON g.game_id = gs.game_id
+            LEFT JOIN predictx.game_analysis ga ON g.game_id = ga.game_id
             WHERE UPPER(th.league) = UPPER(%s) AND UPPER(ta.league) = UPPER(%s)
             AND g.match_date >= CURRENT_DATE - INTERVAL '30 days'
             ORDER BY g.game_id, g.match_date DESC
