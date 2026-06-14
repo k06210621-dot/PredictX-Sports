@@ -33,9 +33,11 @@ class StatsEngine:
         self._db_url = _get_db_config()
 
     def _ensure_conn(self):
-        """延遲連線：第一次使用時才建立連線"""
+        """延遲連線：第一次使用時才建立連線，並設 autocommit 避免 transaction 中毒"""
         if self.conn is None or self.conn.closed:
             self.conn = psycopg2.connect(self._db_url, cursor_factory=RealDictCursor)
+            # 用 autocommit 模式，單筆查詢失敗不會卡住後續查詢
+            self.conn.autocommit = True
 
     def get_overall_hit_rates(self):
         """
@@ -57,10 +59,13 @@ class StatsEngine:
             WHERE ga.analysis_data->'actual_result' IS NOT NULL
             GROUP BY t.league
         """
-        cur = self.conn.cursor()  # RealDictCursor 已在 conn 設定
+        cur = self.conn.cursor()
         try:
             cur.execute(query)
             results = cur.fetchall()
+        except Exception:
+            self.conn.rollback()
+            raise
         finally:
             cur.close()
         return results
@@ -103,6 +108,9 @@ class StatsEngine:
         try:
             cur.execute(query, params + [limit])
             results = cur.fetchall()
+        except Exception:
+            self.conn.rollback()
+            raise
         finally:
             cur.close()
 
