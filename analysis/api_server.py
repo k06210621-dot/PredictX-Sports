@@ -72,14 +72,10 @@ def health():
 def get_overall_stats():
     try:
         data = _get_stats().get_overall_hit_rates()
-        # 印出 raw row 內容到 log 方便 debug
-        for i, row in enumerate(data[:2]):
-            logger.info(f"Row {i}: {dict(row)} | types: {[(k, type(v).__name__) for k, v in dict(row).items()]}")
-        results = []
-        for row in data:
-            row_dict = dict(row)
-            results.append(convert_decimals(row_dict))
-        return jsonify(results), 200
+        # 用 json.dumps + default=str fallback 處理所有非原生型別
+        import json
+        results = json.dumps([dict(row) for row in data], default=str, ensure_ascii=False)
+        return app.response_class(results, mimetype='application/json'), 200
     except Exception as e:
         import traceback
         logger.error(f"Error fetching overall stats: {e}\n{traceback.format_exc()}")
@@ -92,11 +88,9 @@ def get_trend():
     limit = request.args.get('limit', default=50, type=int)
     try:
         data = _get_stats().get_hit_rate_trend(league=league, limit=limit)
-        results = []
-        for row in data:
-            row_dict = dict(row)
-            results.append(convert_decimals(row_dict))
-        return jsonify(results), 200
+        import json
+        results = json.dumps([dict(row) for row in data], default=str, ensure_ascii=False)
+        return app.response_class(results, mimetype='application/json'), 200
     except Exception as e:
         import traceback
         logger.error(f"Error updating trend: {e}\n{traceback.format_exc()}")
