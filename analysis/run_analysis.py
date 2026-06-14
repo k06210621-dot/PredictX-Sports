@@ -45,8 +45,8 @@ def get_pending_games(conn, target_dates: list):
     placeholders = ','.join(['%s'] * len(target_dates))
     query = f"""
         SELECT g.game_id::text
-        FROM predictx.games g
-        LEFT JOIN predictx.game_analysis ga ON g.game_id = ga.game_id
+        FROM games g
+        LEFT JOIN game_analysis ga ON g.game_id = ga.game_id
         WHERE g.status ILIKE 'scheduled'
           AND g.match_date::date IN ({placeholders})
           AND (ga.analysis_id IS NULL OR ga.updated_at < NOW() - INTERVAL '12 hours')
@@ -65,7 +65,7 @@ def save_analysis(conn, game_id, analysis_result):
     cur = conn.cursor()
     try:
         cur.execute(
-            """INSERT INTO predictx.game_analysis (game_id, analysis_data, updated_at)
+            """INSERT INTO game_analysis (game_id, analysis_data, updated_at)
                VALUES (%s, %s, CURRENT_TIMESTAMP)
                ON CONFLICT (game_id)
                DO UPDATE SET
