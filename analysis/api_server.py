@@ -40,6 +40,14 @@ def convert_decimals(obj):
         return float(obj)
     if isinstance(obj, (date, datetime)):
         return obj.isoformat()
+    if isinstance(obj, str):
+        # 嘗試轉換數值字串 (e.g. "7", "0.598", "10.0")
+        try:
+            if '.' in obj or 'e' in obj.lower():
+                return float(obj)
+            return int(obj)
+        except (ValueError, TypeError):
+            return obj
     if isinstance(obj, dict):
         return {k: convert_decimals(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
