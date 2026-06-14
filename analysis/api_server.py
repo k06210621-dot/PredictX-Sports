@@ -124,8 +124,8 @@ def api_games():
                 g.away_team_score,
                 COALESCE(th_a.alias_name, th.english_name) AS home_team,
                 COALESCE(ta_a.alias_name, ta.english_name) AS away_team,
-                ga.analysis_data->'confidence' AS ai_confidence,
-                ga.analysis_data->'home_win_probability' AS ai_home_prob,
+                ga.analysis_data->>'confidence' AS ai_confidence,
+                ga.analysis_data->>'home_win_probability' AS ai_home_prob,
                 ga.analysis_data->>'predicted_score' AS ai_predicted_score,
                 (ga.analysis_data->'actual_result'->>'is_hit')::boolean AS ai_is_hit,
                 ga.analysis_data->'actual_result'->>'actual_score' AS ai_actual_score
