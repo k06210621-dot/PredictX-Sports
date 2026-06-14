@@ -81,8 +81,8 @@ struct HitRateTrendModel: Codable {
 
 class APIService {
     static let shared = APIService()
-    // ⚠️ 部署 Railway 後，請將下方 URL 換成 Railway 提供的公開網域（例如 https://predictx-sports.up.railway.app）
-    private let baseURL = "https://YOUR_RAILWAY_DOMAIN.up.railway.app"
+    // 🚀 Railway 雲端後端（部署完成於 2026-06-14）
+    private let baseURL = "https://predictx-sports-production.up.railway.app"
     
     func fetchGames(for league: String, days: Int = 7) async throws -> [MatchModel] {
         guard let url = URL(string: "\(baseURL)/api/games?league=\(league)") else {

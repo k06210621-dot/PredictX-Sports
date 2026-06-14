@@ -3,7 +3,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "bash /app/analysis/build.sh && cd /app/analysis && gunicorn --bind 0.0.0.0:$PORT --timeout 120 --workers 1 api_server:app",
+    "startCommand": "cd analysis && gunicorn --bind 0.0.0.0:$PORT --timeout 120 --workers 1 api_server:app",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 60,
     "restartPolicyType": "ON_FAILURE"
