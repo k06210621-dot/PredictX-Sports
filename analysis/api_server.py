@@ -72,11 +72,16 @@ def health():
 def get_overall_stats():
     try:
         data = _get_stats().get_overall_hit_rates()
-        results = convert_decimals([dict(row) for row in data])
+        # data 是 RealDictCursor 的 list of dict，遞迴序列化所有欄位
+        results = []
+        for row in data:
+            row_dict = dict(row)
+            results.append(convert_decimals(row_dict))
         return jsonify(results), 200
     except Exception as e:
-        logger.error(f"Error fetching overall stats: {e}")
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        logger.error(f"Error fetching overall stats: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
 @app.route('/analytics/trend', methods=['GET'])
@@ -85,11 +90,15 @@ def get_trend():
     limit = request.args.get('limit', default=50, type=int)
     try:
         data = _get_stats().get_hit_rate_trend(league=league, limit=limit)
-        results = convert_decimals([dict(row) for row in data])
+        results = []
+        for row in data:
+            row_dict = dict(row)
+            results.append(convert_decimals(row_dict))
         return jsonify(results), 200
     except Exception as e:
-        logger.error(f"Error updating trend: {e}")
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        logger.error(f"Error updating trend: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
 @app.route('/analytics/settle', methods=['POST'])
