@@ -1,34 +1,54 @@
 
+import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 import json
 
-DB_CONFIG = {
-    "dbname": "sports_db",
-    "user": "jero",
-    "password": "",
-    "host": "localhost",
-    "port": 5432
-}
+
+def _get_db_config():
+    """優先使用 Railway 注入的 DATABASE_URL，fallback 到本地參數"""
+    database_url = os.getenv('DATABASE_URL')
+    if database_url:
+        if database_url.startswith('postgres://'):
+            database_url = database_url.replace('postgres://', 'postgresql://', 1)
+        return database_url
+    return {
+        "dbname": os.getenv('DB_NAME', 'sports_db'),
+        "user": os.getenv('DB_USER', 'jero'),
+        "password": os.getenv('DB_PASSWORD', ''),
+        "host": os.getenv('DB_HOST', 'localhost'),
+        "port": os.getenv('DB_PORT', 5432)
+    }
+
 
 class StatsEngine:
+    """
+    統計分析引擎 — 使用延遲連線設計，避免 import 時崩潰
+    第一次呼叫查詢方法時才連線，確保 app 啟動後 healthcheck 可通過
+    """
+
     def __init__(self):
-        self.conn = psycopg2.connect(**DB_CONFIG)
-        self.cur = self.conn.cursor(cursor_factory=RealDictCursor)
+        self.conn = None
+        self._db_url = _get_db_config()
+
+    def _ensure_conn(self):
+        """延遲連線：第一次使用時才建立連線"""
+        if self.conn is None or self.conn.closed:
+            self.conn = psycopg2.connect(self._db_url, cursor_factory=RealDictCursor)
 
     def get_overall_hit_rates(self):
         """
         Calculate hit rate per league.
         """
-        # We use JSONB extraction to count hits
+        self._ensure_conn()
         query = """
-            SELECT 
+            SELECT
                 t.league,
                 COUNT(*) as total_analyzed,
                 COUNT(*) FILTER (WHERE (ga.analysis_data->'actual_result'->>'is_hit')::boolean = true) as total_hits,
                 ROUND(
-                    (COUNT(*) FILTER (WHERE (ga.analysis_data->'actual_result'->>'is_hit')::boolean = true))::numeric / 
+                    (COUNT(*) FILTER (WHERE (ga.analysis_data->'actual_result'->>'is_hit')::boolean = true))::numeric /
                     NULLIF(COUNT(*), 0), 3
                 ) as hit_rate
             FROM predictx.game_analysis ga
@@ -37,25 +57,24 @@ class StatsEngine:
             WHERE ga.analysis_data->'actual_result' IS NOT NULL
             GROUP BY t.league
         """
-        self_cur = self.conn.cursor(cursor_factory=RealDictCursor)
-        self_cur.execute(query)
-        results = self_cur.fetchall()
-        self_cur.close()
+        cur = self.conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(query)
+        results = cur.fetchall()
+        cur.close()
         return results
 
     def get_hit_rate_trend(self, league=None, limit=50):
         """
         Get hit rate trend by day for the last N games.
         """
-        # Subquery to get the last N analyzed games that are settled
-        # Then group them by date to calculate daily hit rate.
-        
+        self._ensure_conn()
+
         league_filter = "AND t.league = %s" if league else ""
         params = [league] if league else []
-        
+
         query = f"""
             WITH recent_games AS (
-                SELECT 
+                SELECT
                     g.match_date,
                     (ga.analysis_data->'actual_result'->>'is_hit')::boolean as is_hit
                 FROM predictx.game_analysis ga
@@ -66,40 +85,48 @@ class StatsEngine:
                 ORDER BY g.match_date DESC
                 LIMIT %s
             )
-            SELECT 
+            SELECT
                 match_date as date,
                 COUNT(*) as games_count,
                 ROUND(
-                    (COUNT(*) FILTER (WHERE is_hit = true))::numeric / 
+                    (COUNT(*) FILTER (WHERE is_hit = true))::numeric /
                     NULLIF(COUNT(*), 0), 3
                 ) as daily_hit_rate
             FROM recent_games
             GROUP BY match_date
             ORDER BY match_date ASC
         """
-        
-        self_cur = self.conn.cursor(cursor_factory=RealDictCursor)
-        self_cur.execute(query, params + [limit])
-        results = self_cur.fetchall()
-        self_cur.close()
-        
+
+        cur = self.conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(query, params + [limit])
+        results = cur.fetchall()
+        cur.close()
+
         # Convert date objects to strings for JSON serialization
         for r in results:
             if isinstance(r['date'], (datetime,)):
                 r['date'] = r['date'].strftime('%Y-%m-%d')
             elif hasattr(r['date'], 'strftime'):
                 r['date'] = r['date'].strftime('%Y-%m-%d')
-                
+
         return results
 
     def close(self):
-        self.conn.close()
+        if self.conn and not self.conn.closed:
+            self.conn.close()
+            self.conn = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
 
 if __name__ == "__main__":
     # Simple test run
-    engine = StatsEngine()
-    print("--- League Hit Rates ---")
-    print(engine.get_overall_hit_rates())
-    print("\n--- Trend (Overall, last 50) ---")
-    print(engine.get_hit_rate_trend())
-    engine.close()
+    with StatsEngine() as engine:
+        print("--- League Hit Rates ---")
+        print(engine.get_overall_hit_rates())
+        print("\n--- Trend (Overall, last 50) ---")
+        print(engine.get_hit_rate_trend())

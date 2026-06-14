@@ -5,8 +5,6 @@ import sys, os
 # 確保 analysis/ 目錄在 sys.path 中
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from stats_engine import StatsEngine
-from settlement_engine import SettlementEngine
 import logging
 from decimal import Decimal
 import psycopg2
@@ -14,6 +12,28 @@ from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# 延遲 import 分析引擎（避免 import 階段就嘗試連線資料庫）
+stats = None
+settler = None
+
+
+def _get_stats():
+    """延遲載入 StatsEngine"""
+    global stats
+    if stats is None:
+        from stats_engine import StatsEngine
+        stats = StatsEngine()
+    return stats
+
+
+def _get_settler():
+    """延遲載入 SettlementEngine"""
+    global settler
+    if settler is None:
+        from settlement_engine import SettlementEngine
+        settler = SettlementEngine()
+    return settler
 
 def convert_decimals(obj):
     """遞迴將 Decimal 轉換為 float"""
@@ -30,10 +50,6 @@ CORS(app)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("PredictX-API")
-
-# 初始化分析引擎
-stats = StatsEngine()
-settler = SettlementEngine()
 
 # 資料庫連線（優先使用 DATABASE_URL，fallback 到獨立參數）
 def get_db():
@@ -66,7 +82,7 @@ def health():
 @app.route('/analytics/overall', methods=['GET'])
 def get_overall_stats():
     try:
-        data = stats.get_overall_hit_rates()
+        data = _get_stats().get_overall_hit_rates()
         results = convert_decimals([dict(row) for row in data])
         return jsonify(results), 200
     except Exception as e:
@@ -78,22 +94,21 @@ def get_trend():
     league = request.args.get('league')
     limit = request.args.get('limit', default=50, type=int)
     try:
-        data = stats.get_hit_rate_trend(league=league, limit=limit)
+        data = _get_stats().get_hit_rate_trend(league=league, limit=limit)
         results = convert_decimals([dict(row) for row in data])
         return jsonify(results), 200
     except Exception as e:
-        logger.error(f"Error fetching trend: {e}")
+        logger.error(f"Error updating trend: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/analytics/settle', methods=['POST'])
 def trigger_settlement():
     try:
-        count = settler.settle_games()
+        count = _get_settler().settle_games()
         return jsonify({"status": "success", "settled_count": count}), 200
     except Exception as e:
         logger.error(f"Settlement failed: {e}")
         return jsonify({"error": str(e)}), 500
-
 # ============================================================
 # 賽事資料端點（從 sports-website/app.py 合併）
 # ============================================================
