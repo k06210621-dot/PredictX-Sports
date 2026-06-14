@@ -1,42 +1,41 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-import sys, os
-
-# 確保 analysis/ 目錄在 sys.path 中
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
+import sys
+import os
 import logging
 from decimal import Decimal
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 load_dotenv()
 
-# 延遲 import 分析引擎（避免 import 階段就嘗試連線資料庫）
-stats = None
-settler = None
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("PredictX-API")
 
+app = Flask(__name__)
+CORS(app)
+
+# 延遲載入分析引擎
+_stats_engine = None
+_settler_engine = None
 
 def _get_stats():
-    """延遲載入 StatsEngine"""
-    global stats
-    if stats is None:
+    global _stats_engine
+    if _stats_engine is None:
         from stats_engine import StatsEngine
-        stats = StatsEngine()
-    return stats
-
+        _stats_engine = StatsEngine()
+    return _stats_engine
 
 def _get_settler():
-    """延遲載入 SettlementEngine"""
-    global settler
-    if settler is None:
+    global _settler_engine
+    if _settler_engine is None:
         from settlement_engine import SettlementEngine
-        settler = SettlementEngine()
-    return settler
+        _settler_engine = SettlementEngine()
+    return _settler_engine
 
 def convert_decimals(obj):
-    """遞迴將 Decimal 轉換為 float"""
     if isinstance(obj, Decimal):
         return float(obj)
     if isinstance(obj, dict):
@@ -45,21 +44,12 @@ def convert_decimals(obj):
         return [convert_decimals(v) for v in obj]
     return obj
 
-app = Flask(__name__)
-CORS(app)
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("PredictX-API")
-
-# 資料庫連線（優先使用 DATABASE_URL，fallback 到獨立參數）
 def get_db():
     database_url = os.getenv('DATABASE_URL')
     if database_url:
-        # Railway 提供的 DATABASE_URL 格式為 postgres://...，psycopg2 需改為 postgresql://
         if database_url.startswith('postgres://'):
             database_url = database_url.replace('postgres://', 'postgresql://', 1)
         return psycopg2.connect(database_url, cursor_factory=RealDictCursor)
-    # fallback：本地開發用獨立參數
     return psycopg2.connect(
         host=os.getenv('DB_HOST', 'localhost'),
         port=os.getenv('DB_PORT', 5432),
@@ -69,16 +59,12 @@ def get_db():
         cursor_factory=RealDictCursor
     )
 
-# ============================================================
-# 健康檢查
-# ============================================================
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({"status": "healthy", "service": "PredictX Analysis API"}), 200
 
-# ============================================================
-# 分析統計端點
-# ============================================================
+
 @app.route('/analytics/overall', methods=['GET'])
 def get_overall_stats():
     try:
@@ -88,6 +74,7 @@ def get_overall_stats():
     except Exception as e:
         logger.error(f"Error fetching overall stats: {e}")
         return jsonify({"error": str(e)}), 500
+
 
 @app.route('/analytics/trend', methods=['GET'])
 def get_trend():
@@ -101,6 +88,7 @@ def get_trend():
         logger.error(f"Error updating trend: {e}")
         return jsonify({"error": str(e)}), 500
 
+
 @app.route('/analytics/settle', methods=['POST'])
 def trigger_settlement():
     try:
@@ -109,15 +97,13 @@ def trigger_settlement():
     except Exception as e:
         logger.error(f"Settlement failed: {e}")
         return jsonify({"error": str(e)}), 500
-# ============================================================
-# 賽事資料端點（從 sports-website/app.py 合併）
-# ============================================================
+
+
 @app.route('/api/games', methods=['GET'])
 def api_games():
     league = request.args.get('league')
     if not league:
         return jsonify({"error": "Missing league parameter"}), 400
-
     conn = get_db()
     cur = conn.cursor()
     sql = """
@@ -151,6 +137,7 @@ def api_games():
     conn.close()
     return jsonify([dict(row) for row in games])
 
+
 @app.route('/api/game_analysis/<game_id>', methods=['GET'])
 def get_game_analysis(game_id):
     conn = get_db()
@@ -181,6 +168,7 @@ def get_game_analysis(game_id):
         }
         return jsonify(result)
     return jsonify({"error": "Analysis not found"}), 404
+
 
 if __name__ == "__main__":
     port = int(os.getenv('PORT', 8081))
