@@ -40,14 +40,6 @@ def convert_decimals(obj):
         return float(obj)
     if isinstance(obj, (date, datetime)):
         return obj.isoformat()
-    if isinstance(obj, str):
-        # 嘗試轉換數值字串 (e.g. "7", "0.598", "10.0")
-        try:
-            if '.' in obj or 'e' in obj.lower():
-                return float(obj)
-            return int(obj)
-        except (ValueError, TypeError):
-            return obj
     if isinstance(obj, dict):
         return {k: convert_decimals(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
@@ -228,8 +220,8 @@ def api_games():
                 g.away_team_score,
                 COALESCE(th_a.alias_name, th.english_name) AS home_team,
                 COALESCE(ta_a.alias_name, ta.english_name) AS away_team,
-                ga.analysis_data->>'confidence' AS ai_confidence,
-                ga.analysis_data->>'home_win_probability' AS ai_home_prob,
+                (ga.analysis_data->>'confidence')::numeric AS ai_confidence,
+                (ga.analysis_data->>'home_win_probability')::numeric AS ai_home_prob,
                 ga.analysis_data->>'predicted_score' AS ai_predicted_score,
                 (ga.analysis_data->'actual_result'->>'is_hit')::boolean AS ai_is_hit,
                 ga.analysis_data->'actual_result'->>'actual_score' AS ai_actual_score
