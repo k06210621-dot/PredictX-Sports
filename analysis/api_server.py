@@ -260,6 +260,15 @@ def run_analysis():
         conn = get_db()
         results = {}
 
+        # 先確認環境變數
+        results['env'] = {
+            'PREDICTX_MODEL': os.getenv('PREDICTX_MODEL', 'not set'),
+            'CLOUD_LLM_PROVIDER': os.getenv('CLOUD_LLM_PROVIDER', 'not set'),
+            'USE_CLOUD': os.getenv('PREDICTX_MODEL') == 'cloud',
+            'NVIDIA_KEY_EXISTS': bool(os.getenv('NVIDIA_API_KEY')),
+            'NVIDIA_KEY_LEN': len(os.getenv('NVIDIA_API_KEY', ''))
+        }
+
         # 目標日期：今日 + 明日（台北時間）
         taipei_tz = datetime.now().astimezone().tzinfo
         today = datetime.now(taipei_tz).strftime('%Y-%m-%d')
@@ -272,14 +281,14 @@ def run_analysis():
         if pending:
             engine = AnalysisEngine(conn=conn)
             success = 0
-            for idx, game in enumerate(pending):
+            for idx, game in enumerate(pending[:5]):  # 最多分析 5 場
                 game_id = game['game_id']
                 try:
                     result = engine.analyze_game(game_id)
                     if result and save_analysis(conn, game_id, result):
                         success += 1
-                except Exception:
-                    pass
+                except Exception as e:
+                    results[f'error_{idx}'] = str(e)[:200]
             engine.close()
             results['analyzed'] = success
 
