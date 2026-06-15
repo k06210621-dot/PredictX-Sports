@@ -279,14 +279,16 @@ def insert_games():
             away_row = cur.fetchone()
 
             if home_row and away_row:
+                home_id = home_row['team_id']
+                away_id = away_row['team_id']
                 cur.execute(
                     "SELECT game_id FROM predictx.games WHERE match_date = %s AND home_team_id = %s AND away_team_id = %s",
-                    (match_date, home_row[0], away_row[0])
+                    (match_date, home_id, away_id)
                 )
                 if not cur.fetchone():
                     cur.execute(
                         "INSERT INTO predictx.games (season, match_date, status, home_team_id, away_team_id) VALUES (%s, %s, %s, %s, %s)",
-                        (season, match_date, status, home_row[0], away_row[0])
+                        (season, match_date, status, home_id, away_id)
                     )
                     inserted += 1
                 else:
