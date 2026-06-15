@@ -262,8 +262,9 @@ def fetch_today():
         try:
             resp = requests.get(
                 "https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=2026-06-15",
-                timeout=15, headers={"User-Agent": "PredictX-Sports/1.0"}
+                timeout=30, headers={"User-Agent": "PredictX-Sports/1.0"}
             )
+            results['mlb_http'] = resp.status_code
             if resp.status_code == 200:
                 data = resp.json()
                 games = data.get('dates', [{}])[0].get('games', [])
@@ -271,13 +272,11 @@ def fetch_today():
                 for g in games:
                     home_name = g['teams']['home']['team']['name']
                     away_name = g['teams']['away']['team']['name']
-                    # 查 team_id
                     cur.execute("SELECT team_id FROM predictx.teams WHERE english_name = %s", (home_name,))
                     home_row = cur.fetchone()
                     cur.execute("SELECT team_id FROM predictx.teams WHERE english_name = %s", (away_name,))
                     away_row = cur.fetchone()
                     if home_row and away_row:
-                        # 檢查是否已存在
                         cur.execute(
                             "SELECT game_id FROM predictx.games WHERE match_date = '2026-06-15' AND home_team_id = %s AND away_team_id = %s",
                             (home_row[0], away_row[0])
@@ -288,12 +287,12 @@ def fetch_today():
                                 (home_row[0], away_row[0])
                             )
                             inserted += 1
-                results['leagues']['MLB'] = {'games': len(games), 'inserted': inserted}
+                results['MLB'] = {'games': len(games), 'inserted': inserted}
         except Exception as e:
-            results['leagues']['MLB'] = {'error': str(e)[:200]}
+            results['MLB'] = {'error': str(e)[:300]}
 
         # 2. 執行分析管線
-        from run_analysis import get_pending_games, save_analysis, get_db_connection
+        from run_analysis import get_pending_games, save_analysis
         from analysis_engine import AnalysisEngine
         from datetime import datetime, timedelta
 
@@ -303,7 +302,7 @@ def fetch_today():
         target_dates = [today, tomorrow]
 
         pending = get_pending_games(conn, target_dates)
-        results['pending_analysis'] = len(pending)
+        results['pending'] = len(pending)
 
         if pending:
             engine = AnalysisEngine(conn=conn)
