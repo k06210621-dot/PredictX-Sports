@@ -6,6 +6,7 @@ import requests
 import json
 import psycopg2
 from psycopg2.extras import RealDictCursor
+import os
 
 DB_CONFIG = {
     "dbname": "sports_db", "user": "jero",
@@ -82,7 +83,13 @@ NBA_VENUE_CITIES = {
 
 class WeatherFetcher:
     def __init__(self):
-        self.conn = psycopg2.connect(**DB_CONFIG)
+        database_url = os.getenv('DATABASE_URL')
+        if database_url:
+            if database_url.startswith('postgres://'):
+                database_url = database_url.replace('postgres://', 'postgresql://', 1)
+            self.conn = psycopg2.connect(database_url, cursor_factory=RealDictCursor)
+        else:
+            self.conn = psycopg2.connect(**DB_CONFIG)
         self.cur = self.conn.cursor(cursor_factory=RealDictCursor)
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": "curl/8.0"})

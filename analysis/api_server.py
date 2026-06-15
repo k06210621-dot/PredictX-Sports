@@ -105,6 +105,19 @@ def init_db():
                     results['seed_errors'].append(str(e)[:200])
             results['seed_executed'] = True
 
+        # 執行進階分析表格 migration
+        advanced_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'db', 'migration_advanced.sql')
+        results['advanced_errors'] = []
+        if os.path.exists(advanced_path):
+            with open(advanced_path, 'r') as f:
+                raw_advanced = f.read()
+            for stmt in _split_pgdump_sql(raw_advanced):
+                try:
+                    cur.execute(stmt)
+                except Exception as e:
+                    results['advanced_errors'].append(str(e)[:200])
+            results['advanced_executed'] = True
+
         try:
             cur.execute("SELECT COUNT(*) as cnt FROM predictx.games")
             cnt = cur.fetchone()[0]

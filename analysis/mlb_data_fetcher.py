@@ -296,19 +296,23 @@ class MLBDataFetcher:
         bb9 = stats.get('pitching_walksPer9Inn')
         
         # 寫入 mlb_team_stats
-        self.cur.execute("""
-            INSERT INTO predictx_advanced.mlb_team_stats 
-                (game_id, team_id, team_ops, team_obp, team_slg, bullpen_era, data_source, fetched_at)
-            VALUES (%s, %s, %s, %s, %s, %s, 'statsapi.mlb.com', CURRENT_TIMESTAMP)
-            ON CONFLICT (game_id, team_id) 
-            DO UPDATE SET 
-                team_ops = EXCLUDED.team_ops,
-                team_obp = EXCLUDED.team_obp,
-                team_slg = EXCLUDED.team_slg,
-                bullpen_era = EXCLUDED.bullpen_era,
-                fetched_at = CURRENT_TIMESTAMP
-        """, (game_id, team_id, ops, obp, slg, era))
-        self.conn.commit()
+        try:
+            self.cur.execute("""
+                INSERT INTO predictx_advanced.mlb_team_stats 
+                    (game_id, team_id, team_ops, team_obp, team_slg, bullpen_era, data_source, fetched_at)
+                VALUES (%s, %s, %s, %s, %s, %s, 'statsapi.mlb.com', CURRENT_TIMESTAMP)
+                ON CONFLICT (game_id, team_id) 
+                DO UPDATE SET 
+                    team_ops = EXCLUDED.team_ops,
+                    team_obp = EXCLUDED.team_obp,
+                    team_slg = EXCLUDED.team_slg,
+                    bullpen_era = EXCLUDED.bullpen_era,
+                    fetched_at = CURRENT_TIMESTAMP
+            """, (game_id, team_id, ops, obp, slg, era))
+            self.conn.commit()
+        except Exception as e:
+            print(f"  ⚠ Store team stats error: {e}")
+            self.conn.rollback()
 
     def close(self):
         self.cur.close()

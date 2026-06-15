@@ -316,6 +316,7 @@ class AnalysisEngine:
                 fetcher.close()
             except Exception as e:
                 print(f"  ⚠ MLB data fetch error: {e}")
+                self.conn.rollback()
         
         # 6. 對 NBA 賽事：上網抓取即時進階數據
         if league and league.upper() == 'NBA':
@@ -348,6 +349,7 @@ class AnalysisEngine:
                 wf.close()
             except Exception as e:
                 print(f"  ⚠ Weather fetch error: {e}")
+                self.conn.rollback()
         
         # 8. NPB 即時數據（從 baseball-data.com 爬取）
         if league and league.upper() == 'NPB':
