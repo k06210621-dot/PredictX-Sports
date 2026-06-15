@@ -22,7 +22,7 @@ MODEL_CONFIGS = {
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 
-# --- 雲端 LLM 配置（支援 NVIDIA / OpenRouter / Groq）---
+# --- 雲端 LLM 配置（支援 NVIDIA / OpenRouter / Groq / Ollama Cloud）---
 CLOUD_LLM_PROVIDER = os.environ.get("CLOUD_LLM_PROVIDER", "nvidia")
 
 if CLOUD_LLM_PROVIDER == "openrouter":
@@ -41,6 +41,11 @@ else:
     CLOUD_LLM_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
     CLOUD_LLM_MODEL = "deepseek-ai/deepseek-v4-flash"
     CLOUD_LLM_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
+
+# 備援 LLM 配置（當主要 LLM 失敗時使用）
+FALLBACK_LLM_URL = "https://api.ollama.com/api/chat"
+FALLBACK_LLM_MODEL = "deepseek-v4-flash"
+FALLBACK_LLM_API_KEY = os.environ.get("OLLAMA_API_KEY", "")
 
 # 可透過環境變數 PREDICTX_MODEL 切換模型
 # qwen:latest (4B, ~6s/場) | qwen3.5:9b (9B, ~200s/場，預設) | cloud (雲端 LLM)
@@ -791,9 +796,21 @@ class AnalysisEngine:
             return self._call_local_ollama(prompt)
 
     def _call_cloud(self, prompt):
-        """調用雲端 LLM 含 retry"""
+        """調用雲端 LLM 含 retry，失敗時自動切換到備援 LLM"""
+        # 先試主要 LLM
+        result = self._try_llm(CLOUD_LLM_URL, CLOUD_LLM_MODEL, CLOUD_LLM_API_KEY, prompt)
+        if result:
+            return result
+        # 主要 LLM 失敗，試備援（Ollama Cloud）
+        if FALLBACK_LLM_API_KEY and FALLBACK_LLM_URL != CLOUD_LLM_URL:
+            print("  ⚠ Primary LLM failed, trying fallback (Ollama Cloud)...")
+            return self._try_llm(FALLBACK_LLM_URL, FALLBACK_LLM_MODEL, FALLBACK_LLM_API_KEY, prompt)
+        return None
+
+    def _try_llm(self, url, model, api_key, prompt):
+        """嘗試呼叫一個 LLM 端點"""
         payload = {
-            "model": CLOUD_LLM_MODEL,
+            "model": model,
             "messages": [
                 {"role": "system", "content": "你是一位頂尖的運動賽事分析師，擁有 20 年球評經驗，為 ESPN/NHK/Sportify 等知名媒體擔任過賽事評論員。你的風格是深入淺出、引用具體數據、語氣專業且有熱情，分析如同電視轉播的賽前分析節目。請根據提供的數據進行深度分析，並嚴格按照要求的 JSON 格式輸出。只輸出 JSON，不要有任何其他文字。"},
                 {"role": "user", "content": prompt}
@@ -803,19 +820,17 @@ class AnalysisEngine:
             "stream": False
         }
         headers = {
-            "Authorization": f"Bearer {CLOUD_LLM_API_KEY}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
         for attempt in range(3):
             try:
-                response = requests.post(CLOUD_LLM_URL, json=payload, headers=headers, timeout=120)
+                response = requests.post(url, json=payload, headers=headers, timeout=120)
                 if response.status_code == 429:
                     import time as t; t.sleep(10 * (2 ** attempt))
                     continue
                 response.raise_for_status()
                 data = response.json()
-                # Ollama Cloud 格式: {"message":{"content":"..."}}
-                # OpenAI 格式: {"choices":[{"message":{"content":"..."}}]}
                 if "choices" in data:
                     c = data["choices"][0].get("message", {}).get("content", "").strip()
                 elif "message" in data:
@@ -1015,7 +1030,12 @@ class AnalysisEngine:
     def analyze_game(self, game_id):
         print(f"Analyzing game {game_id}...")
         self.used_sources = []  # Step 5: 重置來源追蹤
-        features = self.get_game_features(game_id)
+        try:
+            features = self.get_game_features(game_id)
+        except Exception as e:
+            print(f"  ⚠ get_game_features error: {e}")
+            self.conn.rollback()
+            return None
         if not features:
             return None
         prompt = self.generate_win_probability_prompt(features)

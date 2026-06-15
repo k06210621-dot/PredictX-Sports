@@ -85,7 +85,7 @@
 					};
 				};
 			};
-			buildConfigurationList = CA5D18872FB868B100430A53 /* Build configuration list for PBXProject "PredictX Sports" */;
+			buildConfigurationList = CA5D18872FB868B100430A53 /* Build configuration list for PBXProject " " */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -315,7 +315,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		CA5D18872FB868B100430A53 /* Build configuration list for PBXProject "PredictX Sports" */ = {
+		CA5D18872FB868B100430A53 /* Build configuration list for PBXProject " " */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				CA5D18952FB868B200430A53 /* Debug */,
