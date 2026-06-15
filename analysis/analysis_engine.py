@@ -48,9 +48,19 @@ MODEL_NAME = os.environ.get("PREDICTX_MODEL", "qwen3.5:9b")
 USE_CLOUD = MODEL_NAME == "cloud"
 
 class AnalysisEngine:
-    def __init__(self):
-        self.conn = psycopg2.connect(**DB_CONFIG)
-        self.cur = self.conn.cursor(cursor_factory=RealDictCursor)
+    def __init__(self, conn=None):
+        if conn:
+            self.conn = conn
+            self.cur = conn.cursor(cursor_factory=RealDictCursor)
+        else:
+            database_url = os.getenv('DATABASE_URL')
+            if database_url:
+                if database_url.startswith('postgres://'):
+                    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+                self.conn = psycopg2.connect(database_url, cursor_factory=RealDictCursor)
+            else:
+                self.conn = psycopg2.connect(**DB_CONFIG)
+            self.cur = self.conn.cursor(cursor_factory=RealDictCursor)
         self.source_registry = {
             "official_api": 5.0,
             "sports_data_platform": 4.0,

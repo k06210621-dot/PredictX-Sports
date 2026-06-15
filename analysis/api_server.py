@@ -248,6 +248,86 @@ def api_games():
         return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
+@app.route('/api/fetch_today', methods=['POST'])
+def fetch_today():
+    """抓取今日 MLB 賽程並寫入資料庫，然後執行分析"""
+    try:
+        import requests
+        conn = get_db()
+        conn.autocommit = True
+        cur = conn.cursor()
+        results = {'leagues': {}}
+
+        # 1. MLB - 從 statsapi.mlb.com 抓今日賽程
+        try:
+            resp = requests.get(
+                "https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=2026-06-15",
+                timeout=15, headers={"User-Agent": "PredictX-Sports/1.0"}
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                games = data.get('dates', [{}])[0].get('games', [])
+                inserted = 0
+                for g in games:
+                    home_name = g['teams']['home']['team']['name']
+                    away_name = g['teams']['away']['team']['name']
+                    # 查 team_id
+                    cur.execute("SELECT team_id FROM predictx.teams WHERE english_name = %s", (home_name,))
+                    home_row = cur.fetchone()
+                    cur.execute("SELECT team_id FROM predictx.teams WHERE english_name = %s", (away_name,))
+                    away_row = cur.fetchone()
+                    if home_row and away_row:
+                        # 檢查是否已存在
+                        cur.execute(
+                            "SELECT game_id FROM predictx.games WHERE match_date = '2026-06-15' AND home_team_id = %s AND away_team_id = %s",
+                            (home_row[0], away_row[0])
+                        )
+                        if not cur.fetchone():
+                            cur.execute(
+                                "INSERT INTO predictx.games (season, match_date, status, home_team_id, away_team_id) VALUES (2026, '2026-06-15', 'SCHEDULED', %s, %s)",
+                                (home_row[0], away_row[0])
+                            )
+                            inserted += 1
+                results['leagues']['MLB'] = {'games': len(games), 'inserted': inserted}
+        except Exception as e:
+            results['leagues']['MLB'] = {'error': str(e)[:200]}
+
+        # 2. 執行分析管線
+        from run_analysis import get_pending_games, save_analysis, get_db_connection
+        from analysis_engine import AnalysisEngine
+        from datetime import datetime, timedelta
+
+        taipei_tz = datetime.now().astimezone().tzinfo
+        today = datetime.now(taipei_tz).strftime('%Y-%m-%d')
+        tomorrow = (datetime.now(taipei_tz) + timedelta(days=1)).strftime('%Y-%m-%d')
+        target_dates = [today, tomorrow]
+
+        pending = get_pending_games(conn, target_dates)
+        results['pending_analysis'] = len(pending)
+
+        if pending:
+            engine = AnalysisEngine(conn=conn)
+            success = 0
+            for idx, game in enumerate(pending):
+                game_id = game['game_id']
+                try:
+                    result = engine.analyze_game(game_id)
+                    if result and save_analysis(conn, game_id, result):
+                        success += 1
+                except Exception as e:
+                    pass
+            engine.close()
+            results['analyzed'] = success
+
+        cur.close()
+        conn.close()
+        return jsonify({"status": "success", "details": results}), 200
+    except Exception as e:
+        import traceback
+        logger.error(f"fetch_today failed: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e), "type": type(e).__name__}), 500
+
+
 @app.route('/api/game_analysis/<game_id>', methods=['GET'])
 def get_game_analysis(game_id):
     conn = get_db()
