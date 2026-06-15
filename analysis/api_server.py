@@ -228,6 +228,10 @@ def api_games():
             SELECT DISTINCT ON (g.game_id)
                 g.game_id,
                 g.match_date,
+                CASE 
+                    WHEN UPPER(%s) IN ('MLB', 'NBA') THEN g.match_date + 1
+                    ELSE g.match_date
+                END AS match_date,
                 COALESCE(gs.status, g.status) as status,
                 g.home_team_score,
                 g.away_team_score,
@@ -249,7 +253,7 @@ def api_games():
             AND g.match_date >= CURRENT_DATE - INTERVAL '30 days'
             ORDER BY g.game_id, g.match_date DESC
         """
-        cur.execute(sql, (league, league))
+        cur.execute(sql, (league, league, league))
         games = cur.fetchall()
         cur.close()
         conn.close()
