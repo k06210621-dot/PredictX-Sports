@@ -250,62 +250,52 @@ def api_games():
 
 @app.route('/api/run_analysis', methods=['POST'])
 def run_analysis():
-    """執行 AI 分析 + 結算（供 Railway Cron 觸發）"""
-    try:
-        from run_analysis import get_pending_games, save_analysis
-        from analysis_engine import AnalysisEngine
-        from settlement_engine import SettlementEngine
-        from datetime import datetime, timedelta
+    """執行 AI 分析 + 結算（背景執行，立即回傳）"""
+    import threading
 
-        conn = get_db()
-        results = {}
+    def _run_analysis():
+        with app.app_context():
+            try:
+                from run_analysis import get_pending_games, save_analysis
+                from analysis_engine import AnalysisEngine
+                from settlement_engine import SettlementEngine
+                from datetime import datetime, timedelta
 
-        # 先確認環境變數
-        results['env'] = {
-            'PREDICTX_MODEL': os.getenv('PREDICTX_MODEL', 'not set'),
-            'CLOUD_LLM_PROVIDER': os.getenv('CLOUD_LLM_PROVIDER', 'not set'),
-            'USE_CLOUD': os.getenv('PREDICTX_MODEL') == 'cloud',
-            'NVIDIA_KEY_EXISTS': bool(os.getenv('NVIDIA_API_KEY')),
-            'NVIDIA_KEY_LEN': len(os.getenv('NVIDIA_API_KEY', ''))
-        }
+                conn = get_db()
+                taipei_tz = datetime.now().astimezone().tzinfo
+                today = datetime.now(taipei_tz).strftime('%Y-%m-%d')
+                tomorrow = (datetime.now(taipei_tz) + timedelta(days=1)).strftime('%Y-%m-%d')
+                target_dates = [today, tomorrow]
 
-        # 目標日期：今日 + 明日（台北時間）
-        taipei_tz = datetime.now().astimezone().tzinfo
-        today = datetime.now(taipei_tz).strftime('%Y-%m-%d')
-        tomorrow = (datetime.now(taipei_tz) + timedelta(days=1)).strftime('%Y-%m-%d')
-        target_dates = [today, tomorrow]
+                pending = get_pending_games(conn, target_dates)
+                logger.info(f"run_analysis: {len(pending)} pending games")
 
-        # 分析
-        pending = get_pending_games(conn, target_dates)
-        results['pending'] = len(pending)
-        if pending:
-            engine = AnalysisEngine(conn=conn)
-            success = 0
-            for idx, game in enumerate(pending[:5]):  # 最多分析 5 場
-                game_id = game['game_id']
+                if pending:
+                    engine = AnalysisEngine(conn=conn)
+                    for idx, game in enumerate(pending[:5]):
+                        game_id = game['game_id']
+                        try:
+                            result = engine.analyze_game(game_id)
+                            if result:
+                                save_analysis(conn, game_id, result)
+                                logger.info(f"  analyzed {game_id[:8]}...")
+                        except Exception as e:
+                            logger.error(f"  analysis error {game_id[:8]}...: {e}")
+                    engine.close()
+
                 try:
-                    result = engine.analyze_game(game_id)
-                    if result and save_analysis(conn, game_id, result):
-                        success += 1
+                    settler = SettlementEngine()
+                    sc = settler.settle_games()
+                    logger.info(f"settled {sc} games")
                 except Exception as e:
-                    results[f'error_{idx}'] = str(e)[:200]
-            engine.close()
-            results['analyzed'] = success
+                    logger.error(f"settle error: {e}")
 
-        # 結算
-        try:
-            settler = SettlementEngine()
-            sc = settler.settle_games()
-            results['settled'] = sc
-        except Exception as e:
-            results['settle_error'] = str(e)[:200]
+                conn.close()
+            except Exception as e:
+                logger.error(f"run_analysis thread error: {e}")
 
-        conn.close()
-        return jsonify({"status": "success", "details": results}), 200
-    except Exception as e:
-        import traceback
-        logger.error(f"run_analysis failed: {e}\n{traceback.format_exc()}")
-        return jsonify({"error": str(e), "type": type(e).__name__}), 500
+    threading.Thread(target=_run_analysis, daemon=True).start()
+    return jsonify({"status": "started", "message": "Analysis running in background"}), 202
 
 
 @app.route('/api/insert_games', methods=['POST'])
