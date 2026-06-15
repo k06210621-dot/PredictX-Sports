@@ -288,7 +288,7 @@ class AnalysisEngine:
         if league and league.upper() == 'MLB':
             try:
                 from mlb_data_fetcher import MLBDataFetcher
-                fetcher = MLBDataFetcher()
+                fetcher = MLBDataFetcher(conn=self.conn)
                 home_name = game['home_team_en']
                 away_name = game['away_team_en']
                 mlb_data = fetcher.fetch_and_store_game_data(game_id, home_name, away_name)

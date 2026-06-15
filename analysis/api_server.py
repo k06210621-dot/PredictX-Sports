@@ -362,7 +362,7 @@ def insert_games():
 def get_game_analysis(game_id):
     conn = get_db()
     cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("SELECT analysis_data FROM game_analysis WHERE game_id = %s::uuid", (game_id,))
+    cur.execute("SELECT analysis_data FROM predictx.game_analysis WHERE game_id = %s::uuid", (game_id,))
     row = cur.fetchone()
     cur.close()
     conn.close()

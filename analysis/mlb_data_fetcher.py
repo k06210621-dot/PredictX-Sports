@@ -7,6 +7,7 @@ import json
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
+import os
 
 DB_CONFIG = {
     "dbname": "sports_db", "user": "jero",
@@ -16,9 +17,19 @@ DB_CONFIG = {
 MLB_API_BASE = "https://statsapi.mlb.com/api/v1"
 
 class MLBDataFetcher:
-    def __init__(self):
-        self.conn = psycopg2.connect(**DB_CONFIG)
-        self.cur = self.conn.cursor(cursor_factory=RealDictCursor)
+    def __init__(self, conn=None):
+        if conn:
+            self.conn = conn
+            self.cur = conn.cursor(cursor_factory=RealDictCursor)
+        else:
+            database_url = os.getenv('DATABASE_URL')
+            if database_url:
+                if database_url.startswith('postgres://'):
+                    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+                self.conn = psycopg2.connect(database_url, cursor_factory=RealDictCursor)
+            else:
+                self.conn = psycopg2.connect(**DB_CONFIG)
+            self.cur = self.conn.cursor(cursor_factory=RealDictCursor)
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": "PredictX-Sports/1.0"})
         self.fetched_sources = []

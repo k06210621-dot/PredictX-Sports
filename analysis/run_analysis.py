@@ -65,7 +65,7 @@ def save_analysis(conn, game_id, analysis_result):
     cur = conn.cursor()
     try:
         cur.execute(
-            """INSERT INTO game_analysis (game_id, analysis_data, updated_at)
+            """INSERT INTO predictx.game_analysis (game_id, analysis_data, updated_at)
                VALUES (%s, %s, CURRENT_TIMESTAMP)
                ON CONFLICT (game_id)
                DO UPDATE SET
