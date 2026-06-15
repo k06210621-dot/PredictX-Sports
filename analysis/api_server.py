@@ -250,7 +250,7 @@ def api_games():
 
 @app.route('/api/run_analysis', methods=['POST'])
 def run_analysis():
-    """執行 AI 分析 + 結算（同步執行，最多 10 分鐘）"""
+    """執行 AI 分析 + 結算（同步執行）"""
     try:
         from run_analysis import get_pending_games, save_analysis
         from analysis_engine import AnalysisEngine
@@ -261,18 +261,16 @@ def run_analysis():
         results = {}
         results['env'] = {
             'model': os.getenv('PREDICTX_MODEL', 'not set'),
-            'use_cloud': os.getenv('PREDICTX_MODEL') == 'cloud',
             'nvidia_key': bool(os.getenv('NVIDIA_API_KEY'))
         }
 
-        # 目標日期
         taipei_tz = datetime.now().astimezone().tzinfo
         today = datetime.now(taipei_tz).strftime('%Y-%m-%d')
         tomorrow = (datetime.now(taipei_tz) + timedelta(days=1)).strftime('%Y-%m-%d')
 
-        # 分析
         pending = get_pending_games(conn, [today, tomorrow])
         results['pending'] = len(pending)
+
         if pending:
             engine = AnalysisEngine(conn=conn)
             success = 0
@@ -289,7 +287,6 @@ def run_analysis():
         else:
             results['analyzed'] = 0
 
-        # 結算
         try:
             settler = SettlementEngine()
             results['settled'] = settler.settle_games()
