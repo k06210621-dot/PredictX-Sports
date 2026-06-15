@@ -248,6 +248,57 @@ def api_games():
         return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
+@app.route('/api/run_analysis', methods=['POST'])
+def run_analysis():
+    """執行 AI 分析 + 結算（供 Railway Cron 觸發）"""
+    try:
+        from run_analysis import get_pending_games, save_analysis
+        from analysis_engine import AnalysisEngine
+        from settlement_engine import SettlementEngine
+        from datetime import datetime, timedelta
+
+        conn = get_db()
+        results = {}
+
+        # 目標日期：今日 + 明日（台北時間）
+        taipei_tz = datetime.now().astimezone().tzinfo
+        today = datetime.now(taipei_tz).strftime('%Y-%m-%d')
+        tomorrow = (datetime.now(taipei_tz) + timedelta(days=1)).strftime('%Y-%m-%d')
+        target_dates = [today, tomorrow]
+
+        # 分析
+        pending = get_pending_games(conn, target_dates)
+        results['pending'] = len(pending)
+        if pending:
+            engine = AnalysisEngine(conn=conn)
+            success = 0
+            for idx, game in enumerate(pending):
+                game_id = game['game_id']
+                try:
+                    result = engine.analyze_game(game_id)
+                    if result and save_analysis(conn, game_id, result):
+                        success += 1
+                except Exception:
+                    pass
+            engine.close()
+            results['analyzed'] = success
+
+        # 結算
+        try:
+            settler = SettlementEngine()
+            sc = settler.settle_games()
+            results['settled'] = sc
+        except Exception as e:
+            results['settle_error'] = str(e)[:200]
+
+        conn.close()
+        return jsonify({"status": "success", "details": results}), 200
+    except Exception as e:
+        import traceback
+        logger.error(f"run_analysis failed: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e), "type": type(e).__name__}), 500
+
+
 @app.route('/api/insert_games', methods=['POST'])
 def insert_games():
     """接受外部傳入的賽程資料並寫入資料庫"""
