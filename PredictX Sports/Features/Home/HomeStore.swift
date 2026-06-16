@@ -58,13 +58,14 @@ class HomeStore: ObservableObject {
                 .sorted { $0.startTime < $1.startTime }
 
             await MainActor.run {
-                self.allMatches = Array(unique)
-                
+                let mappedMatches = Array(unique)
+                self.allMatches = mappedMatches
+
                 // 使用 UTC 計算今天起始，與 loadHistoryForLeague 一致
                 var utcCalendar = Calendar(identifier: .gregorian)
                 utcCalendar.timeZone = TimeZone(secondsFromGMT: 0)!
                 let todayStartUTC = utcCalendar.startOfDay(for: Date())
-                
+
                 // 將其中屬於歷史的賽事（startTime < 今天 UTC 00:00）存入歷史庫
                 // 但只有當該聯賽還沒有歷史資料（從 loadHistoryForLeague 載入）時才覆蓋
                 let history = mappedMatches.filter { $0.startTime < todayStartUTC }
@@ -72,7 +73,7 @@ class HomeStore: ObservableObject {
                    self.historicalMatches[self.selectedLeague]!.isEmpty {
                     self.historicalMatches[self.selectedLeague] = history
                 }
-                
+
                 self.updateUIElements()
             }
         } catch {
