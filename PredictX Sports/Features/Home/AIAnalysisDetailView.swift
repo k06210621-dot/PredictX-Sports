@@ -18,8 +18,8 @@ struct AIAnalysisDetailView: View {
                 } else if let error = errorMessage {
                     VStack(spacing: 20) {
                         Image(systemName: "exclamationmark.triangle.fill").font(.largeTitle).foregroundColor(.orange)
-                        Text("分析資料載入失敗").font(.headline).foregroundColor(.white)
-                        Text(error).font(.caption).foregroundColor(.white.opacity(0.6)).multilineTextAlignment(.center)
+                        Text("分析資料載入失敗").font(.headline).foregroundColor(.primary)
+                        Text(error).font(.caption).foregroundColor(.secondary).multilineTextAlignment(.center)
                         Button("重試") { Task { await loadAnalysis() } }
                             .buttonStyle(.borderedProminent)
                     }
@@ -30,7 +30,7 @@ struct AIAnalysisDetailView: View {
                             
                             // MARK: - 1. 勝率推論卡片
                             VStack(spacing: 15) {
-                                Text("AI 推論勝率").font(.headline).foregroundColor(.white.opacity(0.6))
+                                Text("AI 推論勝率").font(.headline).foregroundColor(.secondary)
                                 
                                 let homeWinProb = analysis.prediction?.home_win_probability ?? 0.0
                                 let awayWinProb = analysis.prediction?.away_win_probability ?? 0.0
@@ -43,19 +43,19 @@ struct AIAnalysisDetailView: View {
                                         Capsule().fill(Color.blue)
                                             .frame(width: CGFloat(homeWinProb) * 200)
                                         Text(String(format: "%.0f%%", homeWinProb * 100))
-                                            .font(.caption).bold().foregroundColor(.white)
+                                            .font(.caption).bold().foregroundColor(.primary)
                                             .padding(.leading, 10)
                                     }
                                     .frame(width: 200, height: 24)
                                     
-                                    Text("vs").font(.caption).bold().foregroundColor(.white.opacity(0.3))
+                                    Text("vs").font(.caption).bold().foregroundColor(Color(.tertiaryLabel))
                                     
                                     ZStack(alignment: .trailing) {
                                         Capsule().fill(Color.red.opacity(0.25))
                                         Capsule().fill(Color.red)
                                             .frame(width: CGFloat(awayWinProb) * 200)
                                         Text(String(format: "%.0f%%", awayWinProb * 100))
-                                            .font(.caption).bold().foregroundColor(.white)
+                                            .font(.caption).bold().foregroundColor(.primary)
                                             .padding(.trailing, 10)
                                     }
                                     .frame(width: 200, height: 24)
@@ -76,10 +76,10 @@ struct AIAnalysisDetailView: View {
                                     Spacer()
                                     Label("模型推演比分: \(score)", systemImage: "list.bullet.rectangle")
                                 }
-                                .font(.subheadline).foregroundColor(.white.opacity(0.5))
+                                .font(.subheadline).foregroundColor(.secondary)
                             }
                             .padding()
-                            .background(Color(red: 0.14, green: 0.16, blue: 0.26))
+                            .background(Color.cardBackground)
                             .cornerRadius(16)
                             
                             // MARK: - 2. 能力維度分析 (雷達圖)
@@ -90,7 +90,7 @@ struct AIAnalysisDetailView: View {
                                 VStack(alignment: .leading, spacing: 12) {
                                     Label("能力維度分析", systemImage: "chart.pie.fill")
                                         .font(.headline)
-                                        .foregroundColor(.white)
+                                        .foregroundColor(.primary)
                                     
                                     RadarChartView(
                                         categories: cats,
@@ -103,7 +103,7 @@ struct AIAnalysisDetailView: View {
                                     .padding(.vertical, 5)
                                 }
                                 .padding()
-                                .background(Color(red: 0.14, green: 0.16, blue: 0.26))
+                                .background(Color.cardBackground)
                                 .cornerRadius(16)
                             }
                             
@@ -112,43 +112,43 @@ struct AIAnalysisDetailView: View {
                                 VStack(alignment: .leading, spacing: 12) {
                                     Label("AI 深度分析摘要", systemImage: "doc.text.magnifyingglass")
                                         .font(.headline)
-                                        .foregroundColor(.white)
+                                        .foregroundColor(.primary)
                                     Text(analysisContent.summary ?? "無分析資料")
                                         .font(.body)
-                                        .foregroundColor(.white.opacity(0.85))
+                                        .foregroundColor(.primary)
                                         .lineSpacing(4)
                                     
                                     if let factors = analysisContent.key_factors, !factors.isEmpty {
-                                        Text("關鍵影響因子").font(.subheadline).bold().foregroundColor(.white).padding(.top)
+                                        Text("關鍵影響因子").font(.subheadline).bold().foregroundColor(.primary).padding(.top)
                                         ForEach(factors, id: \.self) { factor in
                                             HStack(alignment: .top) {
                                                 Image(systemName: "checkmark.circle.fill").foregroundColor(.blue).font(.caption)
-                                                Text(factor).font(.subheadline).foregroundColor(.white.opacity(0.75))
+                                                Text(factor).font(.subheadline).foregroundColor(.primary)
                                             }
                                             .padding(.vertical, 2)
                                         }
                                     }
                                     
                                     if let risks = analysisContent.risk_factors, !risks.isEmpty {
-                                        Text("潛在風險因子").font(.subheadline).bold().foregroundColor(.white).padding(.top, 8)
+                                        Text("潛在風險因子").font(.subheadline).bold().foregroundColor(.primary).padding(.top, 8)
                                         ForEach(risks, id: \.self) { risk in
                                             HStack(alignment: .top) {
                                                 Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange).font(.caption)
-                                                Text(risk).font(.subheadline).foregroundColor(.white.opacity(0.75))
+                                                Text(risk).font(.subheadline).foregroundColor(.primary)
                                             }
                                             .padding(.vertical, 2)
                                         }
                                     }
                                 }
                                 .padding()
-                                .background(Color(red: 0.14, green: 0.16, blue: 0.26))
+                                .background(Color.cardBackground)
                                 .cornerRadius(16)
                             }
                             
                             // MARK: - 4. 合規免責聲明
                             Text("本分析結果由 AI 模型基於歷史數據生成，僅供體育數據研究與統計參考，不構成任何形式的投注建議。")
                                 .font(.caption2)
-                                .foregroundColor(.white.opacity(0.35))
+                                .foregroundColor(Color(.tertiaryLabel))
                                 .multilineTextAlignment(.center)
                                 .padding(.vertical, 20)
                                 .padding(.horizontal)
@@ -162,7 +162,7 @@ struct AIAnalysisDetailView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { dismiss() }) {
-                        Text("關閉").foregroundColor(.white)
+                        Text("關閉").foregroundColor(.primary)
                     }
                 }
             }
@@ -174,10 +174,13 @@ struct AIAnalysisDetailView: View {
     
     private func loadAnalysis() async {
         isLoading = true
+        print("🔍 [Analysis] loading for gameId: \(match.id)")
         do {
             self.analysis = try await APIService.shared.fetchAIAnalysis(gameId: match.id)
+            print("✅ [Analysis] loaded successfully: conf=\(self.analysis?.prediction?.confidence ?? -1)")
             isLoading = false
         } catch {
+            print("❌ [Analysis] fetch error: \(error)")
             self.errorMessage = userFriendlyError(error)
             isLoading = false
         }
