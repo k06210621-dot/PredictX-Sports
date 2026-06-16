@@ -315,5 +315,6 @@ class MLBDataFetcher:
             self.conn.rollback()
 
     def close(self):
-        self.cur.close()
-        self.conn.close()
+        if hasattr(self, 'cur') and self.cur and not self.cur.closed:
+            self.cur.close()
+        # 不關閉 conn — 可能是外部傳入的共享連線
