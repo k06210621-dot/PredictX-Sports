@@ -7,6 +7,7 @@ from decimal import Decimal
 from datetime import date, datetime
 import psycopg2
 from psycopg2.extras import RealDictCursor
+import json
 from dotenv import load_dotenv
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -405,6 +406,34 @@ def get_game_analysis(game_id):
         }
         return jsonify(result)
     return jsonify({"error": "Analysis not found"}), 404
+
+
+@app.route('/api/update_analysis', methods=['POST'])
+def update_analysis():
+    """手動寫入 AI 分析資料到指定賽事"""
+    try:
+        data = request.get_json(force=True)
+        game_id = data.get('game_id')
+        analysis_data = data.get('analysis_data')
+        if not game_id or not analysis_data:
+            return jsonify({"error": "Missing game_id or analysis_data"}), 400
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO predictx.game_analysis (game_id, analysis_data, updated_at)
+               VALUES (%s::uuid, %s::jsonb, CURRENT_TIMESTAMP)
+               ON CONFLICT (game_id)
+               DO UPDATE SET analysis_data = EXCLUDED.analysis_data, updated_at = CURRENT_TIMESTAMP""",
+            (game_id, json.dumps(analysis_data, ensure_ascii=False))
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"status": "success", "game_id": game_id}), 200
+    except Exception as e:
+        import traceback
+        logger.error(f"update_analysis: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
 if __name__ == "__main__":
