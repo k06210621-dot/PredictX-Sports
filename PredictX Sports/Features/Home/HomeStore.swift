@@ -43,15 +43,22 @@ class HomeStore: ObservableObject {
         guard !isLoading else { return }
         isLoading = true
         defer { isLoading = false }
-        
+
         do {
-            // 1. 抓取當前選中聯賽的賽事
-            let matches = try await APIService.shared.fetchGames(for: selectedLeague.rawValue, days: 7)
-            
+            // 1. 抓取所有聯盟的賽事（跨聯盟組裝焦點賽事需要）
+            var combined: [Match] = []
+            for league in LeagueType.activeCases {
+                let games = try await APIService.shared.fetchGames(for: league.rawValue, days: 7)
+                combined.append(contentsOf: games.map { Match(from: $0, leagueType: league) })
+            }
+            // 以 id 去重, 避免跨聯盟或重複拉取造成的 duplicate ID 警告
+            let unique = Dictionary(grouping: combined, by: { $0.id })
+                .compactMapValues { $0.first }
+                .values
+                .sorted { $0.startTime < $1.startTime }
+
             await MainActor.run {
-                // 轉換為 Match 模型
-                let mappedMatches = matches.map { Match(from: $0, leagueType: self.selectedLeague) }
-                self.allMatches = mappedMatches
+                self.allMatches = Array(unique)
                 
                 // 使用 UTC 計算今天起始，與 loadHistoryForLeague 一致
                 var utcCalendar = Calendar(identifier: .gregorian)
@@ -76,12 +83,12 @@ class HomeStore: ObservableObject {
         }
     }
 
-    /// 載入所有聯賽的歷史賽事（每次從 API 重新拉取，確保資料為最新）
+    /// 載入所有聯盟的歷史賽事（每次從 API 重新拉取，確保資料為最新）
     func loadHistoryForAllLeagues() async {
         var utcCalendar = Calendar(identifier: .gregorian)
         utcCalendar.timeZone = TimeZone(secondsFromGMT: 0)!
         let todayStartUTC = utcCalendar.startOfDay(for: Date())
-        
+
         for league in LeagueType.activeCases {
             do {
                 let models = try await APIService.shared.fetchGames(for: league.rawValue, days: 30)
@@ -92,8 +99,11 @@ class HomeStore: ObservableObject {
                     }.sorted { a, b in
                         a.startTime > b.startTime
                     }
-                    self.historicalMatches[league] = history
-                    print("✅ [History] \(league.rawValue) loaded \(history.count) historical matches (from \(allMatches.count) total)")
+                    // 以 id 去重, 避免重複拉取造成的 duplicate
+                    let unique = Array(Dictionary(grouping: history, by: { $0.id })
+                        .compactMapValues { $0.first }.values)
+                    self.historicalMatches[league] = unique
+                    print("✅ [History] \(league.rawValue) loaded \(unique.count) historical matches (from \(allMatches.count) total)")
                 }
             } catch {
                 print("❌ [History Fetch Error] \(league.rawValue): \(error)")
@@ -122,7 +132,9 @@ class HomeStore: ObservableObject {
         
         // 過濾今日及未來的賽事（歷史賽事統一由賽事記錄頁面管理）
         let upcomingMatches = allMatches.filter { $0.startTime >= todayStartUTC }
-        self.filteredPredictions = upcomingMatches
+        self.filteredPredictions = upcomingMatches.sorted { a, b in
+            a.startTime < b.startTime
+        }
         
         // 焦點賽事：只顯示昨天/今天/明天 + 數據置信度 >= 9
         self.focusMatches = allMatches.filter {

@@ -27,7 +27,7 @@ struct HomeView: View {
                                             Text("伺服器連線異常")
                                                 .font(.caption).bold().foregroundColor(.red)
                                             Text(error)
-                                                .font(.caption2).foregroundColor(.white.opacity(0.6))
+                                                .font(.caption2).foregroundColor(.secondary)
                                         }
                                         Spacer()
                                         Button(action: {
@@ -36,7 +36,7 @@ struct HomeView: View {
                                         }) {
                                             Text("重試")
                                                 .font(.caption).bold()
-                                                .foregroundColor(.white)
+                                                .foregroundColor(.primary)
                                                 .padding(.horizontal, 12)
                                                 .padding(.vertical, 6)
                                                 .background(Color.red)
@@ -57,7 +57,8 @@ struct HomeView: View {
                                         if store.focusMatches.isEmpty {
                                             FocusFallbackCardView()
                                         } else {
-                                            ForEach(store.focusMatches) { match in
+                                            // 用 league + id 組合作為 SwiftUI 唯一鍵, 避免跨聯盟 gameId 碰撞
+                                            ForEach(Array(store.focusMatches.enumerated()), id: \.offset) { _, match in
                                                 FocusMatchCardView(
                                                     homeTeam: match.homeTeam,
                                                     awayTeam: match.awayTeam,
@@ -111,7 +112,7 @@ struct HomeView: View {
                                         )
                                         .padding(.top, 20)
                                     } else {
-                                        ForEach(store.filteredPredictions) { match in
+                                        ForEach(Array(store.filteredPredictions.enumerated()), id: \.offset) { _, match in
                                             PredictionRowView(match: match)
                                                 .contentShape(Rectangle())
                                                 .onTapGesture { self.selectedMatchForDetail = match }
@@ -215,7 +216,7 @@ struct SportsSectionHeader: View {
             Text(title)
                 .font(.title3)
                 .fontWeight(.heavy)
-                .foregroundColor(.white)
+                .foregroundColor(.primary)
             Spacer()
         }
         .padding(.horizontal)
@@ -237,7 +238,7 @@ struct FocusMatchCardView: View {
                 Text(league)
                     .font(.caption)
                     .fontWeight(.bold)
-                    .foregroundColor(.white.opacity(0.6))
+                    .foregroundColor(.secondary)
                 Spacer()
                 HStack(spacing: 2) {
                     Image(systemName: "bolt.fill")
@@ -255,11 +256,11 @@ struct FocusMatchCardView: View {
             }
             HStack {
                 Text(homeTeam).bold()
-                Text("vs").foregroundColor(.white.opacity(0.35)).font(.caption)
+                Text("vs").foregroundColor(Color(.tertiaryLabel)).font(.caption)
                 Text(awayTeam).bold()
             }
             .font(.headline)
-            .foregroundColor(.white)
+            .foregroundColor(.primary)
             
             HStack(spacing: 4) {
                 Image(systemName: "calendar")
@@ -267,13 +268,13 @@ struct FocusMatchCardView: View {
                 Text(formattedDate)
                     .font(.caption2)
             }
-            .foregroundColor(.white.opacity(0.5))
+            .foregroundColor(.secondary)
         }
         .padding()
         .frame(width: 240)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color(red: 0.14, green: 0.16, blue: 0.26))
+                .fill(Color.cardBackground)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(Color.orange.opacity(0.4), lineWidth: 1.5)
@@ -299,11 +300,11 @@ struct FocusFallbackCardView: View {
                 .foregroundColor(.white.opacity(0.8))
             Text("下拉或切換分類即可刷新預報")
                 .font(.caption2)
-                .foregroundColor(.white.opacity(0.4))
+                .foregroundColor(Color(.tertiaryLabel))
         }
         .padding()
         .frame(width: 240)
-        .background(Color(red: 0.14, green: 0.16, blue: 0.26))
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.blue.opacity(0.2), lineWidth: 1))
     }
