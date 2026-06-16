@@ -225,15 +225,17 @@ def api_games():
     try:
         conn = get_db()
         cur = conn.cursor()
+        # days 參數：APP 預設 7/14/30 會帶，可調範圍避免一次性回傳太多歷史資料
+        days = request.args.get('days', default=14, type=int)
+        days = max(1, min(days, 60))  # 限制 1~60 天，避免誤傳超大值
         sql = """
-            SELECT DISTINCT ON (g.game_id)
+            SELECT
                 g.game_id,
-                g.match_date,
-                CASE 
+                CASE
                     WHEN UPPER(%s) IN ('MLB', 'NBA') THEN g.match_date + 1
                     ELSE g.match_date
                 END AS match_date,
-                COALESCE(gs.status, g.status) as status,
+                COALESCE(gs.status, g.status) AS status,
                 g.home_team_score,
                 g.away_team_score,
                 COALESCE(th_a.alias_name, th.english_name) AS home_team,
@@ -251,10 +253,10 @@ def api_games():
             LEFT JOIN predictx.game_status gs ON g.game_id = gs.game_id
             LEFT JOIN predictx.game_analysis ga ON g.game_id = ga.game_id
             WHERE UPPER(th.league) = UPPER(%s) AND UPPER(ta.league) = UPPER(%s)
-            AND g.match_date >= CURRENT_DATE - INTERVAL '30 days'
-            ORDER BY g.game_id, g.match_date DESC
+            AND g.match_date >= CURRENT_DATE - (%s || ' days')::interval
+            ORDER BY g.match_date DESC, g.game_id
         """
-        cur.execute(sql, (league, league, league))
+        cur.execute(sql, (league, league, league, str(days)))
         games = cur.fetchall()
         cur.close()
         conn.close()

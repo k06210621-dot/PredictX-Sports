@@ -85,7 +85,7 @@ class APIService {
     private let baseURL = "https://predictx-sports-production.up.railway.app"
     
     func fetchGames(for league: String, days: Int = 7) async throws -> [MatchModel] {
-        guard let url = URL(string: "\(baseURL)/api/games?league=\(league)") else {
+        guard let url = URL(string: "\(baseURL)/api/games?league=\(league)&days=\(days)") else {
             throw URLError(.badURL)
         }
         
