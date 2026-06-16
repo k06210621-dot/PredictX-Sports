@@ -66,15 +66,17 @@ class HomeStore: ObservableObject {
                 utcCalendar.timeZone = TimeZone(secondsFromGMT: 0)!
                 let todayStartUTC = utcCalendar.startOfDay(for: Date())
 
-                // 將其中屬於歷史的賽事（startTime < 今天 UTC 00:00）存入歷史庫
-                // 但只有當該聯賽還沒有歷史資料（從 loadHistoryForLeague 載入）時才覆蓋
+                // 將各聯盟歷史資料分開存入
                 let history = mappedMatches.filter { $0.startTime < todayStartUTC }
-                if self.historicalMatches[self.selectedLeague] == nil ||
-                   self.historicalMatches[self.selectedLeague]!.isEmpty {
-                    self.historicalMatches[self.selectedLeague] = history
+                // 按 league 分組存入
+                for league in LeagueType.activeCases {
+                    let leagueHistory = history.filter { $0.league == league }
+                    if self.historicalMatches[league] == nil || self.historicalMatches[league]!.isEmpty {
+                        self.historicalMatches[league] = leagueHistory
+                    }
                 }
 
-                self.updateUIElements()
+                self.updateUIElements(for: selectedLeague)
             }
         } catch {
             print("❌ [Database Fetch Error]: \(error)")
@@ -123,7 +125,7 @@ class HomeStore: ObservableObject {
         await loadHistoryForAllLeagues()
     }
     
-    private func updateUIElements() {
+    private func updateUIElements(for specificLeague: LeagueType? = nil) {
         // 統一在 UTC 層級進行比對，徹底消除時區偏移導致的資料消失問題
         var utcCalendar = Calendar(identifier: .gregorian)
         utcCalendar.timeZone = TimeZone(secondsFromGMT: 0)!
@@ -131,25 +133,26 @@ class HomeStore: ObservableObject {
         let yesterdayStartUTC = todayStartUTC.addingTimeInterval(-86400)
         let tomorrowEndUTC = todayStartUTC.addingTimeInterval(172800)
         
-        // 過濾今日及未來的賽事（歷史賽事統一由賽事記錄頁面管理）
-        let upcomingMatches = allMatches.filter { $0.startTime >= todayStartUTC }
+        let league = specificLeague ?? selectedLeague
+        
+        // 只保留當前選中聯盟的 upcoming 賽事
+        let upcomingMatches = allMatches.filter {
+            $0.league == league && $0.startTime >= todayStartUTC
+        }
         self.filteredPredictions = upcomingMatches.sorted { a, b in
             a.startTime < b.startTime
         }
         
-        // 焦點賽事：只顯示昨天/今天/明天 + 數據置信度 >= 9
+        // 焦點賽事：跨聯盟，只顯示昨天/今天/明天 + 數據置信度 >= 9
         self.focusMatches = allMatches.filter {
             let dateInRange = $0.startTime >= yesterdayStartUTC && $0.startTime < tomorrowEndUTC
             let highConfidence = ($0.aiConfidence ?? 0.0) >= 9.0
             return dateInRange && highConfidence
         }.sorted { ($0.aiConfidence ?? 0.0) > ($1.aiConfidence ?? 0.0) }
     }
-
-    /// 💡 核心修正：將型別比對優化為忽略大小寫（Case-Insensitive）判定，徹底物理阻斷 JSON 與 UI 字串不對齊地雷！
+    
     private func filterMatches(by league: LeagueType) {
-        // 當聯賽切換時，觸發資料重新抓取
-        Task(priority: .userInitiated) {
-            await importAllSportsData()
-        }
+        // 即時更新 UI，只顯示該聯盟賽事，不重新抓取全部資料
+        updateUIElements(for: league)
     }
 }
