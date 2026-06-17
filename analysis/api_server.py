@@ -334,6 +334,7 @@ def insert_games():
         cur = conn.cursor()
         inserted = 0
         skipped = 0
+        updated = 0
 
         for g in data['games']:
             match_date = g.get('match_date', '2026-06-15')
@@ -341,6 +342,8 @@ def insert_games():
             away_name = g.get('away_team')
             season = g.get('season', 2026)
             status = g.get('status', 'SCHEDULED')
+            home_score = g.get('home_team_score')
+            away_score = g.get('away_team_score')
 
             if not home_name or not away_name:
                 skipped += 1
@@ -358,23 +361,91 @@ def insert_games():
                     "SELECT game_id FROM predictx.games WHERE match_date = %s AND home_team_id = %s AND away_team_id = %s",
                     (match_date, home_id, away_id)
                 )
-                if not cur.fetchone():
+                existing = cur.fetchone()
+                if not existing:
                     cur.execute(
-                        "INSERT INTO predictx.games (season, match_date, status, home_team_id, away_team_id) VALUES (%s, %s, %s, %s, %s)",
-                        (season, match_date, status, home_id, away_id)
+                        """INSERT INTO predictx.games (season, match_date, status, home_team_id, away_team_id, home_team_score, away_team_score)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                        (season, match_date, status, home_id, away_id, home_score, away_score)
                     )
                     inserted += 1
                 else:
-                    skipped += 1
+                    # 更新現有賽事的 status 和 score
+                    update_fields = []
+                    update_vals = []
+                    if status:
+                        update_fields.append("status = %s")
+                        update_vals.append(status)
+                    if home_score is not None:
+                        update_fields.append("home_team_score = %s")
+                        update_vals.append(home_score)
+                    if away_score is not None:
+                        update_fields.append("away_team_score = %s")
+                        update_vals.append(away_score)
+                    if update_fields:
+                        update_vals.append(existing['game_id'])
+                        cur.execute(
+                            f"UPDATE predictx.games SET {', '.join(update_fields)} WHERE game_id = %s",
+                            tuple(update_vals)
+                        )
+                    updated += 1
             else:
                 skipped += 1
 
         cur.close()
         conn.close()
-        return jsonify({"status": "success", "inserted": inserted, "skipped": skipped}), 200
+        return jsonify({"status": "success", "inserted": inserted, "updated": updated, "skipped": skipped}), 200
     except Exception as e:
         import traceback
         logger.error(f"insert_games failed: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e), "type": type(e).__name__}), 500
+
+
+@app.route('/api/update_score', methods=['POST'])
+def update_score():
+    """手動更新指定賽事的比分與狀態，供資料維護用"""
+    try:
+        data = request.get_json(force=True)
+        game_id = data.get('game_id')
+        home_score = data.get('home_score')
+        away_score = data.get('away_score')
+        status = data.get('status', 'FINAL')
+
+        if not game_id:
+            return jsonify({"error": "Missing game_id"}), 400
+
+        conn = get_db()
+        conn.autocommit = True
+        cur = conn.cursor()
+
+        update_fields = []
+        update_vals = []
+        if home_score is not None:
+            update_fields.append("home_team_score = %s")
+            update_vals.append(home_score)
+        if away_score is not None:
+            update_fields.append("away_team_score = %s")
+            update_vals.append(away_score)
+        if status:
+            update_fields.append("status = %s")
+            update_vals.append(status)
+        update_vals.append(game_id)
+
+        if update_fields:
+            cur.execute(
+                f"UPDATE predictx.games SET {', '.join(update_fields)} WHERE game_id = %s::uuid",
+                tuple(update_vals)
+            )
+            logger.info(f"update_score: game_id={game_id}, rows={cur.rowcount}")
+        else:
+            return jsonify({"error": "No fields to update"}), 400
+
+        cur.close()
+        conn.close()
+        return jsonify({"status": "success", "updated": cur.rowcount}), 200
+    except Exception as e:
+        import traceback
+        logger.error(f"update_score failed: {e}\n{traceback.format_exc()}")
         return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
@@ -441,3 +512,7 @@ def update_analysis():
 if __name__ == "__main__":
     port = int(os.getenv('PORT', 8081))
     app.run(host="0.0.0.0", port=port, debug=False)
+
+
+# 已於 2026-06-17 移除 FIFA 端點 — 不再提供 FIFA 相關 API 行為
+

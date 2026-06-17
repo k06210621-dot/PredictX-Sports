@@ -70,6 +70,8 @@ class BaseIngester(ABC):
             "home_team": game.get("home_team"),
             "away_team": game.get("away_team"),
             "status": status,
+            "home_team_score": game.get("home_team_score"),
+            "away_team_score": game.get("away_team_score"),
         }
 
     def upload(self, games: List[Dict[str, Any]]) -> bool:
@@ -143,3 +145,58 @@ class BaseIngester(ABC):
 
         upload_ok = self.upload(all_games)
         return ok and upload_ok
+
+    def backfill_yesterday(self, target_date: str = "", dry_run: bool = False) -> bool:
+        """
+        補抓昨日（或指定日期）賽事比分。
+        用於每日定時補抓已完成賽事的最終比分，避免 cron 開打時間太早漏掉。
+
+        與 run() 的差異：
+        - 只抓單一日期（昨日），確保 API 回傳的是 Final 狀態帶 score
+        - fetch_games() 子類別實作直接查詢單日即可
+        - 上傳時仍走既有 /api/insert_games 端點，會自動 UPDATE 既有 game 的 score/status
+        """
+        if not target_date:
+            yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+            target_date = yesterday
+
+        LOGGER.info(f"[{self.league_code}] ===== 昨日補抓 ===== {target_date}")
+        games: List[Dict[str, Any]] = []
+        delay = 2
+
+        for attempt in range(1, 4):  # 3 次重試
+            try:
+                games = self.fetch_games(target_date)
+                LOGGER.info(
+                    f"[{self.league_code}] {target_date} 補抓 #{attempt} → {len(games)} 場"
+                )
+                break
+            except Exception as e:
+                LOGGER.warning(
+                    f"[{self.league_code}] {target_date} 補抓 #{attempt} 失敗: {e}"
+                )
+                if attempt < 3:
+                    time.sleep(delay)
+                    delay *= 2
+                else:
+                    LOGGER.error(
+                        f"[{self.league_code}] {target_date} 補抓 3 次都失敗"
+                    )
+                    return False
+
+        if dry_run:
+            final_count = sum(1 for g in games if g.get("status") == "FINAL")
+            LOGGER.info(
+                f"[{self.league_code}] (dry-run) {target_date} 共 {len(games)} 場，"
+                f"其中 Final={final_count} 場"
+            )
+            for g in games:
+                hs = g.get("home_team_score")
+                a_s = g.get("away_team_score")
+                LOGGER.info(
+                    f"  {g.get('match_date')} {g.get('home_team')} vs "
+                    f"{g.get('away_team')} [{g.get('status')}] {hs}-{a_s}"
+                )
+            return True
+
+        return self.upload(games)
