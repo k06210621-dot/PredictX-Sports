@@ -46,9 +46,11 @@ class HomeStore: ObservableObject {
 
         do {
             // 1. 抓取所有聯盟的賽事（跨聯盟組裝焦點賽事需要）
+            //    改用 days=14 確保智慧分析首頁能完整顯示「今天 + 未來 7 天」
+            //    之所有賽事（原本 days=7 會漏掉週一~週日的尾段，例：週一只能看到當天）
             var combined: [Match] = []
             for league in LeagueType.activeCases {
-                let games = try await APIService.shared.fetchGames(for: league.rawValue, days: 7)
+                let games = try await APIService.shared.fetchGames(for: league.rawValue, days: 14)
                 combined.append(contentsOf: games.map { Match(from: $0, leagueType: league) })
             }
             // 以 id 去重, 避免跨聯盟或重複拉取造成的 duplicate ID 警告
@@ -143,10 +145,10 @@ class HomeStore: ObservableObject {
             a.startTime < b.startTime
         }
         
-        // 焦點賽事：跨聯盟，只顯示昨天/今天/明天 + 數據置信度 >= 9
+        // 焦點賽事：跨聯盟，只顯示昨天/今天/明天 + 數據置信度 > 8
         self.focusMatches = allMatches.filter {
             let dateInRange = $0.startTime >= yesterdayStartUTC && $0.startTime < tomorrowEndUTC
-            let highConfidence = ($0.aiConfidence ?? 0.0) >= 9.0
+            let highConfidence = ($0.aiConfidence ?? 0.0) > 8.0
             return dateInRange && highConfidence
         }.sorted { ($0.aiConfidence ?? 0.0) > ($1.aiConfidence ?? 0.0) }
     }
