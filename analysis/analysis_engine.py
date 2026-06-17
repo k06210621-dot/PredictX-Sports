@@ -84,14 +84,15 @@ class AnalysisEngine:
         scores = [self.source_registry[s] for s in self.used_sources]
         return round(sum(scores) / len(scores), 2)
 
-    def get_team_recent_form(self, team_id, league, limit=5):
+    def get_team_recent_form(self, team_id, league, limit=10):
         """
         獲取隊伍最近 N 場比賽的戰績與得失分
+        分離主場/客場戰績以利 AI 預測（主場勝率棒球 ~54%、NBA ~60%）
         """
         query = """
             SELECT g.match_date, g.home_team_score, g.away_team_score, g.status,
                    ht.chinese_name as home_name, at.chinese_name as away_name,
-                   CASE 
+                   CASE
                        WHEN g.home_team_id = %s THEN 'home'
                        ELSE 'away'
                    END as side,
@@ -109,12 +110,22 @@ class AnalysisEngine:
         self.cur.execute(query, (team_id, team_id, team_id, limit))
         self.log_source("official_api")
         games = self.cur.fetchall()
-        
+
         results = []
         wins = 0
         total_goals_for = 0.0
         total_goals_against = 0.0
-        
+
+        # 主客場分離統計
+        home_games = 0
+        home_wins = 0
+        home_goals_for = 0.0
+        home_goals_against = 0.0
+        away_games = 0
+        away_wins = 0
+        away_goals_for = 0.0
+        away_goals_against = 0.0
+
         for g in games:
             if g['side'] == 'home':
                 gf = g['home_team_score']
@@ -122,35 +133,69 @@ class AnalysisEngine:
             else:
                 gf = g['away_team_score']
                 ga = g['home_team_score']
-            
+
             total_goals_for += float(gf) if gf else 0
             total_goals_against += float(ga) if ga else 0
-            
+
+            is_win = False
             if gf is not None and ga is not None:
                 if float(gf) > float(ga):
                     result = "W"
                     wins += 1
+                    is_win = True
                 elif float(gf) < float(ga):
                     result = "L"
                 else:
                     result = "D"
             else:
                 result = "?"
-            
+
+            # 主客場分流累積
+            if g['side'] == 'home':
+                home_games += 1
+                home_goals_for += float(gf) if gf else 0
+                home_goals_against += float(ga) if ga else 0
+                if is_win:
+                    home_wins += 1
+            else:
+                away_games += 1
+                away_goals_for += float(gf) if gf else 0
+                away_goals_against += float(ga) if ga else 0
+                if is_win:
+                    away_wins += 1
+
             results.append({
                 "date": str(g['match_date']),
                 "opponent": g['away_name'] if g['side'] == 'home' else g['home_name'],
                 "result": result,
-                "score": f"{gf}-{ga}" if gf is not None and ga is not None else "N/A"
+                "score": f"{gf}-{ga}" if gf is not None and ga is not None else "N/A",
+                "side": g['side']  # 🆕 標註主客場
             })
-        
+
         return {
             "recent_games": results,
             "win_loss": f"{wins}-{len(results)-wins}",
             "win_rate": round(wins / len(results), 2) if results else 0,
             "avg_goals_for": round(total_goals_for / len(results), 1) if results else 0,
             "avg_goals_against": round(total_goals_against / len(results), 1) if results else 0,
-            "goal_diff": round((total_goals_for - total_goals_against) / len(results), 1) if results else 0
+            "goal_diff": round((total_goals_for - total_goals_against) / len(results), 1) if results else 0,
+            # 🆕 主客場分離數據（讓 AI prompt 注入後能更精準預測）
+            "home_record": {
+                "games": home_games,
+                "wins": home_wins,
+                "losses": home_games - home_wins,
+                "win_rate": round(home_wins / home_games, 2) if home_games else 0,
+                "avg_for": round(home_goals_for / home_games, 1) if home_games else 0,
+                "avg_against": round(home_goals_against / home_games, 1) if home_games else 0,
+            },
+            "away_record": {
+                "games": away_games,
+                "wins": away_wins,
+                "losses": away_games - away_wins,
+                "win_rate": round(away_wins / away_games, 2) if away_games else 0,
+                "avg_for": round(away_goals_for / away_games, 1) if away_games else 0,
+                "avg_against": round(away_goals_against / away_games, 1) if away_games else 0,
+            },
         }
 
     def get_historical_matchup(self, home_team_id, away_team_id):
@@ -445,6 +490,13 @@ class AnalysisEngine:
                 return "無近期比賽數據"
             lines = [f"戰績: {form['win_loss']}, 勝率: {form['win_rate']}"]
             lines.append(f"場均得分: {form['avg_goals_for']}, 場均失分: {form['avg_goals_against']}, 淨勝差: {form['goal_diff']}")
+            # 🆕 主客場分離數據（讓 AI 區分主客表現）
+            hr = form.get('home_record', {})
+            ar = form.get('away_record', {})
+            if hr.get('games', 0) > 0:
+                lines.append(f"主場戰績: {hr['wins']}-{hr['losses']}（勝率 {hr['win_rate']*100:.0f}%, 場均 {hr['avg_for']:.1f}/{hr['avg_against']:.1f}）")
+            if ar.get('games', 0) > 0:
+                lines.append(f"客場戰績: {ar['wins']}-{ar['losses']}（勝率 {ar['win_rate']*100:.0f}%, 場均 {ar['avg_for']:.1f}/{ar['avg_against']:.1f}）")
             games_str = ", ".join([f"{g['result']} vs {g['opponent']}({g['score']})" for g in form['recent_games']])
             lines.append(f"最近比賽: {games_str}")
             return "\n    ".join(lines)
@@ -591,6 +643,19 @@ class AnalysisEngine:
   排名: {a_stand.get('rank', '?')}位, 戰績: {a_stand.get('wins', '0')}W-{a_stand.get('losses', '0')}L-{a_stand.get('ties', '0')}D
   團隊打擊: AVG={a_avg}, HR={a_hr}
   團隊投球: {a_pitch.get('wins', 0)}W-{a_pitch.get('losses', 0)}L, Win%={a_pwpct:.3f}"""
+
+            # 🆕 注入 Park Factor（球場修正）
+            pf = npb_data.get('park_factor')
+            home_park = npb_data.get('home_park')
+            if pf is not None:
+                park_interp = "投手戰" if pf < 0.95 else ("打擊戰" if pf > 1.05 else "中性")
+                npb_section += f"""
+
+===== 球場修正係數 =====
+主場球場: {home_park or '未知'}
+Park Factor: {pf:.2f} ({park_interp})
+{'提示：主場球場投手戰，主隊投手有微幅優勢' if pf < 0.95 else ''}
+{'提示：主場球場打擊戰，主隊打者有微幅優勢' if pf > 1.05 else ''}"""
         else:
             npb_section = ""
         

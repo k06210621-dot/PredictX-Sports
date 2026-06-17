@@ -70,6 +70,39 @@ TEAM_URL_CODES = {
     "Hokkaido Nippon-Ham Fighters": "f",
 }
 
+# 🆕 NPB 12 球場 Park Factor（依歷年得分手冊計算）
+# 數值 > 1.0 = 打者友善（容易得分），< 1.0 = 投手友善
+# 巨蛋球場普遍偏低（無風、無日曬），大阪京瓷巨蛋最低（投手戰）
+NPB_PARK_FACTORS = {
+    "Yokohama Stadium": 0.92,          # DeNA 主場（投手丘高、寬闊）
+    "Tokyo Dome": 0.88,                # 巨人/養樂多（巨蛋）
+    "Sapporo Dome": 0.86,              # 日本火腿（巨蛋）
+    "Seibu Dome": 0.90,                # 西武（巨蛋）
+    "Nagoya Dome": 0.92,               # 中日（巨蛋）
+    "Osaka Dome": 0.85,                # 歐力士（巨蛋，太平洋聯盟最低）
+    "Fukuoka Dome": 0.93,              # 軟銀（巨蛋）
+    "Koshien Stadium": 1.15,           # 阪神（寬闊戶外，風勢影響）
+    "Hiroshima Mazda Stadium": 1.05,   # 廣島（戶外，較中性）
+    "Kamaishiden Recovery Stadium": 1.00,  # 樂天（岩手，戶外）
+    "Zozo Marine Stadium": 1.02,       # 羅德（千葉，海風）
+    "Meiji Jingu Stadium": 0.95,       # 養樂多（神宮球場，部分）
+}
+# Park Factor 球場對應表（球隊 → 主場）
+NPB_TEAM_HOME_PARK = {
+    "Yomiuri Giants": "Tokyo Dome",
+    "Hanshin Tigers": "Koshien Stadium",
+    "Chunichi Dragons": "Nagoya Dome",
+    "Yokohama DeNA BayStars": "Yokohama Stadium",
+    "Hiroshima Toyo Carp": "Hiroshima Mazda Stadium",
+    "Tokyo Yakult Swallows": "Meiji Jingu Stadium",  # 部分賽事 Tokyo Dome
+    "Fukuoka SoftBank Hawks": "Fukuoka Dome",
+    "Saitama Seibu Lions": "Seibu Dome",
+    "Chiba Lotte Marines": "Zozo Marine Stadium",
+    "ORIX Buffaloes": "Osaka Dome",
+    "Tohoku Rakuten Golden Eagles": "Kamaishiden Recovery Stadium",
+    "Hokkaido Nippon-Ham Fighters": "Sapporo Dome",
+}
+
 class NPBDataFetcher:
     def __init__(self):
         self.conn = psycopg2.connect(**DB_CONFIG)
@@ -372,17 +405,24 @@ class NPBDataFetcher:
         home_pitch = self.get_team_pitching_stats(home_team_name)
         away_bat = self.get_team_batting_stats(away_team_name)
         away_pitch = self.get_team_pitching_stats(away_team_name)
-        
+
         home_stand = standings.get(home_team_name, {}) if standings else {}
         away_stand = standings.get(away_team_name, {}) if standings else {}
-        
+
+        # 🆕 主場球場修正（球隊 → 主場 → Park Factor）
+        home_park = NPB_TEAM_HOME_PARK.get(home_team_name)
+        park_factor = NPB_PARK_FACTORS.get(home_park, 1.0) if home_park else 1.0
+
         return {
             "home_team_name": home_team_name,
             "away_team_name": away_team_name,
             "standings": {"home": home_stand, "away": away_stand},
             "batting": {"home": home_bat or {}, "away": away_bat or {}},
             "pitching": {"home": home_pitch or {}, "away": away_pitch or {}},
-            "sources": list(set(self.fetched_sources))
+            "sources": list(set(self.fetched_sources)),
+            # 🆕 Park Factor：>1.0 = 主場打者有利、<1.0 = 投手有利
+            "home_park": home_park,
+            "park_factor": park_factor,
         }
 
     def close(self):

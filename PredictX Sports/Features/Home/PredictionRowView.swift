@@ -5,16 +5,26 @@ import Combine
 struct PredictionRowView: View {
     var match: Match
     @EnvironmentObject var favoritesStore: FavoritesStore
-    
-    // 根據不同聯賽自動更換發光主題色 (NBA 溫暖橘、MLB 科技藍、NPB 日職金、CPBL 職棒綠、FIFA 皇家紫)
+
+    // 根據不同聯賽自動更換發光主題色 (NBA 溫暖橘、MLB 科技藍、NPB 日職金、CPBL 職棒綠)
     private var themeColor: Color { LeagueTheme.color(for: match.league) }
-    
+
     // 格式化日期（只顯示日期，因為 API 只提供日期無實際時間）
     private var formattedDate: String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_TW")
         formatter.dateFormat = "MM/dd"
         return formatter.string(from: match.startTime)
+    }
+
+    // 🆕 顯示數值或「—」（避免誤導用戶以為 0.00 是真實資料）
+    private func displayValue(_ value: Double?, format: String = "%.2f", suffix: String = "") -> String {
+        guard let v = value else { return "—" }
+        return String(format: format, v) + suffix
+    }
+    private func displayPercent(_ value: Double?, multiplier: Double = 100) -> String {
+        guard let v = value else { return "—" }
+        return String(format: "%.1f%%", v * multiplier)
     }
     
     var body: some View {
@@ -26,9 +36,9 @@ struct PredictionRowView: View {
                     Text(match.league.rawValue)
                         .font(.caption)
                         .fontWeight(.bold)
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                 } icon: {
-                    Image(systemName: match.league == .nba ? "basketball.fill" : (match.league == .fifa ? "figure.soccer" : "baseball.fill"))
+                    Image(systemName: match.league == .nba ? "basketball.fill" : "baseball.fill")
                         .foregroundColor(themeColor)
                         .font(.caption)
                 }
@@ -78,8 +88,8 @@ struct PredictionRowView: View {
             // 2. 卡片中部：主客球隊對決（VS 分隔）
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(match.homeTeam).font(.headline).bold().foregroundColor(.white)
-                    Text(match.homeTeamCN).font(.caption2).foregroundColor(.white.opacity(0.5))
+                    Text(match.homeTeam).font(.headline).bold().foregroundColor(.primary)
+                    Text(match.homeTeamCN).font(.caption2).foregroundColor(.secondary)
                 }
                 
                 Spacer()
@@ -87,13 +97,13 @@ struct PredictionRowView: View {
                 Text("VS")
                     .font(.title2)
                     .fontWeight(.black)
-                    .foregroundColor(.white.opacity(0.25))
+                    .foregroundColor(Color(.tertiaryLabel))
                 
                 Spacer()
                 
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(match.awayTeam).font(.headline).bold().foregroundColor(.white)
-                    Text(match.awayTeamCN).font(.caption2).foregroundColor(.white.opacity(0.5))
+                    Text(match.awayTeam).font(.headline).bold().foregroundColor(.primary)
+                    Text(match.awayTeamCN).font(.caption2).foregroundColor(.secondary)
                 }
             }
             .padding(.vertical, 2)
@@ -104,15 +114,13 @@ struct PredictionRowView: View {
                     .padding(.vertical, 2)
             }
             
-            // 4. 五大聯賽究極核心解包樞紐
+            // 4. 四大聯賽究極核心解包樞紐
             if match.league == .mlb, let mlb = match.mlbFeatures {
                 expandMLBPanel(mlb)
             } else if match.league == .nba, let nba = match.nbaFeatures {
                 expandNBAPanel(nba)
             } else if match.league == .cpbl, let cpbl = match.cpblFeatures {
                 expandCPBLPanel(cpbl)
-            } else if match.league == .fifa, let fifa = match.fifaFeatures {
-                expandFIFAPanel(fifa)
             } else if match.league == .npb, let npb = match.npbFeatures {
                 expandNPBPanel(npb)
             }
@@ -120,7 +128,7 @@ struct PredictionRowView: View {
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 20)
-                .fill(Color(red: 0.14, green: 0.16, blue: 0.26))
+                .fill(Color.cardBackground)
                 .overlay(
                     RoundedRectangle(cornerRadius: 20)
                         .stroke(
@@ -141,18 +149,34 @@ struct PredictionRowView: View {
     private func expandMLBPanel(_ mlb: MLBSpecificTags) -> some View {
         Divider().background(Color.blue.opacity(0.15))
         VStack(alignment: .leading, spacing: 6) {
-            Text("MLB 關鍵預測因子已匯入").font(.system(size: 10, weight: .bold)).foregroundColor(.blue)
+            Text("MLB 關鍵預測因子").font(.system(size: 10, weight: .bold)).foregroundColor(.blue)
             HStack(spacing: 20) {
                 VStack(alignment: .leading) {
-                    Text("主投 FIP: \(String(format: "%.2f", mlb.homeStarterFIP ?? 0.0))")
-                    Text("主隊戰力 wOBA: \(String(format: "%.3f", mlb.homeTeamwOBA ?? 0.0))")
+                    HStack(spacing: 4) {
+                        Text("主投 FIP:").foregroundColor(.secondary)
+                        Text(displayValue(mlb.homeStarterFIP, format: "%.2f"))
+                            .foregroundColor(mlb.homeStarterFIP == nil ? Color(.tertiaryLabel) : .primary)
+                    }
+                    HStack(spacing: 4) {
+                        Text("主隊 wOBA:").foregroundColor(.secondary)
+                        Text(displayValue(mlb.homeTeamwOBA, format: "%.3f"))
+                            .foregroundColor(mlb.homeTeamwOBA == nil ? Color(.tertiaryLabel) : .primary)
+                    }
                 }
                 VStack(alignment: .leading) {
-                    Text("客投 FIP: \(String(format: "%.2f", mlb.awayStarterFIP ?? 0.0))")
-                    Text("球場環境: \(mlb.windDirection ?? "未知")")
+                    HStack(spacing: 4) {
+                        Text("客投 FIP:").foregroundColor(.secondary)
+                        Text(displayValue(mlb.awayStarterFIP, format: "%.2f"))
+                            .foregroundColor(mlb.awayStarterFIP == nil ? Color(.tertiaryLabel) : .primary)
+                    }
+                    HStack(spacing: 4) {
+                        Text("球場環境:").foregroundColor(.secondary)
+                        Text(mlb.windDirection ?? "—")
+                            .foregroundColor(mlb.windDirection == nil ? Color(.tertiaryLabel) : .primary)
+                    }
                 }
             }
-            .font(.system(size: 11)).foregroundColor(.white.opacity(0.55))
+            .font(.system(size: 11)).foregroundColor(.secondary)
         }
     }
     
@@ -161,18 +185,34 @@ struct PredictionRowView: View {
     private func expandNBAPanel(_ nba: NBASpecificTags) -> some View {
         Divider().background(Color.orange.opacity(0.2))
         VStack(alignment: .leading, spacing: 6) {
-            Text("NBA 四大效率因子已匯入").font(.system(size: 10, weight: .bold)).foregroundColor(.orange)
+            Text("NBA 四大效率因子").font(.system(size: 10, weight: .bold)).foregroundColor(.orange)
             Grid(alignment: .leading, horizontalSpacing: 15, verticalSpacing: 4) {
                 GridRow {
-                    Text("主隊 eFG%: \(String(format: "%.1f%%", (nba.homeEFG ?? 0.0) * 100))")
-                    Text("客隊 eFG%: \(String(format: "%.1f%%", (nba.awayEFG ?? 0.0) * 100))")
+                    HStack(spacing: 4) {
+                        Text("主隊 eFG%:").foregroundColor(.secondary)
+                        Text(displayPercent(nba.homeEFG))
+                            .foregroundColor(nba.homeEFG == nil ? Color(.tertiaryLabel) : .primary)
+                    }
+                    HStack(spacing: 4) {
+                        Text("客隊 eFG%:").foregroundColor(.secondary)
+                        Text(displayPercent(nba.awayEFG))
+                            .foregroundColor(nba.awayEFG == nil ? Color(.tertiaryLabel) : .primary)
+                    }
                 }
                 GridRow {
-                    Text("主隊 TOV%: \(String(format: "%.1f%%", nba.homeTOV ?? 0.0))")
-                    Text("預估比賽 Pace: \(String(format: "%.1f", nba.pace ?? 0.0))")
+                    HStack(spacing: 4) {
+                        Text("主隊 TOV%:").foregroundColor(.secondary)
+                        Text(displayValue(nba.homeTOV, format: "%.1f%%"))
+                            .foregroundColor(nba.homeTOV == nil ? Color(.tertiaryLabel) : .primary)
+                    }
+                    HStack(spacing: 4) {
+                        Text("預估 Pace:").foregroundColor(.secondary)
+                        Text(displayValue(nba.pace, format: "%.1f"))
+                            .foregroundColor(nba.pace == nil ? Color(.tertiaryLabel) : .primary)
+                    }
                 }
             }
-            .font(.system(size: 11)).foregroundColor(.white.opacity(0.55))
+            .font(.system(size: 11)).foregroundColor(.secondary)
         }
     }
 
@@ -181,41 +221,37 @@ struct PredictionRowView: View {
     private func expandCPBLPanel(_ cpbl: CPBLSpecificTags) -> some View {
         Divider().background(Color.green.opacity(0.2))
         VStack(alignment: .leading, spacing: 6) {
-            Label("CPBL 本土戰力與彈性因子已匯入", systemImage: "shield.fill")
+            Label("CPBL 本土戰力與彈性因子", systemImage: "shield.fill")
                 .font(.system(size: 10, weight: .bold))
                 .foregroundColor(.green)
-            
-            Grid(alignment: .leading, horizontalSpacing: 15, verticalSpacing: 4) {
-                GridRow {
-                    Text("本土先發 FIP: \(String(format: "%.2f", cpbl.localPitcherFIP ?? 0.0))")
-                    Text("洋投先發 FIP: \(String(format: "%.2f", cpbl.foreignPitcherFIP ?? 0.0))")
-                }
-                GridRow {
-                    Text("牛棚後援 WHIP: \(String(format: "%.2f", cpbl.bullpenWHIP ?? 0.0))")
-                    Text("預估 HR 產出率: \(String(format: "%.2f", cpbl.homeRunDerbyRate ?? 0.0))")
-                }
-            }
-            .font(.system(size: 11)).foregroundColor(.white.opacity(0.55))
-        }
-    }
 
-    // MARK: - ⚽ FIFA 世界盃數據面板
-    @ViewBuilder
-    private func expandFIFAPanel(_ fifa: FIFASpecificTags) -> some View {
-        Divider().background(Color.purple.opacity(0.2))
-        VStack(alignment: .leading, spacing: 6) {
-            Label("FIFA 預期進球與國家隊戰術指標已匯入", systemImage: "trophy.fill").font(.system(size: 10, weight: .bold)).foregroundColor(.purple)
             Grid(alignment: .leading, horizontalSpacing: 15, verticalSpacing: 4) {
                 GridRow {
-                    Text("主隊預期進球 (xG): \(String(format: "%.2f", fifa.homeExpectedGoals ?? 0.0))")
-                    Text("客隊預期進球 (xG): \(String(format: "%.2f", fifa.awayExpectedGoals ?? 0.0))")
+                    HStack(spacing: 4) {
+                        Text("本土 FIP:").foregroundColor(.secondary)
+                        Text(displayValue(cpbl.localPitcherFIP, format: "%.2f"))
+                            .foregroundColor(cpbl.localPitcherFIP == nil ? Color(.tertiaryLabel) : .primary)
+                    }
+                    HStack(spacing: 4) {
+                        Text("洋投 FIP:").foregroundColor(.secondary)
+                        Text(displayValue(cpbl.foreignPitcherFIP, format: "%.2f"))
+                            .foregroundColor(cpbl.foreignPitcherFIP == nil ? Color(.tertiaryLabel) : .primary)
+                    }
                 }
                 GridRow {
-                    Text("國家隊磨合默契: \(String(format: "%.1f/10", fifa.nationalChemistry ?? 0.0))")
-                    Text("戰術體系適應度: \(String(format: "%.0f%%", (fifa.tacticalSystemAdaptation ?? 0.0) * 100))")
+                    HStack(spacing: 4) {
+                        Text("牛棚 WHIP:").foregroundColor(.secondary)
+                        Text(displayValue(cpbl.bullpenWHIP, format: "%.2f"))
+                            .foregroundColor(cpbl.bullpenWHIP == nil ? Color(.tertiaryLabel) : .primary)
+                    }
+                    HStack(spacing: 4) {
+                        Text("HR 產出率:").foregroundColor(.secondary)
+                        Text(displayValue(cpbl.homeRunDerbyRate, format: "%.2f"))
+                            .foregroundColor(cpbl.homeRunDerbyRate == nil ? Color(.tertiaryLabel) : .primary)
+                    }
                 }
             }
-            .font(.system(size: 11)).foregroundColor(.white.opacity(0.55))
+            .font(.system(size: 11)).foregroundColor(.secondary)
         }
     }
 
@@ -224,26 +260,50 @@ struct PredictionRowView: View {
     private func expandNPBPanel(_ npb: NPBSpecificTags) -> some View {
         Divider().background(Color(red: 0.85, green: 0.65, blue: 0.13).opacity(0.2))
         VStack(alignment: .leading, spacing: 6) {
-            Label("NPB 細膩特徵工程與王牌壓制指標已匯入", systemImage: "star.circle.fill")
+            Label("NPB 王牌壓制與戰術指標", systemImage: "star.circle.fill")
                 .font(.system(size: 10, weight: .bold))
                 .foregroundColor(Color(red: 0.7, green: 0.55, blue: 0.1))
-            
+
             Grid(alignment: .leading, horizontalSpacing: 15, verticalSpacing: 4) {
                 GridRow {
-                    Text("王牌 WHIP: \(String(format: "%.2f", npb.aceStarterWHIP ?? 0.0))")
-                    Text("王牌 ERA: \(String(format: "%.2f", npb.aceStarterERA ?? 0.0))")
+                    HStack(spacing: 4) {
+                        Text("王牌 WHIP:").foregroundColor(.secondary)
+                        Text(displayValue(npb.aceStarterWHIP, format: "%.2f"))
+                            .foregroundColor(npb.aceStarterWHIP == nil ? Color(.tertiaryLabel) : .primary)
+                    }
+                    HStack(spacing: 4) {
+                        Text("王牌 ERA:").foregroundColor(.secondary)
+                        Text(displayValue(npb.aceStarterERA, format: "%.2f"))
+                            .foregroundColor(npb.aceStarterERA == nil ? Color(.tertiaryLabel) : .primary)
+                    }
                 }
                 GridRow {
-                    Text("團隊守備率: \(String(format: "%.3f", npb.teamFieldingPercentage ?? 0.0))")
-                    Text("戰術推進率: \(String(format: "%.1f%%", (npb.sacrificeAndSmallBallRate ?? 0.0) * 100))")
+                    HStack(spacing: 4) {
+                        Text("團隊守備率:").foregroundColor(.secondary)
+                        Text(displayValue(npb.teamFieldingPercentage, format: "%.3f"))
+                            .foregroundColor(npb.teamFieldingPercentage == nil ? Color(.tertiaryLabel) : .primary)
+                    }
+                    HStack(spacing: 4) {
+                        Text("戰術推進率:").foregroundColor(.secondary)
+                        Text(displayPercent(npb.sacrificeAndSmallBallRate))
+                            .foregroundColor(npb.sacrificeAndSmallBallRate == nil ? Color(.tertiaryLabel) : .primary)
+                    }
                 }
                 GridRow {
-                    Text("球場打擊修正: \(String(format: "%.2f", npb.npbParkFactor ?? 0.0))")
-                    Text("遠征疲勞指數: \(String(format: "%.2f", npb.travelFatigueIndex ?? 0.0))")
+                    HStack(spacing: 4) {
+                        Text("球場修正:").foregroundColor(.secondary)
+                        Text(displayValue(npb.npbParkFactor, format: "%.2f"))
+                            .foregroundColor(npb.npbParkFactor == nil ? Color(.tertiaryLabel) : .primary)
+                    }
+                    HStack(spacing: 4) {
+                        Text("遠征疲勞:").foregroundColor(.secondary)
+                        Text(displayValue(npb.travelFatigueIndex, format: "%.2f"))
+                            .foregroundColor(npb.travelFatigueIndex == nil ? Color(.tertiaryLabel) : .primary)
+                    }
                 }
             }
             .font(.system(size: 11))
-            .foregroundColor(.white.opacity(0.55))
+            .foregroundColor(.secondary)
         }
     }
 }
