@@ -339,7 +339,6 @@ def admin_analyze_single_game():
         conn = get_db()
         engine = AnalysisEngine(conn=conn)
         result = engine.analyze_game(game_id)
-        engine.close()
 
         saved = False
         saved_payload = None
@@ -363,7 +362,8 @@ def admin_analyze_single_game():
                 'predicted_score': result.get('predicted_score'),
                 'confidence': result.get('confidence'),
             }
-        conn.close()
+
+        engine.close()  # 關閉 engine（含 conn）— 必須在 DB 操作之後
         return jsonify({
             'status': 'success' if saved else 'no_result',
             'game_id': game_id,
