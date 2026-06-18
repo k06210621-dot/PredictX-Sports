@@ -3,23 +3,32 @@ import SwiftUI
 struct HistoryView: View {
     @EnvironmentObject private var store: HomeStore
     @State private var selectedLeague: LeagueType = .mlb
-    
+    @State private var leagueFilter: LeagueFilter = .specific(.mlb)
+    @State private var searchText: String = ""
+    @State private var dateRange: DateRangeFilter = .last30
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Spacer().frame(height: 8)
-                
-                LeagueBadgeWall(selectedLeague: $selectedLeague)
-                    .padding(.bottom, 4)
-                
-                let matches = store.historicalMatches[selectedLeague] ?? []
-                
-                if matches.isEmpty {
+                Spacer().frame(height: 4)
+
+                HistoryFilterBar(
+                    searchText: $searchText,
+                    selectedLeague: $leagueFilter,
+                    dateRange: $dateRange
+                )
+
+                let allMatches = store.historicalMatches[selectedLeague] ?? []
+                let matches = filtered(allMatches)
+
+                if allMatches.isEmpty {
                     ContentUnavailableView(
                         "載入歷史賽事中...",
                         systemImage: "clock.arrow.circlepath",
                         description: Text("\(selectedLeague.rawValue) 正在擷取資料")
                     )
+                } else if matches.isEmpty {
+                    ContentUnavailableView.search(text: searchText)
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 12) {
@@ -38,8 +47,14 @@ struct HistoryView: View {
                 await store.loadHistoryForLeague(selectedLeague)
             }
             .onChange(of: selectedLeague) { oldValue, newLeague in
+                leagueFilter = .specific(newLeague)
                 Task {
                     await store.loadHistoryForLeague(newLeague)
+                }
+            }
+            .onChange(of: leagueFilter) { _, newValue in
+                if case .specific(let lg) = newValue, lg != selectedLeague {
+                    selectedLeague = lg
                 }
             }
             .refreshable {
@@ -47,29 +62,89 @@ struct HistoryView: View {
             }
         }
     }
+
+    // MARK: - 篩選邏輯
+    private func filtered(_ matches: [Match]) -> [Match] {
+        // 1. 日期範圍
+        var result = matches.sorted { $0.startTime > $1.startTime }
+        if let days = dateRange.days {
+            let cutoff = Date().addingTimeInterval(-Double(days) * 86400)
+            result = result.filter { $0.startTime >= cutoff }
+        }
+        // 2. 搜尋（球隊英文 / 中文）
+        let trimmed = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            let needle = trimmed.lowercased()
+            result = result.filter { m in
+                m.homeTeam.lowercased().contains(needle)
+                    || m.awayTeam.lowercased().contains(needle)
+                    || m.homeTeamCN.lowercased().contains(needle)
+                    || m.awayTeamCN.lowercased().contains(needle)
+            }
+        }
+        // 3. 聯賽
+        if let lg = leagueFilter.unwrap(), lg != selectedLeague {
+            // 載入其他聯盟的歷史，比對即可
+            let otherMatches = store.historicalMatches[lg] ?? []
+            var combined = result + otherMatches
+            // 日期 + 搜尋再過濾一次（其他聯盟）
+            if let days = dateRange.days {
+                let cutoff = Date().addingTimeInterval(-Double(days) * 86400)
+                combined = combined.filter { $0.startTime >= cutoff }
+            }
+            if !trimmed.isEmpty {
+                let needle = trimmed.lowercased()
+                combined = combined.filter { m in
+                    m.homeTeam.lowercased().contains(needle)
+                        || m.awayTeam.lowercased().contains(needle)
+                        || m.homeTeamCN.lowercased().contains(needle)
+                        || m.awayTeamCN.lowercased().contains(needle)
+                }
+            }
+            return combined.sorted { $0.startTime > $1.startTime }
+        }
+        return result
+    }
 }
 
 struct HistoricalMatchCardView: View {
     let match: Match
-    
+
     private var themeColor: Color { LeagueTheme.color(for: match.league) }
-    
+
     private var formattedDate: String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "zh_TW")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        // 使用本地時區顯示日期，確保台灣用戶看到的日期與賽事實際日期一致
+        formatter.timeZone = .current
         formatter.dateFormat = "MM/dd (EEE)"
         return formatter.string(from: match.startTime)
     }
-    
+
     private var leagueLabel: String {
         switch match.league {
         case .nba: return "NBA 籃球"
         case .mlb: return "MLB 棒球"
         case .npb: return "NPB 日職"
         case .cpbl: return "CPBL 中職"
-        case .fifa: return "FIFA 足球"
         }
+    }
+
+    /// 根據賽事狀態與比分資料，產生誠實的狀態描述（不顯示 AI 推演為最終比分）
+    private var statusDescription: String {
+        // 若 status 為 scheduled → 尚未開打
+        if match.status == .scheduled {
+            return "尚未開打"
+        }
+        // status 為 live/postponed/cancelled → 對應狀態
+        switch match.status {
+        case .live: return "進行中"
+        case .postponed: return "延期"
+        case .cancelled: return "取消"
+        default: break
+        }
+        // status 為 completed 但無比分資料 → 資料待補（cron 明日會補抓）
+        return "比分未紀錄"
     }
     
     var body: some View {
@@ -80,7 +155,7 @@ struct HistoricalMatchCardView: View {
                     .foregroundColor(themeColor)
                 Text(formattedDate)
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(.secondary)
                     .fontWeight(.medium)
                 Spacer()
                 Text(leagueLabel)
@@ -98,39 +173,34 @@ struct HistoricalMatchCardView: View {
                     Text(match.homeTeam)
                         .font(.headline)
                         .bold()
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                     Text(match.homeTeamCN)
                         .font(.caption2)
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(.secondary)
                 }
 
                 Spacer()
 
                 VStack(spacing: 4) {
-                    if match.status == .completed, let homeScore = match.homeScore, let awayScore = match.awayScore {
+                    // ✅ 永遠只顯示「真實比分」（homeScore + awayScore 兩者皆有才顯示）
+                    // 不再用 aiTotalScorePredict 作為「最終比分」替代，避免誤導
+                    if let homeScore = match.homeScore, let awayScore = match.awayScore {
                         Text("\(homeScore) - \(awayScore)")
                             .font(.title2)
                             .fontWeight(.heavy)
                             .foregroundColor(themeColor)
                         Text("最終比分")
                             .font(.system(size: 9))
-                            .foregroundColor(.white.opacity(0.4))
-                    } else if let predicted = match.aiTotalScorePredict, !predicted.isEmpty {
-                        Text(predicted)
-                            .font(.title3)
-                            .fontWeight(.bold)
-                            .foregroundColor(themeColor.opacity(0.6))
-                        Text("推演比分")
-                            .font(.system(size: 9))
-                            .foregroundColor(.white.opacity(0.4))
+                            .foregroundColor(Color(.tertiaryLabel))
                     } else {
+                        // 沒有真實比分 → 誠實顯示資料狀態
                         Text("VS")
                             .font(.title3)
                             .fontWeight(.heavy)
                             .foregroundColor(themeColor.opacity(0.4))
-                        Text(match.status == .scheduled ? "尚未開打" : "比分未紀錄")
+                        Text(statusDescription)
                             .font(.system(size: 9))
-                            .foregroundColor(.white.opacity(0.4))
+                            .foregroundColor(Color(.tertiaryLabel))
                     }
                 }
 
@@ -140,10 +210,10 @@ struct HistoricalMatchCardView: View {
                     Text(match.awayTeam)
                         .font(.headline)
                         .bold()
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                     Text(match.awayTeamCN)
                         .font(.caption2)
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(.secondary)
                 }
             }
             
@@ -169,7 +239,7 @@ struct HistoricalMatchCardView: View {
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color(red: 0.14, green: 0.16, blue: 0.26))
+                .fill(Color.cardBackground)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(themeColor.opacity(0.3), lineWidth: 1.5)
