@@ -321,6 +321,61 @@ def run_analysis():
         return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
+@app.route('/api/admin/analyze_single_game', methods=['POST'])
+def admin_analyze_single_game():
+    """一次性：補跑單場 AI 分析（2026-06-18 統一對台鋼）
+    Token: predictx-reanalyze-tsghawks-2026-06-18"""
+    token = request.headers.get('X-Admin-Token', '')
+    if token != 'predictx-reanalyze-tsghawks-2026-06-18':
+        return jsonify({"error": "unauthorized"}), 403
+
+    data = request.get_json(silent=True) or {}
+    game_id = data.get('game_id')
+    if not game_id:
+        return jsonify({"error": "missing game_id"}), 400
+
+    try:
+        from analysis_engine import AnalysisEngine
+        conn = get_db()
+        engine = AnalysisEngine(conn=conn)
+        result = engine.analyze_game(game_id)
+        engine.close()
+
+        saved = False
+        saved_payload = None
+        if result:
+            cur = conn.cursor()
+            cur.execute(
+                """INSERT INTO predictx.game_analysis (game_id, analysis_data, updated_at)
+                   VALUES (%s, %s, CURRENT_TIMESTAMP)
+                   ON CONFLICT (game_id)
+                   DO UPDATE SET
+                       analysis_data = EXCLUDED.analysis_data,
+                       updated_at = CURRENT_TIMESTAMP""",
+                (game_id, json.dumps(result))
+            )
+            conn.commit()
+            cur.close()
+            saved = True
+            saved_payload = {
+                'home_win_probability': result.get('home_win_probability'),
+                'away_win_probability': result.get('away_win_probability'),
+                'predicted_score': result.get('predicted_score'),
+                'confidence': result.get('confidence'),
+            }
+        conn.close()
+        return jsonify({
+            'status': 'success' if saved else 'no_result',
+            'game_id': game_id,
+            'saved': saved,
+            'analysis': saved_payload
+        }), 200
+    except Exception as e:
+        import traceback
+        logger.error(f"admin_analyze_single_game: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e), "type": type(e).__name__}), 500
+
+
 @app.route('/api/insert_games', methods=['POST'])
 def insert_games():
     """接受外部傳入的賽程資料並寫入資料庫"""
