@@ -601,9 +601,9 @@ def admin_fix_predicted_scores():
         preview = []
 
         for row in rows:
-            game_id = row[0]
-            data = row[1] or {}
-            league = row[3] or ''
+            game_id = row['game_id']
+            data = row['analysis_data'] or {}
+            league = row['league'] or ''
 
             hp = data.get('home_win_probability')
             ap = data.get('away_win_probability')
@@ -625,7 +625,7 @@ def admin_fix_predicted_scores():
                 preview.append({
                     "game_id": str(game_id),
                     "league": league,
-                    "match_date": str(row[2]),
+                    "match_date": str(row['match_date']),
                     "old_score": ps,
                     "new_score": new_ps,
                     "home_prob": hp,
