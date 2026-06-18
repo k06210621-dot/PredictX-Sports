@@ -906,6 +906,17 @@ Park Factor: {pf:.2f} ({park_interp})
                 current_dims = dims
                 break
 
+        # 🆕 通用主場優勢提示（CPBL 已有，補 MLB/NBA/NPB）
+        league_upper_check = (league or "").upper()
+        home_advantage_note = ""
+        if "NBA" in league_upper_check:
+            home_advantage_note = "\n- NBA 主場優勢極為顯著：歷史主場勝率約 60%。對實力接近的對戰，主場球隊勝率應明顯 > 0.5。"
+        elif "MLB" in league_upper_check:
+            home_advantage_note = "\n- MLB 主場優勢約 53-54%。在五五波對戰中，主隊有統計上的小幅優勢，請勿系統性傾向客隊。"
+        elif "NPB" in league_upper_check:
+            home_advantage_note = "\n- NPB 主場優勢約 53%。對實力接近的對戰，主隊有小幅優勢。"
+        # CPBL 已在 cpbl_analysis_guide 中有「主場勝率約 55-60%」提示
+
         # CPBL 專屬分析指引 + 球員/戰績數據
         cpbl_analysis_guide = ""
         if league and league.upper() == 'CPBL':
@@ -1010,6 +1021,7 @@ Park Factor: {pf:.2f} ({park_interp})
 {npb_section}
 {weather_section}
 {cpbl_analysis_guide}
+{home_advantage_note}
 {fifa_rankings_section}
 
 請完成以下分析：
@@ -1025,6 +1037,7 @@ Park Factor: {pf:.2f} ({park_interp})
 - 不允許回傳 0.5/0.5 這種五五波，請根據數據做出明確判斷
 - 如果主隊有優勢，home_win_probability 應 > 0.5（例如 0.55-0.75）
 - 如果客隊有優勢，home_win_probability 應 < 0.5（例如 0.25-0.45）
+- 🆕 **請勿系統性傾向客隊**：歷史數據顯示「主隊在主場有統計顯著優勢」（詳見上方主場優勢提示）。當兩隊實力接近、數據不明時，請給主隊略高的勝率（例如 0.52-0.55），而非傾向客隊。
 - 預測比分必須是具體數字，不能是 "N/A" 或空值
 
 請嚴格按照以下 JSON 格式輸出，**只輸出 JSON**，不要有任何其他文字：
@@ -1339,16 +1352,20 @@ Park Factor: {pf:.2f} ({park_interp})
                     home_prob = 0.5
                     away_prob = 0.5
                 
-                # 防止 0.5/0.5 五五波：根據數據微調
+                # 防止 0.5/0.5 五五波：根據主場優勢統計微調
+                # 🆕 主場優勢基準：棒球 ~53-54%、NBA ~60%、CPBL ~55-60%、NPB ~53%
+                # 五五波時應預設主隊略佔優（home 0.52-0.55），而非客隊
                 if abs(home_prob - 0.5) < 0.01 and abs(away_prob - 0.5) < 0.01:
-                    # 參考信心指數和主場優勢，微調至 0.52/0.48
-                    confidence = float(result.get("confidence", 5))
-                    if confidence >= 5:
-                        home_prob = 0.52
-                        away_prob = 0.48
-                    else:
-                        home_prob = 0.48
-                        away_prob = 0.52
+                    # 用 league 判斷主場優勢強度
+                    lg = (features.get('league') or '').upper()
+                    home_advantage_map = {
+                        'NBA': 0.58,   # NBA 主場勝率約 60%
+                        'CPBL': 0.55,  # CPBL 主場勝率約 55-60%
+                        'MLB': 0.54,   # MLB 主場勝率約 53-54%
+                        'NPB': 0.54,   # NPB 主場勝率約 53%
+                    }
+                    home_prob = home_advantage_map.get(lg, 0.53)  # 預設 53% (一般主場優勢)
+                    away_prob = 1.0 - home_prob
                 
                 result["home_win_probability"] = round(home_prob, 4)
                 result["away_win_probability"] = round(away_prob, 4)
