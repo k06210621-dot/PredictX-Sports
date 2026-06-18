@@ -283,36 +283,111 @@ class AnalysisEngine:
             },
         }
 
-    def get_historical_matchup(self, home_team_id, away_team_id):
+    def get_historical_matchup(self, home_team_id, away_team_id, recent_limit=5):
         """
         獲取兩隊對陣歷史 (從已結束的比賽中統計)
+        - 總體 H2H 勝率
+        - 最近 N 場對戰明細（含日期、比分、勝負）
         """
         query = """
-            SELECT 
+            SELECT
                 COUNT(*) as total_played,
                 SUM(CASE WHEN g.home_team_id = %s AND g.home_team_score > g.away_team_score THEN 1 ELSE 0 END) as home_wins,
                 SUM(CASE WHEN g.away_team_id = %s AND g.away_team_score > g.home_team_score THEN 1 ELSE 0 END) as away_wins,
                 AVG(g.home_team_score)::numeric(5,2) as avg_home_score,
                 AVG(g.away_team_score)::numeric(5,2) as avg_away_score
             FROM predictx.games g
-            WHERE ((g.home_team_id = %s AND g.away_team_id = %s) 
+            WHERE ((g.home_team_id = %s AND g.away_team_id = %s)
                 OR (g.home_team_id = %s AND g.away_team_id = %s))
               AND g.status IN ('final', 'FINAL')
               AND g.home_team_score IS NOT NULL
         """
         self.cur.execute(query, (home_team_id, away_team_id, home_team_id, away_team_id, away_team_id, home_team_id))
         row = self.cur.fetchone()
-        
+
+        result = None
         if row and row['total_played'] and row['total_played'] > 0:
-            return {
+            result = {
                 "total_played": row['total_played'],
                 "home_wins": row['home_wins'] or 0,
                 "away_wins": row['away_wins'] or 0,
                 "avg_home_score": float(row['avg_home_score'] or 0) if row['avg_home_score'] else 0,
                 "avg_away_score": float(row['avg_away_score'] or 0) if row['avg_away_score'] else 0,
                 "home_win_rate": round((row['home_wins'] or 0) / row['total_played'], 2),
-                "away_win_rate": round((row['away_wins'] or 0) / row['total_played'], 2)
+                "away_win_rate": round((row['away_wins'] or 0) / row['total_played'], 2),
+                "recent_matchups": []  # 🆕 初始化
             }
+
+        # 🆕 額外查詢最近 N 場對戰明細（即使無總體資料，也嘗試回傳 recent_matchups）
+        recent_query = """
+            SELECT
+                g.match_date,
+                g.home_team_id,
+                g.away_team_id,
+                g.home_team_score,
+                g.away_team_score,
+                th.english_name as home_en,
+                ta.english_name as away_en
+            FROM predictx.games g
+            JOIN predictx.teams th ON g.home_team_id = th.team_id
+            JOIN predictx.teams ta ON g.away_team_id = ta.team_id
+            WHERE ((g.home_team_id = %s AND g.away_team_id = %s)
+                OR (g.home_team_id = %s AND g.away_team_id = %s))
+              AND g.status IN ('final', 'FINAL')
+              AND g.home_team_score IS NOT NULL
+              AND g.away_team_score IS NOT NULL
+            ORDER BY g.match_date DESC
+            LIMIT %s
+        """
+        self.cur.execute(recent_query, (home_team_id, away_team_id, away_team_id, home_team_id, recent_limit))
+        recent_rows = self.cur.fetchall()
+
+        recent_list = []
+        for r in recent_rows:
+            # 判斷本次比賽中，這場主隊（傳入參數）vs 對方是誰
+            # 若當前 home_team_id 是 r['home_team_id']，表示當前主隊在這場是 home
+            this_is_home = (r['home_team_id'] == home_team_id)
+            home_en = r['home_en']
+            away_en = r['away_en']
+            hs = r['home_team_score']
+            a_s = r['away_team_score']
+
+            if hs > a_s:
+                winner = 'home'
+                winner_label = home_en
+            elif a_s > hs:
+                winner = 'away'
+                winner_label = away_en
+            else:
+                winner = 'tie'
+                winner_label = 'tie'
+
+            recent_list.append({
+                'date': str(r['match_date']),
+                'match': f"{home_en} {hs} - {a_s} {away_en}",
+                'winner': winner,
+                'winner_label': winner_label,
+                # 給 prompt 用：本次對戰的 home_team（我們要預測的）當時是 home 還是 away
+                'this_team_side': 'home' if this_is_home else 'away',
+            })
+
+        if result is not None:
+            result['recent_matchups'] = recent_list
+            return result
+
+        # 若無總體資料但有 recent_matchups，回傳簡化結構
+        if recent_list:
+            return {
+                'total_played': 0,
+                'home_wins': 0,
+                'away_wins': 0,
+                'avg_home_score': 0,
+                'avg_away_score': 0,
+                'home_win_rate': 0,
+                'away_win_rate': 0,
+                'recent_matchups': recent_list,
+            }
+
         return None
 
     def get_league_standings(self, team_id):
@@ -592,10 +667,17 @@ class AnalysisEngine:
         def format_matchup(m):
             if not m:
                 return "無對陣歷史數據"
-            return (f"總計交手 {m['total_played']} 次, "
-                    f"主隊勝 {m['home_wins']} 次({m['home_win_rate']*100:.0f}%), "
-                    f"客隊勝 {m['away_wins']} 次({m['away_win_rate']*100:.0f}%), "
-                    f"場均比分 {m['avg_home_score']}-{m['avg_away_score']}")
+            lines = [f"總計交手 {m['total_played']} 次, "
+                     f"主隊勝 {m['home_wins']} 次({m['home_win_rate']*100:.0f}%), "
+                     f"客隊勝 {m['away_wins']} 次({m['away_win_rate']*100:.0f}%), "
+                     f"場均比分 {m['avg_home_score']}-{m['avg_away_score']}"]
+            # 🆕 加入最近 N 場對戰明細（讓 LLM 看出近期對戰趨勢）
+            recent = m.get('recent_matchups', [])
+            if recent:
+                lines.append("\n最近對戰明細：")
+                for r in recent:
+                    lines.append(f"  {r['date']}: {r['match']} (贏家: {r['winner_label']})")
+            return "\n".join(lines)
         
         matchup = format_matchup(features['historical_matchup'])
         
