@@ -26,7 +26,9 @@ class AnalyticsStore: ObservableObject {
         do {
             let realLeagues = try await APIService.shared.fetchOverallStats()
 
-            self.leagueAccuracies = realLeagues.map {
+            self.leagueAccuracies = realLeagues
+                .filter { $0.league != "FIFA" }  // 排除 FIFA（已停用）
+                .map {
                 LeagueAccuracy(
                     league: $0.league,
                     hitRate: $0.hit_rate,
@@ -34,8 +36,12 @@ class AnalyticsStore: ObservableObject {
                 )
             }
 
-            let totalHits = realLeagues.reduce(0) { $0 + (Int($1.hit_rate * Double($1.total_analyzed))) }
-            let totalGames = realLeagues.reduce(0) { $0 + $1.total_analyzed }
+            let totalHits = realLeagues
+                .filter { $0.league != "FIFA" }
+                .reduce(0) { $0 + $1.total_hits }
+            let totalGames = realLeagues
+                .filter { $0.league != "FIFA" }
+                .reduce(0) { $0 + $1.total_analyzed }
             self.overallAccuracy = totalGames > 0 ? Double(totalHits) / Double(totalGames) : 0.0
 
             let defaultLeague = self.leagueAccuracies.first?.league ?? "MLB"
@@ -133,7 +139,10 @@ class AnalyticsStore: ObservableObject {
 
         // 按日期降冪排序，取最近 10 場
         let sorted = settlements.sorted { $0.matchDate > $1.matchDate }
-        self.recentSettlements = Array(sorted.prefix(10))
+        // 🆕 去重：同一場比賽可能因時區在資料庫存成多筆（同 game_id），保留最新一筆
+        var seen = Set<String>()
+        let deduped = sorted.filter { seen.insert($0.id).inserted }
+        self.recentSettlements = Array(deduped.prefix(10))
     }
 
     // 🆕 最近 10 場的命中率（給卡片副標題用）

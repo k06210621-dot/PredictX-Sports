@@ -13,7 +13,7 @@ struct AnalyticsView: View {
                             .foregroundColor(.orange)
                         Text(error)
                             .font(.caption)
-                            .foregroundColor(.white.opacity(0.7))
+                            .foregroundColor(.secondary)
                         Spacer()
                         Button(action: {
                             store.errorMessage = nil
@@ -31,15 +31,19 @@ struct AnalyticsView: View {
                     .background(Color.orange.opacity(0.08))
                     .cornerRadius(10)
                 }
-                
+
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 25) {
-                        OverallAccuracyCard(accuracy: store.overallAccuracy)
-                        RecentFormSection(settlements: store.recentSettlements, hitRate: store.recentFormRate)
-                        LeagueSelectionSection(store: store)
-                        TrendChartSection(selectedLeague: store.selectedLeague, trends: store.winRateTrends)
+                    if store.isLoading && store.leagueAccuracies.isEmpty {
+                        AnalyticsSkeletonView()
+                    } else {
+                        VStack(alignment: .leading, spacing: 25) {
+                            OverallAccuracyCard(accuracy: store.overallAccuracy)
+                            RecentFormSection(settlements: store.recentSettlements, hitRate: store.recentFormRate)
+                            LeagueSelectionSection(store: store)
+                            TrendChartSection(selectedLeague: store.selectedLeague, trends: store.winRateTrends)
+                        }
+                        .padding()
                     }
-                    .padding()
                 }
             }
             .background(SportsDarkBackground())
@@ -63,22 +67,22 @@ struct OverallAccuracyCard: View {
                 Spacer()
                 Text("全體聯賽加權計算")
                     .font(.caption2)
-                    .foregroundColor(.white.opacity(0.45))
+                    .foregroundColor(.secondary)
             }
 
             HStack(alignment: .bottom) {
                 Text(String(format: "%.1f%%", accuracy * 100))
                     .font(.system(size: 42, weight: .black, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
                 Text("平均準確率")
                     .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(.secondary)
                     .padding(.bottom, 6)
             }
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(red: 0.14, green: 0.16, blue: 0.26))
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: Color.blue.opacity(0.15), radius: 8, x: 0, y: 4)
     }
@@ -96,7 +100,7 @@ struct RecentFormSection: View {
                 Label("AI 模型 10 場驗證紀錄", systemImage: "list.number")
                     .font(.headline)
                     .bold()
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
                 Spacer()
                 if !settlements.isEmpty {
                     HStack(spacing: 4) {
@@ -106,7 +110,7 @@ struct RecentFormSection: View {
                             .foregroundColor(hitRate >= 0.5 ? .green : .orange)
                         Text("對")
                             .font(.caption2)
-                            .foregroundColor(.white.opacity(0.4))
+                            .foregroundColor(Color(.tertiaryLabel))
                     }
                 }
             }
@@ -119,22 +123,24 @@ struct RecentFormSection: View {
                         .scaleEffect(0.8)
                     Text("正在從已結算賽事載入戰績...")
                         .font(.caption)
-                        .foregroundColor(.white.opacity(0.45))
+                        .foregroundColor(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, 12)
             } else {
                 // W/L 圓形方塊（從左到右 = 從最新到最舊）
+                // 🆕 用 offset 當 key 避免資料庫重複 game_id 導致 ID 衝突
                 HStack(spacing: 6) {
-                    ForEach(Array(settlements.enumerated()), id: \.element.id) { index, item in
+                    ForEach(Array(settlements.enumerated()), id: \.offset) { index, item in
                         FormIndicator(item: item, index: index)
                     }
                 }
                 .padding(.vertical, 4)
 
                 // 最近 3 場明細
+                // 🆕 同上，用 offset 避免重複 ID 警告
                 VStack(spacing: 8) {
-                    ForEach(settlements.prefix(3)) { item in
+                    ForEach(Array(settlements.prefix(3).enumerated()), id: \.offset) { _, item in
                         FormDetailRow(item: item)
                     }
                 }
@@ -144,15 +150,15 @@ struct RecentFormSection: View {
                 HStack(spacing: 4) {
                     Image(systemName: "info.circle")
                         .font(.system(size: 10))
-                    Text("綠 = AI 模型推論正確・紅 = 推論錯誤・含五大聯盟近 30 天已結算場次")
+                    Text("綠 = AI 模型推論正確・紅 = 推論錯誤・含四大聯盟近 30 天已結算場次")
                         .font(.system(size: 10))
                 }
-                .foregroundColor(.white.opacity(0.35))
+                .foregroundColor(Color(.tertiaryLabel))
                 .padding(.top, 2)
             }
         }
         .padding()
-        .background(Color(red: 0.14, green: 0.16, blue: 0.26))
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 4)
     }
@@ -176,13 +182,13 @@ struct FormIndicator: View {
 
                 Text(item.isHit ? "O" : "X")
                     .font(.system(size: 15, weight: .black, design: .rounded))
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
             }
             .frame(width: 28, height: 28)
 
             Text(shortLeague(item.league))
                 .font(.system(size: 8, weight: .bold))
-                .foregroundColor(.white.opacity(0.5))
+                .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
     }
@@ -193,7 +199,6 @@ struct FormIndicator: View {
         case "NBA":  return "🏀"
         case "NPB":  return "🇯🇵"
         case "CPBL": return "🇹🇼"
-        case "FIFA": return "⚽"
         default:     return ""
         }
     }
@@ -215,11 +220,11 @@ struct FormDetailRow: View {
                 Text("\(item.homeTeam) vs \(item.awayTeam)")
                     .font(.caption)
                     .fontWeight(.medium)
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
                     .lineLimit(1)
                 Text("\(item.league) · \(formattedDate)")
                     .font(.system(size: 10))
-                    .foregroundColor(.white.opacity(0.4))
+                    .foregroundColor(Color(.tertiaryLabel))
             }
 
             Spacer()
@@ -229,18 +234,18 @@ struct FormDetailRow: View {
                 if let h = item.homeScore, let a = item.awayScore {
                     Text("\(h)-\(a)")
                         .font(.system(size: 14, weight: .heavy, design: .rounded))
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                 }
                 if let predict = item.predictedScore, !predict.isEmpty {
                     Text("推 \(predict)")
                         .font(.system(size: 9))
-                        .foregroundColor(.white.opacity(0.4))
+                        .foregroundColor(Color(.tertiaryLabel))
                 }
             }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(Color(red: 0.18, green: 0.20, blue: 0.30))
+        .background(Color.cardBackground)
         .cornerRadius(8)
     }
 
@@ -260,7 +265,7 @@ struct LeagueSelectionSection: View {
             Label("點選聯賽查看模型趨勢分析", systemImage: "list.bullet.indent")
                 .font(.headline)
                 .bold()
-                .foregroundColor(.white)
+                .foregroundColor(.primary)
             
             VStack(spacing: 10) {
                 ForEach(store.leagueAccuracies) { accuracy in
@@ -273,7 +278,7 @@ struct LeagueSelectionSection: View {
             }
         }
         .padding()
-        .background(Color(red: 0.14, green: 0.16, blue: 0.26))
+        .background(Color.cardBackground)
         .cornerRadius(16)
     }
 }
@@ -289,13 +294,13 @@ struct LeagueCard: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(accuracy.league)
                         .font(.headline)
-                        .foregroundColor(.white)
+                        .foregroundColor(.primary)
                     Text("已分析 \(accuracy.totalAnalyzed) 場")
                         .font(.caption)
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(.secondary)
                     Text(accuracy.settlementNote)
                         .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.35))
+                        .foregroundColor(Color(.tertiaryLabel))
                         .padding(.top, 1)
                 }
                 Spacer()
@@ -311,7 +316,7 @@ struct LeagueCard: View {
             .padding()
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(isSelected ? Color.blue.opacity(0.15) : Color(red: 0.18, green: 0.20, blue: 0.30))
+                    .fill(isSelected ? Color.blue.opacity(0.15) : Color.cardBackground)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
@@ -332,11 +337,11 @@ struct TrendChartSection: View {
                 Label("\(selectedLeague) 準確率趨勢 (近 50 場)", systemImage: "chart.line.uptrend.xyaxis")
                     .font(.headline)
                     .bold()
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
                 Spacer()
                 Text("日波動")
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.45))
+                    .foregroundColor(.secondary)
             }
             
             Chart {
@@ -366,7 +371,7 @@ struct TrendChartSection: View {
             }
         }
         .padding()
-        .background(Color(red: 0.14, green: 0.16, blue: 0.26))
+        .background(Color.cardBackground)
         .cornerRadius(16)
     }
 }
