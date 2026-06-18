@@ -136,16 +136,23 @@ class AnalysisEngine:
             if h_score == a_score:
                 h_score = min(h_score + 1, hi)
             else:
-                # 翻轉分數（h_score, a_score → max+1, min-1）
-                h_score, a_score = max(h_score, a_score), min(h_score, a_score)
-                h_score = min(h_score + 1, hi)
+                # 翻轉：max +1 → favorite, min → underdog
+                new_fav = max(h_score, a_score) + 1
+                new_und = min(h_score, a_score)
+                if home_favorite:
+                    h_score, a_score = new_fav, new_und
+                else:
+                    h_score, a_score = new_und, new_fav
         elif (not home_favorite) and a_score <= h_score:
             if h_score == a_score:
                 a_score = min(a_score + 1, hi)
             else:
-                h_score, a_score = max(h_score, a_score), min(h_score, a_score)
-                a_score = min(a_score + 1, hi)
-
+                new_fav = max(h_score, a_score) + 1
+                new_und = min(h_score, a_score)
+                if home_favorite:
+                    h_score, a_score = new_fav, new_und
+                else:
+                    h_score, a_score = new_und, new_fav
         # 確保在範圍內
         h_score = max(lo, min(hi, h_score))
         a_score = max(lo, min(hi, a_score))
