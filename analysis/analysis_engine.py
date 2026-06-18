@@ -1029,8 +1029,15 @@ Park Factor: {pf:.2f} ({park_interp})
 2. 參考聯盟排名評估優劣勢
 3. 為以下維度進行 0-10 評分: {json.dumps(current_dims, ensure_ascii=False)}
 4. 給出勝率與預測比分
-5. **信心指數 (confidence) 必須是 1-10 的整數**。1=非常不確定, 5=五五波, 10=極度確定。不應低於 1。
-{fifa_ou_instruction}
+5. **信心指數 (confidence) 必須是 1-10 的整數**。請依下列標準精確評估：
+   - **1-3**: 數據嚴重不足或兩隊實力極為接近，勝率可能僅 50-55%。請誠實給低分。
+   - **4-5**: 有基本數據但仍有重大不確定因素，預期命中率 55-60%。
+   - **6**: 數據明確顯示一方略佔優（主場優勢、近期狀態等），預期命中率 60-65%。
+   - **7**: 數據顯示一方明顯佔優（投手對位、打線強度等差異顯著），預期命中率 70-75%。
+   - **8**: 數據強烈支持一方（投手實力差距大、戰績懸殊），預期命中率 80-85%。
+   - **9**: 極高把握（如 ace 對弱投、戰績懸殊且近期狀態都好），預期命中率 85-90%。
+   - **10**: 史詩級優勢，幾乎確定（例如最強 ace 對最弱打線），僅限極少數情況使用。
+   - **重要：信心 7 必須真正「明顯佔優」才給**，不要因為「想讓用戶相信」而過度自信。{fifa_ou_instruction}
 
 **重要規則（請嚴格遵守）：**
 - home_win_probability 和 away_win_probability 的總和必須等於 1.0
@@ -1378,6 +1385,31 @@ Park Factor: {pf:.2f} ({park_interp})
                 else:
                     normalized_conf = max(1, min(10, round(raw_conf)))
                 result["confidence"] = normalized_conf
+
+                # 🆕 信心度-勝率一致性檢查
+                # 若信心度顯示「明顯佔優」(>= 7)，但勝率差距 < 10% (prob_diff < 0.10)
+                # 表示信心度過度自信，自動加大勝率差距至符合該信心度的合理範圍
+                prob_diff = abs(home_prob - away_prob)
+                min_prob_diff_map = {
+                    1: 0.00, 2: 0.00, 3: 0.00,
+                    4: 0.04, 5: 0.06,    # 信心 4-5：至少有 4-6% 差距
+                    6: 0.08,             # 信心 6：至少 8% 差距
+                    7: 0.15,             # 信心 7：至少 15% 差距（明顯佔優）
+                    8: 0.20,             # 信心 8：至少 20% 差距
+                    9: 0.25,             # 信心 9：至少 25% 差距
+                    10: 0.30,            # 信心 10：至少 30% 差距
+                }
+                min_diff = min_prob_diff_map.get(normalized_conf, 0.0)
+                if prob_diff + 0.005 < min_diff:  # 🆕 加 0.005 容忍度避免浮點數問題
+                    # 強制加大差距：把 favorite 提升到 (0.5 + min_diff/2 + 0.01)，underdog 對應降低
+                    if home_prob > away_prob:
+                        home_prob = min(0.85, 0.5 + min_diff / 2 + 0.01)
+                        away_prob = 1.0 - home_prob
+                    elif away_prob > home_prob:
+                        away_prob = min(0.85, 0.5 + min_diff / 2 + 0.01)
+                        home_prob = 1.0 - away_prob
+                    result["home_win_probability"] = round(home_prob, 4)
+                    result["away_win_probability"] = round(away_prob, 4)
 
                 # 🆕 校正 predicted_score：確保與勝率一致
                 # 若 home_prob > away_prob → home_score 應 > away_score，反之亦然
