@@ -235,7 +235,7 @@ def api_games():
                     WHEN UPPER(%s) IN ('MLB', 'NBA') THEN g.match_date + 1
                     ELSE g.match_date
                 END AS match_date,
-                COALESCE(gs.status, g.status) AS status,
+                COALESCE(g.status, gs.status) AS status,
                 g.home_team_score,
                 g.away_team_score,
                 COALESCE(th.english_name, th.chinese_name) AS home_team,
