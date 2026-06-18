@@ -349,14 +349,33 @@ def insert_games():
                 skipped += 1
                 continue
 
-            cur.execute("SELECT team_id FROM predictx.teams WHERE english_name = %s", (home_name,))
-            home_row = cur.fetchone()
-            cur.execute("SELECT team_id FROM predictx.teams WHERE english_name = %s", (away_name,))
-            away_row = cur.fetchone()
+            # 🆕 三階段 team 解析：english_name → team_aliases → ILIKE 部分匹配
+            def find_team_id(name):
+                cur.execute("SELECT team_id FROM predictx.teams WHERE english_name = %s", (name,))
+                row = cur.fetchone()
+                if row:
+                    return row['team_id']
+                cur.execute("""
+                    SELECT t.team_id
+                    FROM predictx.team_aliases ta
+                    JOIN predictx.teams t ON ta.team_id = t.team_id
+                    WHERE ta.alias_name = %s
+                """, (name,))
+                row = cur.fetchone()
+                if row:
+                    logger.info(f"[insert_games] team_id resolved via alias: {name} → {row['team_id']}")
+                    return row['team_id']
+                cur.execute("SELECT team_id FROM predictx.teams WHERE english_name ILIKE %s LIMIT 1", (f'%{name}%',))
+                row = cur.fetchone()
+                if row:
+                    logger.info(f"[insert_games] team_id resolved via ILIKE: {name} → {row['team_id']}")
+                    return row['team_id']
+                return None
 
-            if home_row and away_row:
-                home_id = home_row['team_id']
-                away_id = away_row['team_id']
+            home_id = find_team_id(home_name)
+            away_id = find_team_id(away_name)
+
+            if home_id is not None and away_id is not None:
                 cur.execute(
                     "SELECT game_id FROM predictx.games WHERE match_date = %s AND home_team_id = %s AND away_team_id = %s",
                     (match_date, home_id, away_id)
