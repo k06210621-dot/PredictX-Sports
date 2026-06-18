@@ -236,9 +236,123 @@ class MLBDataFetcher:
                           pitcher_stats.get('k_per_9'), pitcher_stats.get('bb_per_9')))
                     self.conn.commit()
 
+            # 🆕 6. 計算雙方 bullpen 疲勞指數
+            bullpen_data = self._get_bullpen_fatigue(home_team_name, away_team_name, match_date)
+            if bullpen_data:
+                result['bullpen_fatigue'] = bullpen_data
+
             return result
         except Exception as e:
             print(f"  ⚠ Pitcher fetch error: {e}")
+            return None
+
+    def _get_bullpen_fatigue(self, home_team_name, away_team_name, match_date):
+        """計算兩隊 bullpen（後援投手群）的近 3 天疲勞指數
+
+        原理：先發投手每 5 天才投一場，後援投手可能連續出賽。
+        加總所有投手（含 SP/RP）近 3 天的投球局數，
+        可以代表「這支球隊的投手群整體疲勞程度」。
+
+        疲勞分級（每隊近 3 天 bullpen 投球局數）：
+        - 0-8 局：低度疲勞（正常）
+        - 9-14 局：中度疲勞
+        - 15-20 局：高度疲勞（後段失分率 +20-30%）
+        - 20+ 局：極度疲勞（明顯不利）
+        """
+        try:
+            from datetime import datetime, timedelta
+            match_dt = datetime.strptime(match_date, '%Y-%m-%d')
+            start_dt = match_dt - timedelta(days=3)
+            start_str = start_dt.strftime('%Y-%m-%d')
+            end_str = (match_dt - timedelta(days=1)).strftime('%Y-%m-%d')
+
+            result = {}
+            for side, team_name in [('home', home_team_name), ('away', away_team_name)]:
+                mlb_id = self.get_mlb_team_id_by_name(team_name)
+                if not mlb_id:
+                    continue
+
+                # 抓球隊最近 3 天所有比賽的投手 stats
+                # 用 schedule API 抓這幾天的比賽，再 hydrate 投手 stats
+                url = f"{MLB_API_BASE}/schedule?sportId=1&teamId={mlb_id}&startDate={start_str}&endDate={end_str}&hydrate=team"
+                resp = self.session.get(url, timeout=10)
+                if resp.status_code != 200:
+                    continue
+
+                data = resp.json()
+                total_pitcher_outs = 0
+                game_count = 0
+                game_details = []
+
+                for date_entry in data.get('dates', []):
+                    for game in date_entry.get('games', []):
+                        game_count += 1
+                        # 抓這場比賽的 team boxscore（投手 IP 數據）
+                        game_pk = game.get('gamePk')
+                        if not game_pk:
+                            continue
+                        box_url = f"{MLB_API_BASE}/game/{game_pk}/boxscore"
+                        box_resp = self.session.get(box_url, timeout=10)
+                        if box_resp.status_code != 200:
+                            continue
+                        box_data = box_resp.json()
+                        # 判斷這支球隊是 home 還是 away
+                        away_team_id = game.get('teams', {}).get('away', {}).get('team', {}).get('id')
+                        is_home = (away_team_id != mlb_id)  # 若不是 away，則為 home
+                        side_key = 'home' if is_home else 'away'
+                        team_box = box_data.get('teams', {}).get(side_key, {})
+                        pitchers = team_box.get('pitchers', [])
+                        # 🆕 排除先發投手（pitchers 列表第一位），只計算後援
+                        # 這是「bullpen usage」的精確定義
+                        relief_pitchers = pitchers[1:] if len(pitchers) > 1 else []
+                        game_relief_outs = 0
+                        for pitcher_id in relief_pitchers:
+                            player_stats = team_box.get('players', {}).get(f'ID{pitcher_id}', {}).get('stats', {}).get('pitching', {})
+                            outs = player_stats.get('outs', 0) or 0
+                            game_relief_outs += outs
+                        total_pitcher_outs += game_relief_outs
+                        if pitchers:
+                            game_details.append({
+                                'date': date_entry.get('date'),
+                                'pitchers_count': len(pitchers),
+                                'relief_pitchers_count': len(relief_pitchers),
+                                'total_outs': sum(
+                                    team_box.get('players', {}).get(f'ID{p}', {}).get('stats', {}).get('pitching', {}).get('outs', 0) or 0
+                                    for p in pitchers
+                                ),
+                                'relief_outs': game_relief_outs,
+                            })
+
+                total_ip = round(total_pitcher_outs / 3, 1)
+
+                # 疲勞分級
+                if total_ip <= 8:
+                    fatigue_level = 'low'
+                    fatigue_label = '低度疲勞（正常）'
+                elif total_ip <= 14:
+                    fatigue_level = 'medium'
+                    fatigue_label = '中度疲勞'
+                elif total_ip <= 20:
+                    fatigue_level = 'high'
+                    fatigue_label = '高度疲勞（後段失分率可能 +20%）'
+                else:
+                    fatigue_level = 'critical'
+                    fatigue_label = '極度疲勞（明顯不利）'
+
+                result[side] = {
+                    'team_name': team_name,
+                    'total_ip_last_3_days': total_ip,
+                    'total_outs': total_pitcher_outs,
+                    'game_count': game_count,
+                    'fatigue_level': fatigue_level,
+                    'fatigue_label': fatigue_label,
+                    'game_details': game_details[-3:],  # 最近 3 場
+                }
+                self.fetched_sources.append("statsapi.mlb.com")
+
+            return result
+        except Exception as e:
+            print(f"  ⚠ _get_bullpen_fatigue error: {e}")
             return None
 
     def _get_pitcher_recent_stats(self, pitcher_id, n=3):

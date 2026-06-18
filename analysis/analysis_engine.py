@@ -773,6 +773,33 @@ class AnalysisEngine:
 - 最近 3 場 ERA 與整季 ERA 的差距（升溫或降溫中）
 - 若最近 3 場被打爆（ERA > 6），即使整季很好，下場也應降低其球隊勝率
 - 若最近 3 場極佳（ERA < 2.0），即使整季普通，也應提升其球隊勝率"""
+
+        # 🆕 Bullpen 疲勞指數
+        bullpen = pitchers.get("bullpen_fatigue", {})
+        if bullpen:
+            def format_bullpen(side, label):
+                data = bullpen.get(side, {})
+                if not data:
+                    return ""
+                lines = [f"\n  {label}（{data.get('team_name', '')}）: 近 3 天投手群總投球 {data['total_ip_last_3_days']} 局, "
+                         f"疲勞等級: {data['fatigue_label']}"]
+                for gd in data.get('game_details', []):
+                    lines.append(f"    {gd['date']}: {gd['pitchers_count']} 位投手, 共 {round(gd['total_outs']/3, 1)} 局")
+                return "\n".join(lines)
+
+            h_bullpen = format_bullpen('home', '主隊牛棚')
+            a_bullpen = format_bullpen('away', '客隊牛棚')
+
+            mlb_advanced_section += f"""
+
+===== Bullpen 疲勞指數（近 3 天）=====
+{h_bullpen}
+{a_bullpen}
+
+💡 牛棚疲勞分析指引：
+- 牛棚疲勞會顯著增加後段比賽失分率：高度疲勞（>15 局）後段失分率可能增加 20-30%
+- 若客隊牛棚疲勞較高，主隊在後段（7-9 局）應有明顯優勢
+- 若主隊牛棚疲勞但客隊正常，主隊勝率應下調（後段守不住）"""
         else:
             mlb_advanced_section = ""
         
