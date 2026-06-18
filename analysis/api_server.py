@@ -546,6 +546,7 @@ def admin_delete_game(game_id):
             conn.close()
             return jsonify({"error": "Game not found"}), 404
 
+        logger.info(f"admin_delete_game: found game_id={game_id}")
         # 刪除關聯資料（連鎖清理）
         cur.execute("DELETE FROM predictx.game_analysis WHERE game_id = %s::uuid", (game_id,))
         deleted_analysis = cur.rowcount
@@ -556,7 +557,7 @@ def admin_delete_game(game_id):
         conn.commit()
         cur.close()
         conn.close()
-        logger.info(f"admin_delete_game: game_id={game_id} ({row[1]} {row[2]} vs {row[3]}), games={deleted_game}, status={deleted_status}, analysis={deleted_analysis}")
+        logger.info(f"admin_delete_game: game_id={game_id}, games={deleted_game}, status={deleted_status}, analysis={deleted_analysis}")
         return jsonify({
             "status": "success",
             "deleted": {
@@ -565,9 +566,9 @@ def admin_delete_game(game_id):
                 "game_analysis": deleted_analysis,
             },
             "game_info": {
-                "match_date": str(row[1]),
-                "home_team": row[2],
-                "away_team": row[3],
+                "match_date": str(row['match_date']),
+                "home_team": row['home_en'],
+                "away_team": row['away_en'],
             }
         }), 200
     except Exception as e:
