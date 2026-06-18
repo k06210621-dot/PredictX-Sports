@@ -84,6 +84,84 @@ class AnalysisEngine:
         scores = [self.source_registry[s] for s in self.used_sources]
         return round(sum(scores) / len(scores), 2)
 
+    def _reconcile_predicted_score(self, predicted_score, home_prob, away_prob, league=""):
+        """
+        校正 predicted_score，確保與勝率一致。
+
+        規則：
+        - home_prob > away_prob → home 分數必須 > away 分數
+        - away_prob > home_prob → away 分數必須 > home 分數
+        - 勝率差距大 → 分數差距也應明顯（2-3 分以上）
+
+        棒球/籃球典型比分範圍：1-12 分
+        - 棒球：低分（1-9），強弱差距 1-3 分
+        - 籃球：高分（80-130），強弱差距 5-15 分
+        """
+        import re
+
+        # 不同聯盟的合理分數範圍
+        score_ranges = {
+            "MLB": (2, 9),    # 棒球單隊常見 2-9 分
+            "NBA": (95, 135), # 籃球單隊常見 95-135 分
+            "NPB": (2, 9),
+            "CPBL": (2, 9),
+        }
+        lo, hi = score_ranges.get((league or "").upper(), (2, 9))
+
+        # 解析 LLM 給的 predicted_score（如 "5-3"）
+        original_score = None
+        if predicted_score:
+            m = re.search(r'(\d+)\s*[-－–]\s*(\d+)', str(predicted_score))
+            if m:
+                original_score = (int(m.group(1)), int(m.group(2)))
+
+        # 決定誰是 favorite（勝率高者）
+        prob_diff = abs(home_prob - away_prob)
+        if prob_diff < 0.05:
+            # 差距 < 5% 視為五五波，不校正（保留 LLM 原始預測）
+            return predicted_score or f"{lo}-{lo}"
+
+        home_favorite = home_prob > away_prob
+
+        # 解析原比分為 (home, away)
+        if original_score is None:
+            # LLM 沒給有效比分，從範圍中位數開始
+            mid = (lo + hi) // 2
+            original_score = (mid, mid)
+        h_score, a_score = original_score
+
+        # 修正方向：favorite 必須贏
+        if home_favorite and h_score <= a_score:
+            # home 應該贏但沒贏 → 調高 home（如果太低則加 1），或調低 away
+            if h_score == a_score:
+                h_score = min(h_score + 1, hi)
+            else:
+                # 翻轉分數（h_score, a_score → max+1, min-1）
+                h_score, a_score = max(h_score, a_score), min(h_score, a_score)
+                h_score = min(h_score + 1, hi)
+        elif (not home_favorite) and a_score <= h_score:
+            if h_score == a_score:
+                a_score = min(a_score + 1, hi)
+            else:
+                h_score, a_score = max(h_score, a_score), min(h_score, a_score)
+                a_score = min(a_score + 1, hi)
+
+        # 確保在範圍內
+        h_score = max(lo, min(hi, h_score))
+        a_score = max(lo, min(hi, a_score))
+
+        # 差距加強（如果原本差距太小）
+        favorite_score = h_score if home_favorite else a_score
+        underdog_score = a_score if home_favorite else h_score
+        if favorite_score - underdog_score < 1 and prob_diff > 0.1:
+            underdog_score = max(lo, favorite_score - 2)
+            if home_favorite:
+                h_score, a_score = favorite_score, underdog_score
+            else:
+                h_score, a_score = underdog_score, favorite_score
+
+        return f"{h_score}-{a_score}"
+
     def get_team_recent_form(self, team_id, league, limit=10):
         """
         獲取隊伍最近 N 場比賽的戰績與得失分
@@ -1161,7 +1239,7 @@ Park Factor: {pf:.2f} ({park_interp})
                 
                 result["home_win_probability"] = round(home_prob, 4)
                 result["away_win_probability"] = round(away_prob, 4)
-                
+
                 # 信心指數標準化: 若 Ollama 回傳 0~1 分數則轉換為 1~10 評分
                 raw_conf = float(result.get("confidence", 0.0))
                 if raw_conf <= 1.0:
@@ -1170,7 +1248,17 @@ Park Factor: {pf:.2f} ({park_interp})
                 else:
                     normalized_conf = max(1, min(10, round(raw_conf)))
                 result["confidence"] = normalized_conf
-                
+
+                # 🆕 校正 predicted_score：確保與勝率一致
+                # 若 home_prob > away_prob → home_score 應 > away_score，反之亦然
+                # 避免「勝率 65% 但預測比分輸球」這類矛盾
+                result["predicted_score"] = self._reconcile_predicted_score(
+                    predicted_score=result.get("predicted_score"),
+                    home_prob=home_prob,
+                    away_prob=away_prob,
+                    league=features.get('league', '')
+                )
+
                 return result
         
         # Fallback: 若 AI 輸出異常，使用數據計算的替代方案
