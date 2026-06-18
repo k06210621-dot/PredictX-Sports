@@ -321,41 +321,6 @@ def run_analysis():
         return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
-@app.route('/api/admin/update_analysis', methods=['POST'])
-def admin_update_analysis():
-    """一次性：手動寫入指定 game_id 的 AI 分析資料（2026-06-18 統一對台鋼重新分析）"""
-    token = request.headers.get('X-Admin-Token', '')
-    if token != 'predictx-update-tsghawks-2026-06-18':
-        return jsonify({"error": "unauthorized"}), 403
-
-    data = request.get_json(silent=True) or {}
-    game_id = data.get('game_id')
-    analysis_data = data.get('analysis_data')
-    if not game_id or not analysis_data:
-        return jsonify({"error": "missing game_id or analysis_data"}), 400
-
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute(
-            """INSERT INTO predictx.game_analysis (game_id, analysis_data, updated_at)
-               VALUES (%s, %s, CURRENT_TIMESTAMP)
-               ON CONFLICT (game_id)
-               DO UPDATE SET
-                   analysis_data = EXCLUDED.analysis_data,
-                   updated_at = CURRENT_TIMESTAMP""",
-            (game_id, json.dumps(analysis_data))
-        )
-        conn.commit()
-        cur.close()
-        conn.close()
-        return jsonify({"status": "success", "game_id": game_id}), 200
-    except Exception as e:
-        import traceback
-        logger.error(f"admin_update_analysis: {e}\n{traceback.format_exc()}")
-        return jsonify({"error": str(e), "type": type(e).__name__}), 500
-
-
 @app.route('/api/insert_games', methods=['POST'])
 def insert_games():
     """接受外部傳入的賽程資料並寫入資料庫"""
