@@ -12,11 +12,11 @@ struct LaunchView: View {
 
     var body: some View {
         ZStack {
-            // 頂級開機必備：純黑背景
-            Color.black
+            // 使用品牌深色背景替代純黑
+            SportsDarkBackground()
                 .ignoresSafeArea()
             
-            VStack(spacing: 25) {
+            VStack(spacing: 30) {
                 Spacer()
                 
                 // MARK: - LOGO 科技感浮現區

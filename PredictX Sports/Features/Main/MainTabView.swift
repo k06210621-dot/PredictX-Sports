@@ -16,7 +16,7 @@ struct MainTabView: View {
             // ② 分析結果
             AnalyticsView()
                 .tabItem {
-                    Label("分析結果", systemImage: "chart.bar.doc.horizontal.fill")
+                    Label("AI 模型驗證", systemImage: "chart.bar.doc.horizontal.fill")
                 }
                 .tag(1)
             

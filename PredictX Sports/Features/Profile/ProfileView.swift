@@ -6,6 +6,7 @@ import Combine
 struct ProfileView: View {
     @EnvironmentObject var favoritesStore: FavoritesStore
     @EnvironmentObject var subscriptionManager: SubscriptionManager
+    @EnvironmentObject var themeManager: ThemeManager
     
     var body: some View {
         NavigationStack {
@@ -16,10 +17,7 @@ struct ProfileView: View {
                     MembershipCardView(subscriptionManager: subscriptionManager)
                     
                     // MARK: ② AI 額度儲值中心
-                    NavigationLink {
-                        Text("AI 額度儲值中心 - 即將推出")
-                            .navigationTitle("AI 額度儲值中心")
-                    } label: {
+                    Button(action: { subscriptionManager.showDiamondsInfo = true }) {
                         ProfileMenuRow(
                             icon: "bag.fill",
                             iconColor: .orange,
@@ -27,6 +25,7 @@ struct ProfileView: View {
                             subtitle: "儲值取得更多 AI 分析額度"
                         )
                     }
+                    .buttonStyle(.plain)
                     
                     // MARK: ③ 訂閱中心
                     NavigationLink {
@@ -41,10 +40,7 @@ struct ProfileView: View {
                     }
                     
                     // MARK: ④ AI 使用額度
-                    NavigationLink {
-                        Text("AI 使用額度 - 即將推出")
-                            .navigationTitle("AI 使用額度")
-                    } label: {
+                    Button(action: { subscriptionManager.showDiamondsInfo = true }) {
                         ProfileMenuRow(
                             icon: "cpu.fill",
                             iconColor: .blue,
@@ -54,6 +50,7 @@ struct ProfileView: View {
                                 : "無限觀看"
                         )
                     }
+                    .buttonStyle(.plain)
                     
                     // MARK: ⑤ 升級方案
                     if subscriptionManager.tier == .free {
@@ -91,7 +88,7 @@ struct ProfileView: View {
                         )
                     }
                     
-                    // MARK: ⑥ 客服中心
+                    // MARK: ⑦ 客服中心
                     NavigationLink {
                         SupportCenterView()
                     } label: {
@@ -103,7 +100,20 @@ struct ProfileView: View {
                         )
                     }
                     
-                    // MARK: ⑦ 法律聲明
+                    // MARK: ⑧ 恢復購買
+                    Button(action: {
+                        Task { await subscriptionManager.restorePurchases() }
+                    }) {
+                        ProfileMenuRow(
+                            icon: "arrow.uturn.backward.circle.fill",
+                            iconColor: .blue,
+                            title: "恢復購買",
+                            subtitle: "恢復您之前的訂閱或購買項目"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    
+                    // MARK: ⑨ 法律聲明
                     NavigationLink {
                         LegalDisclaimerView()
                     } label: {
@@ -115,7 +125,7 @@ struct ProfileView: View {
                         )
                     }
                     
-                    // MARK: ⑧ APP 版本資訊
+                    // MARK: ⑩ APP 版本資訊
                     ProfileMenuRow(
                         icon: "info.circle.fill",
                         iconColor: .gray,
@@ -128,8 +138,25 @@ struct ProfileView: View {
             }
             .background(SportsDarkBackground())
             .navigationTitle("個人資訊")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        themeManager.isDarkMode.toggle()
+                    }) {
+                        Image(systemName: themeManager.isDarkMode ? "sun.max.fill" : "moon.fill")
+                            .font(.body)
+                            .foregroundColor(themeManager.isDarkMode ? .yellow : .blue)
+                    }
+                }
+            }
             .sheet(isPresented: $subscriptionManager.showSubscribeView) {
                 SubscribeView()
+            }
+            .alert("AI 分析點數說明", isPresented: $subscriptionManager.showDiamondsInfo) {
+                Button("了解", role: .cancel) { }
+                Button("升級方案") { subscriptionManager.showSubscribeView = true }
+            } message: {
+                Text("分析點數可用於解鎖 Basic 方案的 AI 詳細分析。升級 Standard 或 Premium 方案即可享有無限分析額度。")
             }
         }
     }
@@ -277,22 +304,22 @@ struct ProfileMenuRow: View {
                 Text(title)
                     .font(.body)
                     .fontWeight(.semibold)
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
                 Text(subtitle)
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.45))
+                    .foregroundColor(.secondary)
             }
             
             Spacer()
             
             Image(systemName: "chevron.right")
                 .font(.caption)
-                .foregroundColor(.white.opacity(0.3))
+                .foregroundColor(.secondary)
         }
         .padding()
-        .background(Color(red: 0.14, green: 0.16, blue: 0.26))
+        .background(Color(.secondarySystemBackground))
         .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.2), radius: 6, x: 0, y: 3)
+        .shadow(color: Color.black.opacity(0.1), radius: 6, x: 0, y: 3)
     }
 }
 

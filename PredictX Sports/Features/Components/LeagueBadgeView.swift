@@ -3,12 +3,12 @@ import SwiftUI
 // MARK: - 競技聯盟徽章牆
 struct LeagueBadgeWall: View {
     @Binding var selectedLeague: LeagueType
-    
+
     // 上排：棒球聯賽
     private let topRow: [LeagueType] = [.mlb, .npb, .cpbl]
     // 下排：其他聯賽
-    private let bottomRow: [LeagueType] = [.nba, .fifa]
-    
+    private let bottomRow: [LeagueType] = [.nba]
+
     var body: some View {
         VStack(spacing: 8) {
             // 上排：MLB / NPB / CPBL
@@ -25,8 +25,8 @@ struct LeagueBadgeWall: View {
                     }
                 }
             }
-            
-            // 下排：NBA / FIFA
+
+            // 下排：NBA
             HStack(spacing: 20) {
                 ForEach(bottomRow) { league in
                     LeagueBadgeView(
@@ -51,9 +51,9 @@ struct LeagueBadgeWall: View {
 struct LeagueBadgeView: View {
     let league: LeagueType
     let isSelected: Bool
-    
+
     @State private var pulseAnim: CGFloat = 0.5
-    
+
     var body: some View {
         VStack(spacing: 6) {
             // 徽章本體
@@ -65,7 +65,7 @@ struct LeagueBadgeView: View {
                         .frame(width: 80, height: 80)
                         .blur(radius: 10)
                 }
-                
+
                 // 徽章圓底
                 Circle()
                     .fill(
@@ -85,12 +85,12 @@ struct LeagueBadgeView: View {
                         color: isSelected ? leagueColor.opacity(0.4) : .clear,
                         radius: 8, x: 0, y: 4
                     )
-                
+
                 // 徽章圖示
                 badgeIcon
                     .font(.system(size: 30, weight: .bold))
                     .foregroundColor(isSelected ? .white : leagueColor)
-                
+
                 // 選中時的外圈光暈動畫
                 if isSelected && league.hasPulse {
                     Circle()
@@ -99,12 +99,12 @@ struct LeagueBadgeView: View {
                         .scaleEffect(1 + 0.08 * pulseAnim)
                 }
             }
-            
+
             // 聯賽名稱（加大字體）
             Text(league.rawValue)
                 .font(.system(size: 16, weight: .bold))
                 .foregroundColor(isSelected ? leagueColor : .secondary)
-            
+
             // 中文名稱（加大字體）
             Text(league.shortLabel)
                 .font(.system(size: 13, weight: .medium))
@@ -119,12 +119,10 @@ struct LeagueBadgeView: View {
             }
         }
     }
-    
+
     @ViewBuilder
     private var badgeIcon: some View {
         switch league {
-        case .fifa:
-            Image(systemName: "trophy.fill")
         case .mlb:
             Image(systemName: "baseball.fill")
         case .npb:
@@ -135,14 +133,13 @@ struct LeagueBadgeView: View {
             Image(systemName: "basketball.fill")
         }
     }
-    
+
     private var leagueColor: Color {
         switch league {
         case .mlb:  return Color(red: 0.15, green: 0.35, blue: 0.75)
         case .npb:  return Color(red: 0.8, green: 0.55, blue: 0.08)
         case .cpbl: return Color(red: 0.85, green: 0.15, blue: 0.08)
         case .nba:  return Color(red: 0.85, green: 0.4, blue: 0.05)
-        case .fifa: return Color(red: 0.8, green: 0.65, blue: 0.1)
         }
     }
 }
@@ -150,7 +147,7 @@ struct LeagueBadgeView: View {
 extension LeagueType {
     var hasPulse: Bool {
         switch self {
-        case .fifa, .cpbl, .nba: return true
+        case .cpbl, .nba: return true
         case .mlb, .npb: return false
         }
     }

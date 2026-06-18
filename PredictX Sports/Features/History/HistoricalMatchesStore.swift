@@ -32,7 +32,7 @@ class HistoricalMatchesStore: ObservableObject {
                     }
                     self.historicalMatches[league] = history.map {
                         Match(from: $0, leagueType: league)
-                    }
+                    }.sorted { $0.startTime > $1.startTime }
                 }
             } catch {
                 print("❌ [History] Failed to load \(league.rawValue): \(error)")

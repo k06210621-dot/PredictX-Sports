@@ -343,7 +343,6 @@ private var sections: [DisclaimerSection] {
                 ParagraphItem(bullet: "MLB（美國職業棒球大聯盟）", icon: "baseball.fill", color: .blue),
                 ParagraphItem(bullet: "NPB（日本職業棒球組織）", icon: "flag.fill", color: .yellow),
                 ParagraphItem(bullet: "CPBL（中華職業棒球聯盟）", icon: "flag.fill", color: .green),
-                ParagraphItem(bullet: "FIFA（國際足球總會）", icon: "soccerball.inverse", color: .purple),
                 ParagraphItem(text: "上述聯盟之名稱、商標、標誌、球隊名稱、隊徽、球員姓名及相關智慧財產權，均屬各權利人所有。本平台使用該等資訊僅基於數據分析與資訊呈現目的，不代表與各聯盟有任何合作或隸屬關係。")
             ]
         ),
@@ -433,7 +432,12 @@ private var sections: [DisclaimerSection] {
                         ParagraphItem(bullet: "分析結果暫存於本地資料庫，僅用於服務效能提升", icon: "cylinder.fill", color: .blue),
                         ParagraphItem(text: "第三方服務：本平台使用 Apple StoreKit 處理訂閱交易。Apple 的隱私權政策適用於所有透過 App Store 進行的交易。"),
                         ParagraphItem(text: "資料刪除：您可以隨時透過「設定」>「清除本地資料」刪除所有本機儲存的資料。如欲要求刪除伺服器記錄，請聯繫客服。"),
-                        ParagraphItem(text: "本隱私權政策可能不時更新。重大變更時，我們將透過 App 更新通知您。")
+                        ParagraphItem(text: "本隱私權政策可能不時更新。重大變更時，我們將透過 App 更新通知您。"),
+                        ParagraphItem(button: "查看完整隱私權政策（外部連結）", action: {
+                            if let url = URL(string: "https://predictx-sports.notion.site/Privacy-Policy") {
+                                UIApplication.shared.open(url)
+                            }
+                        })
                     ]
                 ),
         

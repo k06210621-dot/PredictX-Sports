@@ -8,7 +8,7 @@ struct SkeletonCardView: View {
     
     var body: some View {
         RoundedRectangle(cornerRadius: 16)
-            .fill(Color(red: 0.18, green: 0.20, blue: 0.30))
+            .fill(Color(.systemGray4))
             .frame(width: width, height: height)
             .shimmer()
     }
@@ -48,7 +48,7 @@ struct PredictionRowSkeleton: View {
                 .frame(maxWidth: .infinity)
         }
         .padding()
-        .background(Color(red: 0.14, green: 0.16, blue: 0.26))
+        .background(Color.cardBackground)
         .cornerRadius(20)
         .overlay(
             RoundedRectangle(cornerRadius: 20)
@@ -72,7 +72,7 @@ struct FocusMatchSkeleton: View {
         }
         .padding()
         .frame(width: 240)
-        .background(Color(red: 0.14, green: 0.16, blue: 0.26))
+        .background(Color.cardBackground)
         .cornerRadius(16)
         .overlay(
             RoundedRectangle(cornerRadius: 16)
@@ -87,7 +87,7 @@ struct LeagueFilterSkeleton: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
-                ForEach(0..<5) { _ in
+                ForEach(0..<4) { _ in
                     SkeletonCardView(width: 80, height: 40)
                 }
             }
@@ -165,7 +165,7 @@ struct AnalysisSkeletonView: View {
                     }
                 }
                 .padding()
-                .background(Color(red: 0.14, green: 0.16, blue: 0.26))
+                .background(Color.cardBackground)
                 .cornerRadius(16)
                 
                 VStack(alignment: .leading, spacing: 12) {
@@ -173,7 +173,7 @@ struct AnalysisSkeletonView: View {
                     SkeletonCardView(width: nil, height: 200)
                 }
                 .padding()
-                .background(Color(red: 0.14, green: 0.16, blue: 0.26))
+                .background(Color.cardBackground)
                 .cornerRadius(16)
                 
                 VStack(alignment: .leading, spacing: 12) {
@@ -185,7 +185,7 @@ struct AnalysisSkeletonView: View {
                     SkeletonCardView(width: nil, height: 16)
                 }
                 .padding()
-                .background(Color(red: 0.14, green: 0.16, blue: 0.26))
+                .background(Color.cardBackground)
                 .cornerRadius(16)
             }
             .padding()
@@ -242,6 +242,73 @@ extension View {
         HomeSkeletonView()
     }
     .background(Color(red: 0.06, green: 0.08, blue: 0.18))
+}
+
+// MARK: - Analytics 骨架
+
+struct AnalyticsSkeletonView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 25) {
+            // 綜合準確率卡片
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    SkeletonCardView(width: 160, height: 14)
+                    Spacer()
+                    SkeletonCardView(width: 80, height: 12)
+                }
+                HStack(alignment: .bottom, spacing: 8) {
+                    SkeletonCardView(width: 120, height: 44)
+                    Spacer()
+                    SkeletonCardView(width: 80, height: 14)
+                }
+            }
+            .padding()
+            .background(Color.cardBackground)
+            .cornerRadius(16)
+
+            // 10場戰績卡片
+            VStack(alignment: .leading, spacing: 12) {
+                SkeletonCardView(width: 180, height: 16)
+                HStack(spacing: 6) {
+                    ForEach(0..<10) { _ in
+                        SkeletonCardView(width: 28, height: 28)
+                    }
+                }
+                .padding(.vertical, 4)
+                ForEach(0..<3) { _ in
+                    SkeletonCardView(width: nil, height: 44)
+                }
+            }
+            .padding()
+            .background(Color.cardBackground)
+            .cornerRadius(16)
+
+            // 聯賽選擇
+            VStack(alignment: .leading, spacing: 12) {
+                SkeletonCardView(width: 200, height: 16)
+                ForEach(0..<4) { _ in
+                    SkeletonCardView(width: nil, height: 72)
+                }
+            }
+            .padding()
+            .background(Color.cardBackground)
+            .cornerRadius(16)
+
+            // 趨勢圖
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    SkeletonCardView(width: 200, height: 16)
+                    Spacer()
+                    SkeletonCardView(width: 60, height: 12)
+                }
+                SkeletonCardView(width: nil, height: 220)
+            }
+            .padding()
+            .background(Color.cardBackground)
+            .cornerRadius(16)
+        }
+        .padding()
+    }
 }
 
 #Preview("賽事卡片骨架") {

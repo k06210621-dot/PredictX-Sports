@@ -18,6 +18,7 @@ class SubscriptionManager: ObservableObject {
     @Published var unlockedAnalysisIds: Set<String> = []
     @Published var isProcessing = false
     @Published var showSubscribeView = false
+    @Published var showDiamondsInfo = false
     @Published var lastPurchaseError: String?
     @Published var lastPurchaseSucceeded: Bool = false
 

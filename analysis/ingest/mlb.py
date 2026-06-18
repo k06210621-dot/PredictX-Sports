@@ -52,11 +52,18 @@ class MLBIngester(BaseIngester):
                     status = "LIVE"
                 else:
                     status = "SCHEDULED"
+
+                # 抓比分（MLB API 在 teams.home.score / teams.away.score）
+                home_score = teams.get("home", {}).get("score")
+                away_score = teams.get("away", {}).get("score")
+
                 games.append({
                     "season": datetime.now().year,
                     "match_date": target_date,
                     "home_team": home,
                     "away_team": away,
                     "status": status,
+                    "home_team_score": home_score,
+                    "away_team_score": away_score,
                 })
         return games

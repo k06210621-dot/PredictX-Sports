@@ -24,7 +24,6 @@ struct Match: Codable, Identifiable, Hashable {
     var nbaFeatures: NBASpecificTags?
     var mlbFeatures: MLBSpecificTags?
     var cpblFeatures: CPBLSpecificTags?
-    var fifaFeatures: FIFASpecificTags?
     var npbFeatures: NPBSpecificTags?
     
     init(from model: MatchModel, leagueType: LeagueType = .nba) {
@@ -37,12 +36,8 @@ struct Match: Codable, Identifiable, Hashable {
         self.homeScore = model.homeTeamScore.map { Int($0) }
         self.awayScore = model.awayTeamScore.map { Int($0) }
         
-        // 💡 極限容錯：如果解析失敗，給予 1970-01-01，確保資料會出現在歷史賽事而非消失
-        var parsed = parseDate(model.matchDate) ?? Date(timeIntervalSince1970: 0)
-        // 🕐 NBA/MLB 日期來自美國 API（美東時間），轉換為台北時間（+1 天）
-        if leagueType == .nba || leagueType == .mlb {
-            parsed = parsed.addingTimeInterval(86400) // 加 24 小時
-        }
+        // 💡 移除舊版 NBA/MLB +24h 的過時調整，現在 parseDate 已統一以 UTC 中午為基準
+        let parsed = parseDate(model.matchDate) ?? Date(timeIntervalSince1970: 0)
         self.startTime = parsed
         
         self.location = "Unknown"
@@ -59,9 +54,33 @@ struct Match: Codable, Identifiable, Hashable {
         // AI 預測資料直接從賽事列表 API 帶入
         self.aiConfidence = model.aiConfidence
         self.aiWinRateHome = model.aiHomeProb
-        self.aiTotalScorePredict = model.aiPredictedScore
+        self.aiTotalScorePredict = Match.sanitizePredictedScore(model.aiPredictedScore)
         self.aiIsHit = model.aiIsHit
         self.aiActualScore = model.aiActualScore
+    }
+
+    /// 清洗 AI 預測比分，僅保留「整數-整數」格式（例如 "5-4"）。
+    /// 不合規的污染字串（中英隊名、空格格式）一律回傳 nil，避免誤顯示。
+    /// 注意：純數字-數字格式中允許全形「－」（U+FF0D）轉為半形「-」。
+    static func sanitizePredictedScore(_ raw: String?) -> String? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else { return nil }
+        let normalized = raw
+            .replacingOccurrences(of: "－", with: "-")  // 全形 → 半形
+            .replacingOccurrences(of: "—", with: "-")  // em-dash → 半形
+            .replacingOccurrences(of: "–", with: "-")  // en-dash → 半形
+            .replacingOccurrences(of: " ", with: "")
+        // 嚴格正則：可選空白 + 整數 + 半形減號 + 整數 + 可選空白
+        let pattern = #"^(\d+)-(\d+)$"#
+        if let regex = try? NSRegularExpression(pattern: pattern),
+           let m = regex.firstMatch(in: normalized,
+                                    range: NSRange(normalized.startIndex..., in: normalized)),
+           m.numberOfRanges == 3 {
+            let homeRange = Range(m.range(at: 1), in: normalized)!
+            let awayRange = Range(m.range(at: 2), in: normalized)!
+            return "\(normalized[homeRange])-\(normalized[awayRange])"
+        }
+        return nil
     }
     
     init(id: String = UUID().uuidString,
@@ -107,6 +126,13 @@ func parseDate(_ dateString: String) -> Date? {
     for format in formats {
         formatter.dateFormat = format
         if let date = formatter.date(from: dateString) {
+            // 如果是純日期（無時區資訊），強制將時間設為 UTC 中午，避免時區偏移誤判為前一天
+            if !hasTimezone {
+                var components = Calendar.current.dateComponents([.year, .month, .day], from: date)
+                components.hour = 12
+                components.minute = 0
+                return Calendar.current.date(from: components) ?? date
+            }
             return date
         }
     }

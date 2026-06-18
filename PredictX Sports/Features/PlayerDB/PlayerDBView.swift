@@ -78,7 +78,7 @@ struct PlayerDBView: View {
                                             Text("命中: \(Int(node.efficiency * 100))%").bold()
                                         }
                                         .font(.system(size: 11, weight: .bold, design: .rounded))
-                                        .foregroundColor(.white)
+                                        .foregroundColor(.primary)
                                         .frame(height: 70)
                                         .frame(maxWidth: .infinity)
                                         // 💡 熱區色彩演算法：頻率越高越趨近發光深紅，越低則偏向發光幽藍
@@ -103,10 +103,10 @@ struct PlayerDBView: View {
                                         let density = baseball.strikeZoneHotspots[index]
                                         VStack {
                                             Text("區域 \(index + 1)")
-                                                .font(.caption2).foregroundColor(.white.opacity(0.7))
+                                                .font(.caption2).foregroundColor(.secondary)
                                             Text(String(format: "%.1f%%", density * 100))
                                                 .font(.system(size: 14, weight: .black, design: .rounded))
-                                                .foregroundColor(.white)
+                                                .foregroundColor(.primary)
                                         }
                                         .frame(height: 80)
                                         .frame(maxWidth: .infinity)

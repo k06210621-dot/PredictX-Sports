@@ -6,6 +6,7 @@ struct PredictX_SportsApp: App {
     @StateObject private var homeStore = HomeStore()
     @StateObject private var favoritesStore = FavoritesStore()
     @StateObject private var subscriptionManager = SubscriptionManager()
+    @StateObject private var themeManager = ThemeManager()
     
     @State private var showLaunchScreen: Bool = true
     
@@ -21,10 +22,11 @@ struct PredictX_SportsApp: App {
                         .environmentObject(homeStore)
                         .environmentObject(favoritesStore)
                         .environmentObject(subscriptionManager)
+                        .environmentObject(themeManager)
                         .transition(.opacity)
                 }
             }
-            .preferredColorScheme(.dark)
+            .preferredColorScheme(themeManager.isDarkMode ? .dark : .light)
         }
     }
 }

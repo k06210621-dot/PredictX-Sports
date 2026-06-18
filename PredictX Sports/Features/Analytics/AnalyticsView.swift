@@ -60,7 +60,7 @@ struct OverallAccuracyCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Label("PredictX AI 模型綜合準確率", systemImage: "bolt.shield.fill")
+                Label("PredictX AI 模型綜合驗證率", systemImage: "bolt.shield.fill")
                     .font(.caption)
                     .fontWeight(.bold)
                     .foregroundColor(.blue)
@@ -74,7 +74,7 @@ struct OverallAccuracyCard: View {
                 Text(String(format: "%.1f%%", accuracy * 100))
                     .font(.system(size: 42, weight: .black, design: .rounded))
                     .foregroundColor(.primary)
-                Text("平均準確率")
+                Text("平均驗證率")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .padding(.bottom, 6)
@@ -204,13 +204,13 @@ struct FormIndicator: View {
     }
 }
 
-/// 戰績明細單列
+/// 紀錄明細單列
 struct FormDetailRow: View {
     let item: RecentSettlement
 
     var body: some View {
         HStack(spacing: 10) {
-            // 命中/未中 icon
+            // 驗證/未驗證 icon
             Image(systemName: item.isHit ? "checkmark.circle.fill" : "xmark.circle.fill")
                 .foregroundColor(item.isHit ? .green : .red)
                 .font(.system(size: 14))
@@ -341,7 +341,7 @@ struct TrendChartSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("\(selectedLeague) 準確率趨勢 (近 50 場)", systemImage: "chart.line.uptrend.xyaxis")
+                Label("\(selectedLeague) 驗證率趨勢 (近 50 場)", systemImage: "chart.line.uptrend.xyaxis")
                     .font(.headline)
                     .bold()
                     .foregroundColor(.primary)
@@ -355,7 +355,7 @@ struct TrendChartSection: View {
                 ForEach(trends) { trend in
                     LineMark(
                         x: .value("日期", trend.date),
-                        y: .value("準確率", trend.hitRate)
+                        y: .value("驗證率", trend.hitRate)
                     )
                     .foregroundStyle(Color.blue.gradient)
                     .interpolationMethod(.catmullRom)
@@ -363,7 +363,7 @@ struct TrendChartSection: View {
 
                     PointMark(
                         x: .value("日期", trend.date),
-                        y: .value("準確率", trend.hitRate)
+                        y: .value("驗證率", trend.hitRate)
                     )
                     .foregroundStyle(Color.blue)
                 }

@@ -1,7 +1,7 @@
 import SwiftUI
 import StoreKit
 
-// MARK: - 訂閱 Paywall 主頁（商城頁）
+// MARK: - 訂閱 Paywall 主頁（AI 額度儲值中心）
 /// 點 ProfileView「升級 Premium」或「訂閱中心」後彈出
 struct SubscribeView: View {
     @EnvironmentObject var subscriptionManager: SubscriptionManager
@@ -27,7 +27,7 @@ struct SubscribeView: View {
                         if !isAnnual {
                             Text("切換年訂以享有 8 折優惠・每方案每月最高省 NT$ \(Int(annuallySavedForSelectedTier()))")
                                 .font(.caption2)
-                                .foregroundColor(.white.opacity(0.4))
+                                .foregroundColor(Color(.tertiaryLabel))
                                 .multilineTextAlignment(.center)
                         }
                         paywallButton
@@ -70,9 +70,9 @@ struct SubscribeView: View {
                 .foregroundColor(.white)
                 .multilineTextAlignment(.center)
 
-            Text("三大運動聯盟 50+ 項特徵因子・即時推論・模型驗證率公開透明")
+            Text("四大運動聯盟 50+ 項特徵因子・即時推論・模型驗證率公開透明")
                 .font(.caption)
-                .foregroundColor(.white.opacity(0.5))
+                .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 12)
         }
@@ -84,16 +84,16 @@ struct SubscribeView: View {
     private var legalShield: some View {
         HStack(spacing: 8) {
             Label("7 天免費試用", systemImage: "gift.fill")
-            Divider().frame(height: 14).background(Color.white.opacity(0.3))
+            Divider().frame(height: 14).background(Color(.separator))
             Label("隨時取消", systemImage: "xmark.circle")
-            Divider().frame(height: 14).background(Color.white.opacity(0.3))
+            Divider().frame(height: 14).background(Color(.separator))
             Label("App Store 安全交易", systemImage: "lock.shield.fill")
         }
         .font(.system(size: 10, weight: .medium))
-        .foregroundColor(.white.opacity(0.7))
+        .foregroundColor(.secondary)
         .padding(.vertical, 10)
         .padding(.horizontal, 12)
-        .background(Color.white.opacity(0.08))
+        .background(Color(.systemGray6))
         .clipShape(Capsule())
     }
 
@@ -112,7 +112,7 @@ struct SubscribeView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(4)
-            .background(Color.white.opacity(0.06))
+            .background(Color(.systemGray6).opacity(0.5))
             .clipShape(RoundedRectangle(cornerRadius: 14))
             .padding(.bottom, 4)
 
@@ -210,15 +210,15 @@ struct SubscribeView: View {
 
             VStack(spacing: 0) {
                 FeatureRow(label: "每日 AI 分析點數", basic: "120 點", standard: "無限", premium: "無限")
-                Divider().background(Color.white.opacity(0.1))
+                Divider().background(Color(.separator))
                 FeatureRow(label: "球員資料庫", basic: "✓", standard: "✓", premium: "✓")
-                Divider().background(Color.white.opacity(0.1))
+                Divider().background(Color(.separator))
                 FeatureRow(label: "收藏賽事分析", basic: "✓", standard: "✓", premium: "✓")
-                Divider().background(Color.white.opacity(0.1))
+                Divider().background(Color(.separator))
                 FeatureRow(label: "模型驗證率儀表板", basic: "—", standard: "✓", premium: "✓")
-                Divider().background(Color.white.opacity(0.1))
+                Divider().background(Color(.separator))
                 FeatureRow(label: "推播通知", basic: "—", standard: "—", premium: "✓")
-                Divider().background(Color.white.opacity(0.1))
+                Divider().background(Color(.separator))
                 FeatureRow(label: "歷史賽事完整資料", basic: "近 7 日", standard: "近 30 日", premium: "完整")
             }
             .padding(8)
@@ -250,22 +250,22 @@ struct SubscribeView: View {
         VStack(spacing: 6) {
             Text("點擊上方按鈕即代表同意 [服務條款] 與 [隱私權政策]")
                 .font(.caption2)
-                .foregroundColor(.white.opacity(0.4))
+                .foregroundColor(Color(.tertiaryLabel))
                 .multilineTextAlignment(.center)
 
             Text("• 訂閱會自動續訂・可在 iPhone「設定」>「Apple ID」>「訂閱項目」中隨時取消")
                 .font(.caption2)
-                .foregroundColor(.white.opacity(0.3))
+                .foregroundColor(Color(.tertiaryLabel))
                 .multilineTextAlignment(.center)
 
             Text("• 取消後仍可使用剩餘的訂閱期間・不會退還當期費用")
                 .font(.caption2)
-                .foregroundColor(.white.opacity(0.3))
+                .foregroundColor(Color(.tertiaryLabel))
                 .multilineTextAlignment(.center)
 
             Text("• PredictX Sports 為運動數據分析工具・所有 AI 推論結果僅供參考・不構成任何投注建議")
                 .font(.caption2)
-                .foregroundColor(.white.opacity(0.3))
+                .foregroundColor(Color(.tertiaryLabel))
                 .multilineTextAlignment(.center)
         }
     }
@@ -350,7 +350,7 @@ private struct TierCard: View {
 
                 Text(tier.tagline)
                     .font(.caption)
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(.secondary)
 
                 Text(displayPrice)
                     .font(.subheadline.bold())
@@ -366,13 +366,13 @@ private struct TierCard: View {
                 Spacer()
                 Text(unitLabel)
                     .font(.caption2)
-                    .foregroundColor(.white.opacity(0.4))
+                    .foregroundColor(Color(.tertiaryLabel))
             }
         }
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color(red: 0.14, green: 0.16, blue: 0.26))
+                .fill(Color.cardBackground)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(isSelected ? tier.tint : Color.clear, lineWidth: 2)
@@ -405,7 +405,7 @@ private struct FeatureRow: View {
         HStack(spacing: 8) {
             Text(label)
                 .font(.caption)
-                .foregroundColor(.white.opacity(0.85))
+                .foregroundColor(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)
 

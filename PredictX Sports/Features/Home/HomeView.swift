@@ -3,8 +3,8 @@ import SwiftUI
 // MARK: - 主頁面視圖
 struct HomeView: View {
     @EnvironmentObject private var store: HomeStore
+    @EnvironmentObject private var favoritesStore: FavoritesStore
     @State private var selectedMatchForDetail: Match? = nil
-    @State private var showFIFAWorldCup: Bool = false
     @State private var scrollToTopTrigger = false
     
     var body: some View {
@@ -90,20 +90,6 @@ struct HomeView: View {
                                 SportsSectionHeader(title: "\(store.selectedLeague.rawValue) AI 數據預報", icon: "cpu.fill")
                                     .padding(.top, 4)
                                 VStack(spacing: 14) {
-                                    if store.selectedLeague == .fifa {
-                                        FocusMatchCardView(
-                                            homeTeam: "世界盃🏆",
-                                            awayTeam: "冠軍預測",
-                                            homeTeamCN: "2026 FIFA",
-                                            awayTeamCN: "AI 分析",
-                                            league: "FIFA",
-                                            startTime: Date(),
-                                            confidence: 8.4
-                                        )
-                                        .contentShape(Rectangle())
-                                        .onTapGesture { showFIFAWorldCup = true }
-                                    }
-                                    
                                     if store.filteredPredictions.isEmpty {
                                         ContentUnavailableView(
                                             "暫無今日賽事",
@@ -154,9 +140,7 @@ struct HomeView: View {
             }
             .sheet(item: $selectedMatchForDetail) { match in
                 AIAnalysisDetailView(match: match)
-            }
-            .sheet(isPresented: $showFIFAWorldCup) {
-                FIFAWorldCupPredictionView()
+                    .environmentObject(favoritesStore)
             }
         }
     }

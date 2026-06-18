@@ -49,11 +49,29 @@ class NBAIngester(BaseIngester):
                 mapped = "LIVE"
             else:
                 mapped = "SCHEDULED"
+
+            # 抓比分（ESPN 在 competitors[].score）
+            home_score = None
+            away_score = None
+            for c in competitors:
+                score_str = c.get("score")
+                if score_str is not None:
+                    try:
+                        score_val = int(score_str)
+                        if c.get("homeAway") == "home":
+                            home_score = score_val
+                        else:
+                            away_score = score_val
+                    except (ValueError, TypeError):
+                        pass
+
             games.append({
                 "season": dt.year,
                 "match_date": target_date,
                 "home_team": home,
                 "away_team": away,
                 "status": mapped,
+                "home_team_score": home_score,
+                "away_team_score": away_score,
             })
         return games

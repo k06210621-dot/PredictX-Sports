@@ -10,12 +10,11 @@ struct Player: Codable, Identifiable, Hashable {
     var age: Int
     var injuryStatus: InjuryStatus // Active / Day-to-Day / OUT
     var avatarUrl: String?
-    
+
     // 跨球種專屬外掛特徵欄位 (特徵工程映射)
     var nbaStats: NBAPlayerStats?
     var baseballStats: BaseballPlayerStats? // 相容 MLB / NPB / CPBL
-    var fifaStats: FIFAPlayerStats?
-    
+
     enum InjuryStatus: String, Codable {
         case active = "ACTIVE"
         case dayToDay = "DAY_TO_DAY"
@@ -41,14 +40,6 @@ struct BaseballPlayerStats: Codable, Hashable {
     var fip: Double?    // FIP 獨立防禦率 (投手)
     var whip: Double?   // WHIP 每局被上壘率 (投手)
     var strikeZoneHotspots: [Double] // 投手九宮格進壘率或打者打擊熱區 (9個元素)
-}
-
-// MARK: - ⚽ 足球員機會質量指標
-struct FIFAPlayerStats: Codable, Hashable {
-    var goals: Int
-    var assists: Int
-    var xa: Double      // xA 預期助攻數
-    var shotCreatingActions: Double // 每 90 分鐘創造射門機會次數
 }
 
 // MARK: - 📊 虛擬熱區基礎節點

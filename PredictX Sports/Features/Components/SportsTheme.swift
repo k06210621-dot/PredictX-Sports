@@ -2,25 +2,25 @@ import SwiftUI
 
 // MARK: - 運動主題共用定義
 
-/// 運動深色背景漸層（模擬球場夜間氛圍）
+/// 運動背景（自動適應深色/淺色模式）
 struct SportsDarkBackground: View {
-    @State private var animate = false
+    @Environment(\.colorScheme) var colorScheme
     
     var body: some View {
-        LinearGradient(
-            colors: [
-                Color(red: 0.06, green: 0.08, blue: 0.18),
-                Color(red: 0.10, green: 0.12, blue: 0.22),
-                Color(red: 0.06, green: 0.08, blue: 0.18)
-            ],
-            startPoint: animate ? .topLeading : .bottomTrailing,
-            endPoint: animate ? .bottomTrailing : .topLeading
-        )
-        .ignoresSafeArea()
-        .onAppear {
-            withAnimation(.linear(duration: 15).repeatForever(autoreverses: true)) {
-                animate.toggle()
-            }
+        if colorScheme == .dark {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.06, green: 0.08, blue: 0.18),
+                    Color(red: 0.10, green: 0.12, blue: 0.22),
+                    Color(red: 0.06, green: 0.08, blue: 0.18)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+        } else {
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea()
         }
     }
 }
@@ -33,7 +33,7 @@ enum LeagueTheme {
         case .nba:  return Color(red: 0.85, green: 0.40, blue: 0.05)
         case .npb:  return Color(red: 0.85, green: 0.65, blue: 0.13)
         case .cpbl: return Color(red: 0.15, green: 0.65, blue: 0.25)
-        case .fifa: return Color(red: 0.55, green: 0.15, blue: 0.75)
+
         }
     }
     
@@ -62,7 +62,7 @@ enum LeagueTheme {
 struct SportsCardBackground: View {
     var body: some View {
         RoundedRectangle(cornerRadius: 16)
-            .fill(Color(red: 0.14, green: 0.16, blue: 0.26))
+            .fill(Color.cardBackground)
     }
 }
 
@@ -70,6 +70,6 @@ struct SportsCardBackground: View {
 struct SportsCardSecondaryBackground: View {
     var body: some View {
         RoundedRectangle(cornerRadius: 16)
-            .fill(Color(red: 0.16, green: 0.18, blue: 0.28))
+            .fill(Color.cardSecondaryBackground)
     }
 }

@@ -96,6 +96,8 @@ class NPBIngester(BaseIngester):
                 "home_team": home_full,
                 "away_team": away_full,
                 "status": status,
+                "home_team_score": home_score,
+                "away_team_score": away_score,
             })
         return games
 

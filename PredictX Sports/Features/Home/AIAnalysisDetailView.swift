@@ -3,6 +3,7 @@ import Charts
 
 struct AIAnalysisDetailView: View {
     let match: Match
+    @EnvironmentObject private var favoritesStore: FavoritesStore
     @State private var analysis: AIAnalysisModel? = nil
     @State private var isLoading = true
     @State private var errorMessage: String? = nil
@@ -72,11 +73,23 @@ struct AIAnalysisDetailView: View {
                                 .padding(.horizontal, 4)
                                 
                                 HStack {
-                                    Label("數據置信度: \(String(format: "%.1f", confidence))/10", systemImage: "checkmark.seal.fill")
+                                    Label("數據置信度：\(String(format: "%.1f", confidence))/10", systemImage: "checkmark.seal.fill")
                                     Spacer()
-                                    Label("模型推演比分: \(score)", systemImage: "list.bullet.rectangle")
+                                    Label("模型推演比分：\(score)", systemImage: "list.bullet.rectangle")
                                 }
                                 .font(.subheadline).foregroundColor(.secondary)
+                                
+                                // 🆕 Apple 審核合規：AI 分析免責提示
+                                HStack {
+                                    Image(systemName: "info.circle")
+                                        .font(.caption2)
+                                        .foregroundColor(.orange)
+                                    Text("AI 推論結果僅供參考，不保證準確性。實際賽事結果受多種不可預測因素影響。")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                        .multilineTextAlignment(.leading)
+                                }
+                                .padding(.top, 4)
                             }
                             .padding()
                             .background(Color.cardBackground)
@@ -163,6 +176,14 @@ struct AIAnalysisDetailView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { dismiss() }) {
                         Text("關閉").foregroundColor(.primary)
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        favoritesStore.toggle(match: match)
+                    }) {
+                        Image(systemName: favoritesStore.isFavorited(gameId: match.id) ? "star.fill" : "star")
+                            .foregroundColor(favoritesStore.isFavorited(gameId: match.id) ? .yellow : .gray)
                     }
                 }
             }

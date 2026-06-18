@@ -47,13 +47,13 @@ class AnalyticsStore: ObservableObject {
             let defaultLeague = self.leagueAccuracies.first?.league ?? "MLB"
             await updateTrendForLeague(league: defaultLeague)
 
-            // 🆕 載入最近 10 場戰績（背景跑，不擋趨勢圖）
+            // 🆕 載入最近 10 場紀錄（背景跑，不擋趨勢圖）
             await loadRecentSettlements()
 
             self.isLoading = false
         } catch {
             print("Error loading real analytics: \(error)")
-            self.errorMessage = "無法載入命中率統計"
+            self.errorMessage = "無法載入驗證率統計"
             self.isLoading = false
         }
     }
@@ -71,7 +71,7 @@ class AnalyticsStore: ObservableObject {
             }
         } catch {
             print("Error updating trend for \(league): \(error)")
-            self.errorMessage = "無法載入 \(league) 命中率趨勢"
+            self.errorMessage = "無法載入 \(league) 驗證率趨勢"
         }
     }
 
