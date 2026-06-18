@@ -217,22 +217,44 @@ struct HistoricalMatchCardView: View {
                 }
             }
             
-            if match.status == .completed, let isHit = match.aiIsHit {
+            // 🆕 顯示 AI 驗證狀態：
+            // - isHit 為 true → 綠色「AI 分析準確」
+            // - isHit 為 false → 紅色「AI 分析未中」
+            // - score 已有但 isHit 仍為 nil → 灰色「等待 AI 結算」
+            // - 無 score → 不顯示（歷史比分未紀錄時誠實呈現）
+            if match.homeScore != nil && match.awayScore != nil {
                 HStack {
                     Spacer()
-                    HStack(spacing: 4) {
-                        Image(systemName: isHit ? "checkmark.circle.fill" : "xmark.circle.fill")
-                            .font(.system(size: 14))
-                            .foregroundColor(isHit ? .green : .red)
-                        Text(isHit ? "AI 分析準確" : "AI 分析未中")
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .foregroundColor(isHit ? .green : .red)
+                    if let isHit = match.aiIsHit {
+                        HStack(spacing: 4) {
+                            Image(systemName: isHit ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .font(.system(size: 14))
+                                .foregroundColor(isHit ? .green : .red)
+                            Text(isHit ? "AI 分析準確" : "AI 分析未中")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(isHit ? .green : .red)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background((isHit ? Color.green : Color.red).opacity(0.12))
+                        .cornerRadius(8)
+                    } else {
+                        // 比分已有但 settlement 尚未跑（cron 還沒結算）
+                        HStack(spacing: 4) {
+                            Image(systemName: "hourglass")
+                                .font(.system(size: 14))
+                                .foregroundColor(Color(.tertiaryLabel))
+                            Text("等待 AI 結算")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(Color(.tertiaryLabel))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Color(.tertiarySystemFill).opacity(0.5))
+                        .cornerRadius(8)
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background((isHit ? Color.green : Color.red).opacity(0.12))
-                    .cornerRadius(8)
                 }
             }
         }
