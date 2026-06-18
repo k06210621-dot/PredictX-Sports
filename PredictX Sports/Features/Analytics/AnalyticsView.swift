@@ -330,7 +330,14 @@ struct LeagueCard: View {
 struct TrendChartSection: View {
     let selectedLeague: String
     let trends: [WinRateTrend]
-    
+
+    private let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_TW")
+        f.dateFormat = "MM/dd"
+        return f
+    }()
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -343,7 +350,7 @@ struct TrendChartSection: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            
+
             Chart {
                 ForEach(trends) { trend in
                     LineMark(
@@ -353,7 +360,7 @@ struct TrendChartSection: View {
                     .foregroundStyle(Color.blue.gradient)
                     .interpolationMethod(.catmullRom)
                     .lineStyle(StrokeStyle(lineWidth: 3))
-                    
+
                     PointMark(
                         x: .value("日期", trend.date),
                         y: .value("準確率", trend.hitRate)
@@ -367,7 +374,16 @@ struct TrendChartSection: View {
                 AxisMarks(format: Decimal.FormatStyle.Percent.percent)
             }
             .chartXAxis {
-                AxisMarks { _ in }
+                // 🆕 顯示日期標籤（MM/dd），用 desiredCount 控制標籤數量避免擠在一起
+                AxisMarks(values: .automatic(desiredCount: 5)) { value in
+                    if let date = value.as(Date.self) {
+                        AxisValueLabel {
+                            Text(dateFormatter.string(from: date))
+                                .font(.caption2)
+                        }
+                    }
+                    AxisGridLine()
+                }
             }
         }
         .padding()

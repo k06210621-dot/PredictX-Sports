@@ -4,7 +4,7 @@ import Foundation
 /// 用於趨勢圖顯示的命中率數據結構
 struct WinRateTrend: Identifiable, Hashable {
     let id = UUID()
-    var date: String      // 日期 (e.g., "06/01")
+    var date: Date           // 改為 Date 型別（iOS Chart 才能正確處理時間軸）
     var hitRate: Double   // 當日命中率 (e.684)
 }
 
@@ -17,10 +17,7 @@ struct LeagueAccuracy: Identifiable, Hashable {
 
     /// 結算依據說明
     var settlementNote: String {
-        switch league {
-        case "FIFA": return "以總分大小 2.5 為依據"
-        default:     return "以主客隊勝負為依據"
-        }
+        return "以主客隊勝負為依據"
     }
 }
 

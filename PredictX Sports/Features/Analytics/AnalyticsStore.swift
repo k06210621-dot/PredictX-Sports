@@ -64,10 +64,10 @@ class AnalyticsStore: ObservableObject {
         do {
             let realTrends = try await APIService.shared.fetchHitRateTrend(league: league)
 
-            self.winRateTrends = realTrends.map {
-                let dateString = $0.date
-                let formattedDate = formatDate(dateString)
-                return WinRateTrend(date: formattedDate, hitRate: $0.daily_hit_rate)
+            self.winRateTrends = realTrends.compactMap { trend -> WinRateTrend? in
+                // 後端回傳 ISO 日期字串 (e.g., "2026-06-13")，轉為 Date 才能讓 Chart 正確排序
+                guard let date = parseDate(trend.date) else { return nil }
+                return WinRateTrend(date: date, hitRate: trend.daily_hit_rate)
             }
         } catch {
             print("Error updating trend for \(league): \(error)")
@@ -152,11 +152,12 @@ class AnalyticsStore: ObservableObject {
         return Double(hits) / Double(recentSettlements.count)
     }
 
-    private func formatDate(_ dateString: String) -> String {
-        let components = dateString.split(separator: "-")
-        if components.count >= 2 {
-            return "\(components[1])/\(components[2])"
-        }
-        return dateString
+    /// 解析後端回傳的 ISO 日期字串（"YYYY-MM-DD"）為 Date 型別
+    private func parseDate(_ dateString: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone(identifier: "Asia/Taipei")
+        return formatter.date(from: dateString)
     }
 }
