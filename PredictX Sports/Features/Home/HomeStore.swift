@@ -109,6 +109,15 @@ class HomeStore: ObservableObject {
                         .compactMapValues { $0.first }.values)
                     self.historicalMatches[league] = unique
                     print("✅ [History] \(league.rawValue) loaded \(unique.count) historical matches (from \(allMatches.count) total)")
+
+                    // 🆕 警告：偵測 status=FINAL 但無比分的異常賽事（後端 cron 漏抓警示）
+                    let incomplete = unique.filter { $0.status == .completed && ($0.homeScore == nil || $0.awayScore == nil) }
+                    if !incomplete.isEmpty {
+                        print("⚠️ [History] \(league.rawValue) \(incomplete.count) 場已完成但比分未紀錄：")
+                        for m in incomplete.prefix(5) {
+                            print("   - \(m.startTime) \(m.homeTeam) vs \(m.awayTeam)")
+                        }
+                    }
                 }
             } catch {
                 print("❌ [History Fetch Error] \(league.rawValue): \(error)")
