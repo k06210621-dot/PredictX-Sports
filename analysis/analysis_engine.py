@@ -739,16 +739,40 @@ class AnalysisEngine:
         if pitchers and pitchers.get("home_pitcher", {}).get("stats"):
             hp = pitchers["home_pitcher"]
             ap = pitchers["away_pitcher"]
+
+            # 🆕 格式化「最近 3 場」表現
+            def format_recent_games(pitcher_data, team_label):
+                recent = pitcher_data.get("recent_stats")
+                if not recent or not recent.get("games"):
+                    return ""
+                games = recent['games']
+                summary = recent['summary']
+                lines = [f"\n  📊 最近 {summary['count']} 場表現: {summary['wins']}W-{summary['losses']}L, "
+                         f"ERA={summary['era']}, WHIP={summary['whip']}, K/9={summary['k_per_9']}"]
+                for g in games:
+                    lines.append(f"    {g['date']} vs {g['opponent']}: {g['ip']}局, "
+                                 f"{g['er']}ER, {g['h']}H, {g['bb']}BB, {g['k']}K, "
+                                 f"ERA={g['era']} ({g['decision']})")
+                return "\n".join(lines)
+
+            h_recent_str = format_recent_games(hp, "主隊")
+            a_recent_str = format_recent_games(ap, "客隊")
+
             mlb_advanced_section += f"""
-            
+
 ===== 先發投手對決（來源：statsapi.mlb.com）=====
 主隊先發: {hp["name"]}
-  ERA={hp["stats"]["era"]:.2f}, WHIP={hp["stats"]["whip"]:.3f}, K/9={hp["stats"]["k_per_9"]:.1f}, BB/9={hp["stats"]["bb_per_9"]:.1f}
-  K/BB={hp["stats"]["k_bb_ratio"]:.2f}, 對手打擊率={hp["stats"]["avg"]:.3f}, 本季投球={hp["stats"]["ip"]}局
+  本季 ERA={hp["stats"]["era"]:.2f}, WHIP={hp["stats"]["whip"]:.3f}, K/9={hp["stats"]["k_per_9"]:.1f}, BB/9={hp["stats"]["bb_per_9"]:.1f}
+  K/BB={hp["stats"]["k_bb_ratio"]:.2f}, 對手打擊率={hp["stats"]["avg"]:.3f}, 本季投球={hp["stats"]["ip"]}局{h_recent_str}
 
 客隊先發: {ap["name"]}
-  ERA={ap["stats"]["era"]:.2f}, WHIP={ap["stats"]["whip"]:.3f}, K/9={ap["stats"]["k_per_9"]:.1f}, BB/9={ap["stats"]["bb_per_9"]:.1f}
-  K/BB={ap["stats"]["k_bb_ratio"]:.2f}, 對手打擊率={ap["stats"]["avg"]:.3f}, 本季投球={ap["stats"]["ip"]}局"""
+  本季 ERA={ap["stats"]["era"]:.2f}, WHIP={ap["stats"]["whip"]:.3f}, K/9={ap["stats"]["k_per_9"]:.1f}, BB/9={ap["stats"]["bb_per_9"]:.1f}
+  K/BB={ap["stats"]["k_bb_ratio"]:.2f}, 對手打擊率={ap["stats"]["avg"]:.3f}, 本季投球={ap["stats"]["ip"]}局{a_recent_str}
+
+💡 分析指引：投手「最近 3 場」表現比「整季」更具預測力。請特別注意：
+- 最近 3 場 ERA 與整季 ERA 的差距（升溫或降溫中）
+- 若最近 3 場被打爆（ERA > 6），即使整季很好，下場也應降低其球隊勝率
+- 若最近 3 場極佳（ERA < 2.0），即使整季普通，也應提升其球隊勝率"""
         else:
             mlb_advanced_section = ""
         

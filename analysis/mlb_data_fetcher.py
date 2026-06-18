@@ -128,7 +128,9 @@ class MLBDataFetcher:
         return pitchers
 
     def get_probable_pitcher_data(self, game_id, home_team_name, away_team_name):
-        """透過 MLB Schedule API + probablePitcher 取得先發投手資料並存入資料庫"""
+        """透過 MLB Schedule API + probablePitcher 取得先發投手資料並存入資料庫
+        🆕 包含：整季 stats + 最近 3 場 stats（用於判斷投手近況趨勢）
+        """
         try:
             # 1. 查詢比賽日期
             self.cur.execute("SELECT match_date FROM predictx.games WHERE game_id = %s", (game_id,))
@@ -136,33 +138,33 @@ class MLBDataFetcher:
             if not row:
                 return None
             match_date = row['match_date'].strftime('%Y-%m-%d')
-            
+
             # 2. 取得先發投手 ID
             url = f"{MLB_API_BASE}/schedule?sportId=1&date={match_date}&hydrate=probablePitcher"
             resp = self.session.get(url, timeout=10)
             if resp.status_code != 200:
                 return None
-            
+
             data = resp.json()
             self.fetched_sources.append("statsapi.mlb.com")
-            
+
             home_pitcher = None
             away_pitcher = None
-            
+
             for date_entry in data.get('dates', []):
                 for game in date_entry.get('games', []):
                     g_home = game['teams']['home']['team']['name']
                     g_away = game['teams']['away']['team']['name']
-                    
+
                     if home_team_name.lower() in g_home.lower() and away_team_name.lower() in g_away.lower():
                         h_p = game['teams']['home'].get('probablePitcher', {})
                         a_p = game['teams']['away'].get('probablePitcher', {})
                         home_pitcher = {'id': h_p.get('id'), 'name': h_p.get('fullName', 'TBD')} if h_p else None
                         away_pitcher = {'id': a_p.get('id'), 'name': a_p.get('fullName', 'TBD')} if a_p else None
                         break
-            
+
             result = {'home_pitcher': {'name': 'TBD'}, 'away_pitcher': {'name': 'TBD'}}
-            
+
             for side, pitcher, team_name, mlb_fn in [
                 ('home', home_pitcher, home_team_name, self.get_mlb_team_id_by_name),
                 ('away', away_pitcher, away_team_name, self.get_mlb_team_id_by_name),
@@ -170,15 +172,15 @@ class MLBDataFetcher:
                 mlb_id = mlb_fn(team_name)
                 if not pitcher or not pitcher.get('id'):
                     continue
-                
+
                 pid = pitcher['id']
                 pname = pitcher['name']
-                
+
                 # 3. 取得投手個人整季數據
                 stats_url = f"{MLB_API_BASE}/people/{pid}/stats?stats=season&season=2026&group=pitching"
                 stats_resp = self.session.get(stats_url, timeout=10)
                 pitcher_stats = {}
-                
+
                 if stats_resp.status_code == 200:
                     pdata = stats_resp.json()
                     splits = pdata.get('stats', [{}])[0].get('splits', [{}])
@@ -193,7 +195,7 @@ class MLBDataFetcher:
                         hr = s.get('homeRuns', 0) or 0
                         bf = s.get('battersFaced', 0) or 0
                         games = s.get('gamesPlayed', 0) or 0
-                        
+
                         pitcher_stats = {
                             'era': round(er * 9 / ip, 2) if ip > 0 else 0,
                             'whip': round((bb + h) / ip, 3) if ip > 0 else 0,
@@ -206,18 +208,26 @@ class MLBDataFetcher:
                             'ip': round(ip, 1),
                         }
                         self.fetched_sources.append("statsapi.mlb.com")
-                
-                result[f'{side}_pitcher'] = {'name': pname, 'id': pid, 'stats': pitcher_stats}
-                
-                # 4. 存入資料庫
+
+                # 🆕 4. 取得最近 3 場 stats（用 gameLog）
+                recent_stats = self._get_pitcher_recent_stats(pid, n=3)
+
+                result[f'{side}_pitcher'] = {
+                    'name': pname,
+                    'id': pid,
+                    'stats': pitcher_stats,
+                    'recent_stats': recent_stats,  # 🆕 新增欄位
+                }
+
+                # 5. 存入資料庫
                 local_id, _ = self.get_local_team_id(team_name)
                 if local_id and pitcher_stats:
                     self.cur.execute("""
-                        INSERT INTO predictx_advanced.mlb_pitcher_stats 
+                        INSERT INTO predictx_advanced.mlb_pitcher_stats
                             (game_id, team_id, pitcher_name, era, whip, k_per_9, bb_per_9)
                         VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (game_id, team_id, pitcher_name) 
-                        DO UPDATE SET 
+                        ON CONFLICT (game_id, team_id, pitcher_name)
+                        DO UPDATE SET
                             era = EXCLUDED.era, whip = EXCLUDED.whip,
                             k_per_9 = EXCLUDED.k_per_9, bb_per_9 = EXCLUDED.bb_per_9,
                             fetched_at = CURRENT_TIMESTAMP
@@ -225,10 +235,90 @@ class MLBDataFetcher:
                           pitcher_stats.get('era'), pitcher_stats.get('whip'),
                           pitcher_stats.get('k_per_9'), pitcher_stats.get('bb_per_9')))
                     self.conn.commit()
-            
+
             return result
         except Exception as e:
             print(f"  ⚠ Pitcher fetch error: {e}")
+            return None
+
+    def _get_pitcher_recent_stats(self, pitcher_id, n=3):
+        """取得投手最近 N 場的 stats（用 MLB API gameLog 端點）
+
+        用途：投手表現波動大，「最近 3 場」比「整季」更具預測力。
+        棒球統計事實：ace 投手若最近 3 場被打爆，下場大概率仍不穩定。
+        """
+        try:
+            url = f"{MLB_API_BASE}/people/{pitcher_id}/stats?stats=gameLog&season=2026&group=pitching"
+            resp = self.session.get(url, timeout=10)
+            if resp.status_code != 200:
+                return None
+
+            data = resp.json()
+            splits = data.get('stats', [{}])[0].get('splits', [])
+            if not splits:
+                return None
+
+            # 只取「先發」場次（先發投手每場記錄在 gameLog）
+            # MLB gameLog 每筆 split 包含日期、對手、stats
+            recent_games = []
+            for s in splits[-n:]:  # 取最近 n 筆
+                stat = s.get('stat', {})
+                game_date = s.get('date', '')
+                opponent = s.get('opponent', {}).get('name', '?')
+
+                er = stat.get('earnedRuns', 0) or 0
+                outs = stat.get('outs', 0) or 0
+                ip = outs / 3
+                h = stat.get('hits', 0) or 0
+                bb = stat.get('baseOnBalls', 0) or 0
+                k = stat.get('strikeOuts', 0) or 0
+                hr = stat.get('homeRuns', 0) or 0
+                decision = stat.get('decision', '')  # W/L
+
+                if ip == 0:
+                    continue  # 跳過沒投的場次（例如中繼未上場）
+
+                game_era = round(er * 9 / ip, 2) if ip > 0 else 0
+                recent_games.append({
+                    'date': game_date,
+                    'opponent': opponent,
+                    'ip': round(ip, 1),
+                    'er': er,
+                    'h': h,
+                    'bb': bb,
+                    'k': k,
+                    'hr': hr,
+                    'era': game_era,
+                    'decision': decision,
+                })
+
+            if not recent_games:
+                return None
+
+            # 計算最近 3 場平均
+            total_ip = sum(g['ip'] for g in recent_games)
+            total_er = sum(g['er'] for g in recent_games)
+            total_h = sum(g['h'] for g in recent_games)
+            total_bb = sum(g['bb'] for g in recent_games)
+            total_k = sum(g['k'] for g in recent_games)
+            wins = sum(1 for g in recent_games if g['decision'] == 'W')
+            losses = sum(1 for g in recent_games if g['decision'] == 'L')
+
+            return {
+                'games': recent_games,
+                'summary': {
+                    'count': len(recent_games),
+                    'total_ip': round(total_ip, 1),
+                    'total_er': total_er,
+                    'era': round(total_er * 9 / total_ip, 2) if total_ip > 0 else 0,
+                    'whip': round((total_h + total_bb) / total_ip, 3) if total_ip > 0 else 0,
+                    'k_per_9': round(total_k * 9 / total_ip, 1) if total_ip > 0 else 0,
+                    'wins': wins,
+                    'losses': losses,
+                }
+            }
+        except Exception as e:
+            print(f"  ⚠ _get_pitcher_recent_stats error: {e}")
             return None
 
     def get_local_team_id(self, team_name):
