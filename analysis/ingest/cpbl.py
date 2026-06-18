@@ -21,6 +21,8 @@ CPBL_API_URL = "https://www.cpbl.com.tw/home/getdetaillist"
 CPBL_COOKIE_URL = "https://www.cpbl.com.tw/"
 
 # 中職 6 隊中英對照（CPBL API 回傳中文隊名 → 英文全名）
+# 注意：必須與 predictx.teams.english_name 完全一致，否則 /api/insert_games 找不到 team_id
+# 統一獅 → Uni-President 7-ELEVEn Lions（DB 真實名稱）
 TEAM_NAME_MAP = {
     "中信兄弟": "CTBC Brothers",
     "中信": "CTBC Brothers",
@@ -28,8 +30,9 @@ TEAM_NAME_MAP = {
     "富邦悍將": "Fubon Guardians",
     "富邦": "Fubon Guardians",
     "悍將": "Fubon Guardians",
-    "統一獅": "Uni-President Lions",
-    "統一": "Uni-President Lions",
+    "統一獅": "Uni-President 7-ELEVEn Lions",
+    "統一7-ELEVEn獅": "Uni-President 7-ELEVEn Lions",
+    "統一": "Uni-President 7-ELEVEn Lions",
     "樂天桃猿": "Rakuten Monkeys",
     "樂天": "Rakuten Monkeys",
     "桃猿": "Rakuten Monkeys",
@@ -137,6 +140,8 @@ class CPBLIngester(BaseIngester):
                 "home_team": home,
                 "away_team": away,
                 "status": status,
+                "home_team_score": home_score,
+                "away_team_score": away_score,
             })
         if not games:
             LOGGER.info(f"CPBL {target_date} API 回傳空（可能休兵日）")
