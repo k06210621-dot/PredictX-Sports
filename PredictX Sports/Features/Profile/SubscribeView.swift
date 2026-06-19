@@ -40,14 +40,16 @@ struct SubscribeView: View {
                     .padding(.bottom, 40)
                 }
             }
-            .navigationTitle("升級 Premium")
+            .navigationTitle(NSLocalizedString("subscribe.title", comment: "AI 額度儲值中心"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("關閉") { dismiss() }
-                        .foregroundColor(.white)
+                    Button(NSLocalizedString("nav.close", comment: "關閉")) { dismiss() }
+                        .foregroundColor(.primary)
                 }
             }
+            .toolbarBackground(Color(red: 0.06, green: 0.08, blue: 0.18), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .task {
                 await loadProducts()
             }
@@ -83,7 +85,7 @@ struct SubscribeView: View {
 
     private var legalShield: some View {
         HStack(spacing: 8) {
-            Label("7 天免費試用", systemImage: "gift.fill")
+            Label("30 天免費試用", systemImage: "gift.fill")
             Divider().frame(height: 14).background(Color(.separator))
             Label("隨時取消", systemImage: "xmark.circle")
             Divider().frame(height: 14).background(Color(.separator))
@@ -209,17 +211,15 @@ struct SubscribeView: View {
                 .foregroundColor(.white)
 
             VStack(spacing: 0) {
-                FeatureRow(label: "每日 AI 分析點數", basic: "120 點", standard: "無限", premium: "無限")
+                FeatureRow(label: "每日 AI 分析點數", free: "60 點", basic: "120 點", standard: "無限", premium: "無限")
                 Divider().background(Color(.separator))
-                FeatureRow(label: "球員資料庫", basic: "✓", standard: "✓", premium: "✓")
+                FeatureRow(label: "球員資料庫", free: "✓", basic: "✓", standard: "✓", premium: "✓")
                 Divider().background(Color(.separator))
-                FeatureRow(label: "收藏賽事分析", basic: "✓", standard: "✓", premium: "✓")
+                FeatureRow(label: "收藏賽事分析", free: "✓", basic: "✓", standard: "✓", premium: "✓")
                 Divider().background(Color(.separator))
-                FeatureRow(label: "模型驗證率儀表板", basic: "—", standard: "✓", premium: "✓")
+                FeatureRow(label: "模型驗證率儀表板", free: "—", basic: "—", standard: "✓", premium: "✓")
                 Divider().background(Color(.separator))
-                FeatureRow(label: "推播通知", basic: "—", standard: "—", premium: "✓")
-                Divider().background(Color(.separator))
-                FeatureRow(label: "歷史賽事完整資料", basic: "近 7 日", standard: "近 30 日", premium: "完整")
+                FeatureRow(label: "推播通知", free: "—", basic: "—", standard: "—", premium: "✓")
             }
             .padding(8)
             .background(Color.black.opacity(0.2))
@@ -289,13 +289,10 @@ struct SubscribeView: View {
     private func purchase() async {
         let id = selectedTier.productID(isAnnual: isAnnual)
         await subscriptionManager.purchase(id)
-        // 成功後自動關閉（SubscriptionManager 內已驗證並 applyTier）
-        if subscriptionManager.tier != .free && subscriptionManager.tier != .basic {
-            // 注意：basic 不會 dismiss，讓使用者繼續選擇更高方案
-            if selectedTier == .standard || selectedTier == .premium {
-                try? await Task.sleep(nanoseconds: 600_000_000)
-                dismiss()
-            }
+        // 購買成功後自動關閉（所有方案統一處理）
+        if subscriptionManager.lastPurchaseSucceeded {
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            dismiss()
         }
     }
 
@@ -397,6 +394,7 @@ private struct TierCard: View {
 
 private struct FeatureRow: View {
     let label: String
+    let free: String
     let basic: String
     let standard: String
     let premium: String
@@ -409,6 +407,7 @@ private struct FeatureRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .layoutPriority(1)
 
+            cell(text: free, color: .gray.opacity(0.5))
             cell(text: basic, color: .green.opacity(0.7))
             cell(text: standard, color: .blue)
             cell(text: premium, color: .purple)
@@ -420,7 +419,7 @@ private struct FeatureRow: View {
         Text(text)
             .font(.caption2.bold())
             .foregroundColor(text == "—" ? .white.opacity(0.3) : .white)
-            .frame(width: 56)
+            .frame(width: 48)
             .padding(.vertical, 4)
             .background(color.opacity(0.15))
             .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -444,9 +443,9 @@ enum ProductTier: CaseIterable {
 
     var tagline: String {
         switch self {
-        case .basic: return "每日 120 點數・最基礎"
+        case .basic: return "每日 120 分析點數（可累積・無上限）"
         case .standard: return "無限點數・含驗證率儀表板"
-        case .premium: return "無限 + 推播通知 + 完整歷史"
+        case .premium: return "無限 + 推播通知"
         }
     }
 
