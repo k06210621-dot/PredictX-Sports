@@ -5,7 +5,7 @@
 
 "analysis.load_failed" = "Failed to load analysis";
 "action.retry" = "Retry";
-"section.ai_win_rate" = "AI Predicted Win Rate";
+"section.ai_win_rate" = "AI Predicted Strength";
 "label.confidence" = "Confidence: %@/10";
 "label.predicted_score" = "Predicted Score: %@";
 "disclaimer.ai_accuracy" = "AI predictions are for reference only. Actual game results depend on many unpredictable factors.";
@@ -19,4 +19,4 @@
 "nav.close" = "Close";
 "subscribe.title" = "AI Credits Store";
 "launch.tagline" = "AI Sports Prediction APP";
-"card.locked_hint" = "🔒 Tap to unlock AI win rate (-20 pts)";
+"card.locked_hint" = "🔒 Tap to unlock AI team strength (-20 pts)";

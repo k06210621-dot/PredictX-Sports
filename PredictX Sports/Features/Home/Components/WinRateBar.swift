@@ -20,7 +20,7 @@ struct WinRateBar: View {
                     Image(systemName: "lock.fill")
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                    Text(NSLocalizedString("card.locked_hint", comment: "🔒 點擊解鎖 AI 推論勝率 (-20 點)"))
+                    Text(NSLocalizedString("card.locked_hint", comment: "🔒 點擊解鎖 AI 推論隊伍強度 (-20 點)"))
                         .font(.caption2)
                         .foregroundColor(.secondary)
                     Spacer()

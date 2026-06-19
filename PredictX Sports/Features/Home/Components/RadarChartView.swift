@@ -8,9 +8,27 @@ public struct RadarChartView: View {
     public let homeTeamName: String
     public let awayTeamName: String
     
-    // 統一配色：主隊=藍色，客隊=紅色（與 AI 推論勝率一致）
+    // 統一配色：主隊=藍色，客隊=紅色（與 AI 推論隊伍強度一致）
     let homeColor = Color.blue
     let awayColor = Color.red
+    
+    // 正規化：將 0-100 分數映射到 0-10 範圍，保留差異
+    private var normalizedHome: [Double] {
+        normalize(homeValues)
+    }
+    private var normalizedAway: [Double] {
+        normalize(awayValues)
+    }
+    
+    private func normalize(_ vals: [Double]) -> [Double] {
+        guard !vals.isEmpty else { return [] }
+        let minVal = (vals + awayValues).min() ?? 0
+        let maxVal = (vals + awayValues).max() ?? 100
+        let range = maxVal - minVal
+        guard range > 0 else { return vals.map { _ in 5.0 } }
+        // 映射到 1.0 ~ 10.0（保留 0.5 緩衝避免貼邊）
+        return vals.map { 1.0 + (($0 - minVal) / range) * 9.0 }
+    }
     
     public init(categories: [String], homeValues: [Double], awayValues: [Double], homeTeamName: String = "主隊", awayTeamName: String = "客隊") {
         self.categories = categories
@@ -33,9 +51,9 @@ public struct RadarChartView: View {
                 let radius = min(geo.size.width, geo.size.height) / 2 * 0.65
                 
                 Canvas { context, _ in
-                    // 網格
+                    // 網格 — 動態對應維度數（修正：之前硬編碼 6 導致六邊形 vs 五邊形資料錯位）
                     for level in stride(from: 0.25, through: 1.0, by: 0.25) {
-                        context.stroke(radarPath(values: [10, 10, 10, 10, 10, 10], center: center, radius: radius * CGFloat(level)),
+                        context.stroke(radarPath(values: Array(repeating: 10, count: categories.count), center: center, radius: radius * CGFloat(level)),
                                        with: .color(.gray.opacity(0.2)), lineWidth: 1)
                     }
                     
@@ -49,12 +67,12 @@ public struct RadarChartView: View {
                     }
                     
                     // 客隊資料（紅色）
-                    let awayPath = radarPath(values: awayValues, center: center, radius: radius)
+                    let awayPath = radarPath(values: normalizedAway, center: center, radius: radius)
                     context.fill(awayPath, with: .color(awayColor.opacity(0.2)))
                     context.stroke(awayPath, with: .color(awayColor), lineWidth: 2)
                     
                     // 主隊資料（藍色）
-                    let homePath = radarPath(values: homeValues, center: center, radius: radius)
+                    let homePath = radarPath(values: normalizedHome, center: center, radius: radius)
                     context.fill(homePath, with: .color(homeColor.opacity(0.2)))
                     context.stroke(homePath, with: .color(homeColor), lineWidth: 2)
                     
@@ -64,13 +82,13 @@ public struct RadarChartView: View {
                         let labelPt = CGPoint(x: center.x + cos(angle) * (radius + 35), y: center.y + sin(angle) * (radius + 35))
                         context.draw(Text(categories[i]).font(.system(size: 12, weight: .bold)), at: labelPt, anchor: .center)
                         
-                        let hPt = CGPoint(x: center.x + cos(angle) * (radius * CGFloat(homeValues[i]/10)), y: center.y + sin(angle) * (radius * CGFloat(homeValues[i]/10)))
+                        let hPt = CGPoint(x: center.x + cos(angle) * (radius * CGFloat(normalizedHome[i]/10)), y: center.y + sin(angle) * (radius * CGFloat(normalizedHome[i]/10)))
                         context.fill(Path(ellipseIn: CGRect(x: hPt.x-4, y: hPt.y-4, width: 8, height: 8)), with: .color(homeColor))
-                        context.draw(Text(String(format: "%.1f", homeValues[i])).font(.system(size: 10, weight: .black)).foregroundColor(homeColor), at: CGPoint(x: hPt.x, y: hPt.y - 12))
+                        context.draw(Text(String(format: "%.0f", homeValues[i])).font(.system(size: 10, weight: .black)).foregroundColor(homeColor), at: CGPoint(x: hPt.x, y: hPt.y - 12))
                         
-                        let aPt = CGPoint(x: center.x + cos(angle) * (radius * CGFloat(awayValues[i]/10)), y: center.y + sin(angle) * (radius * CGFloat(awayValues[i]/10)))
+                        let aPt = CGPoint(x: center.x + cos(angle) * (radius * CGFloat(normalizedAway[i]/10)), y: center.y + sin(angle) * (radius * CGFloat(normalizedAway[i]/10)))
                         context.fill(Path(ellipseIn: CGRect(x: aPt.x-4, y: aPt.y-4, width: 8, height: 8)), with: .color(awayColor))
-                        context.draw(Text(String(format: "%.1f", awayValues[i])).font(.system(size: 10, weight: .black)).foregroundColor(awayColor), at: CGPoint(x: aPt.x, y: aPt.y + 12))
+                        context.draw(Text(String(format: "%.0f", awayValues[i])).font(.system(size: 10, weight: .black)).foregroundColor(awayColor), at: CGPoint(x: aPt.x, y: aPt.y + 12))
                     }
                 }
             }

@@ -30,7 +30,7 @@ struct HomeView: View {
     /// 執行確認扣點後的開啟邏輯
     /// 一次扣 20 點，同時解鎖：
     /// 1. AI 賽事詳情分析（SubscriptionManager 內部）
-    /// 2. 卡片上的 AI 推論勝率橫條（UnlockManager，永久記錄）
+    /// 2. 卡片上的 AI 推論隊伍強度橫條（UnlockManager，永久記錄）
     private func confirmAndOpenAnalysis() {
         guard let match = matchToConfirm else { return }
         if subscriptionManager.spendDiamond() {

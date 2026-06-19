@@ -5,7 +5,7 @@
 
 "analysis.load_failed" = "分析資料載入失敗";
 "action.retry" = "重試";
-"section.ai_win_rate" = "AI 推論勝率";
+"section.ai_win_rate" = "AI 推論隊伍強度";
 "label.confidence" = "數據置信度：%@/10";
 "label.predicted_score" = "模型推演比分：%@";
 "disclaimer.ai_accuracy" = "AI 推論結果僅供參考，不保證準確性。實際賽事結果受多種不可預測因素影響。";
@@ -19,4 +19,4 @@
 "nav.close" = "關閉";
 "subscribe.title" = "AI 額度儲值中心";
 "launch.tagline" = "智能球賽預測 APP";
-"card.locked_hint" = "🔒 點擊解鎖 AI 推論勝率 (-20 點)";
+"card.locked_hint" = "🔒 點擊解鎖 AI 推論隊伍強度 (-20 點)";
