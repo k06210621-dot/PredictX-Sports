@@ -321,53 +321,6 @@ def run_analysis():
         return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
-@app.route('/api/admin/analyze_games', methods=['POST'])
-def admin_analyze_games():
-    """一次性：對指定 game_ids 執行 AI 分析（補用太平洋聯盟賽事）"""
-    token = request.headers.get('X-Admin-Token', '')
-    if token != 'predictx-analyze-2026-06-19':
-        return jsonify({"error": "unauthorized"}), 403
-
-    data = request.get_json(silent=True) or {}
-    game_ids = data.get('game_ids', [])
-    if not game_ids:
-        return jsonify({"error": "missing game_ids"}), 400
-
-    try:
-        from run_analysis import save_analysis
-        from analysis_engine import AnalysisEngine
-
-        engine = AnalysisEngine()  # 讓 engine 自己管理連線
-        results = {}
-        for idx, gid in enumerate(game_ids):
-            try:
-                result = engine.analyze_game(gid)
-                if result:
-                    engine.cur.execute(
-                        """INSERT INTO predictx.game_analysis (game_id, analysis_data, updated_at)
-                           VALUES (%s::uuid, %s::jsonb, CURRENT_TIMESTAMP)
-                           ON CONFLICT (game_id)
-                           DO UPDATE SET analysis_data = EXCLUDED.analysis_data, updated_at = CURRENT_TIMESTAMP""",
-                        (gid, json.dumps(result, ensure_ascii=False))
-                    )
-                    engine.conn.commit()
-                    results[gid[:8]] = "success"
-                else:
-                    results[gid[:8]] = "no_result"
-            except Exception as e:
-                import traceback
-                tb = traceback.format_exc()
-                results[gid[:8]] = f"error: {str(e)[:200]}"
-                logger.error(f"analyze {gid}: {tb}")
-        engine.close()
-        return jsonify({"status": "success", "results": results}), 200
-    except Exception as e:
-        import traceback
-        tb = traceback.format_exc()
-        logger.error(f"admin_analyze_games: {tb}")
-        return jsonify({"error": str(e), "type": type(e).__name__, "trace": tb[:500]}), 500
-
-
 @app.route('/api/insert_games', methods=['POST'])
 def insert_games():
     """接受外部傳入的賽程資料並寫入資料庫"""
