@@ -321,6 +321,44 @@ def run_analysis():
         return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
+@app.route('/api/admin/resettle', methods=['POST'])
+def admin_resettle():
+    """一次性：清除指定 game_ids 的 actual_result 並重新結算"""
+    token = request.headers.get('X-Admin-Token', '')
+    if token != 'predictx-resettle-2026-06-19':
+        return jsonify({"error": "unauthorized"}), 403
+
+    data = request.get_json(silent=True) or {}
+    game_ids = data.get('game_ids', [])
+    if not game_ids:
+        return jsonify({"error": "missing game_ids"}), 400
+
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        # 清除 actual_result
+        for gid in game_ids:
+            cur.execute(
+                """UPDATE predictx.game_analysis
+                   SET analysis_data = analysis_data - 'actual_result'
+                   WHERE game_id = %s::uuid""",
+                (gid,)
+            )
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        # 觸發結算
+        from settlement_engine import SettlementEngine
+        settler = SettlementEngine()
+        count = settler.settle_games(re_settle_all=False)
+        return jsonify({"status": "success", "cleared": len(game_ids), "settled": count}), 200
+    except Exception as e:
+        import traceback
+        logger.error(f"admin_resettle: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e), "type": type(e).__name__}), 500
+
+
 @app.route('/api/insert_games', methods=['POST'])
 def insert_games():
     """接受外部傳入的賽程資料並寫入資料庫"""
