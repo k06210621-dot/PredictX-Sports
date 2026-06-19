@@ -1,0 +1,19 @@
+/*
+  AIAnalysisDetailView - 繁體中文 Localization
+  Last updated: 2026-06-19
+*/
+
+"analysis.load_failed" = "分析資料載入失敗";
+"action.retry" = "重試";
+"section.ai_win_rate" = "AI 推論勝率";
+"label.confidence" = "數據置信度：%@/10";
+"label.predicted_score" = "模型推演比分：%@";
+"disclaimer.ai_accuracy" = "AI 推論結果僅供參考，不保證準確性。實際賽事結果受多種不可預測因素影響。";
+"section.radar_chart" = "能力維度分析";
+"section.ai_summary" = "AI 深度分析摘要";
+"empty.no_analysis" = "無分析資料";
+"label.key_factors" = "關鍵影響因子";
+"label.risk_factors" = "潛在風險因子";
+"disclaimer.full" = "本分析結果由 AI 模型基於歷史數據生成，僅供體育數據研究與統計參考，不構成任何形式的投注建議。";
+"nav.title" = "AI 賽事詳情分析";
+"nav.close" = "關閉";
