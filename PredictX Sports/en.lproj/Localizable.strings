@@ -19,3 +19,4 @@
 "nav.close" = "Close";
 "subscribe.title" = "AI Credits Store";
 "launch.tagline" = "AI Sports Prediction APP";
+"card.locked_hint" = "🔒 Tap to unlock AI win rate (-20 pts)";

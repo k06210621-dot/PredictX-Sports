@@ -4,8 +4,43 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject private var store: HomeStore
     @EnvironmentObject private var favoritesStore: FavoritesStore
+    @EnvironmentObject private var subscriptionManager: SubscriptionManager
     @State private var selectedMatchForDetail: Match? = nil
     @State private var scrollToTopTrigger = false
+    @State private var showSpendToast: Bool = false
+    @State private var spendToastMessage: String = ""
+    @State private var showConfirmAlert: Bool = false
+    @State private var matchToConfirm: Match? = nil
+
+    /// 點擊賽事卡片的權限閘門
+    private func openAnalysis(for match: Match) {
+        if subscriptionManager.isUnlocked(match.id) {
+            // 已解鎖：直接開啟
+            selectedMatchForDetail = match
+        } else if subscriptionManager.canWatchAnalysis() {
+            // 有足夠點數：先跳出確認彈窗
+            matchToConfirm = match
+            showConfirmAlert = true
+        } else {
+            // 點數不足：跳出訂閱頁面
+            subscriptionManager.showSubscribeView = true
+        }
+    }
+
+    /// 執行確認扣點後的開啟邏輯
+    private func confirmAndOpenAnalysis() {
+        guard let match = matchToConfirm else { return }
+        if subscriptionManager.spendDiamond() {
+            subscriptionManager.unlockAnalysis(match.id)
+            // 顯示扣點回饋 toast
+            if let fb = subscriptionManager.lastSpendFeedback {
+                spendToastMessage = "已使用 \(fb.cost) 分析點數・剩餘 \(fb.remaining) 點"
+                showSpendToast = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) { showSpendToast = false }
+            }
+            selectedMatchForDetail = match
+        }
+    }
     
     var body: some View {
         NavigationStack {
@@ -69,7 +104,7 @@ struct HomeView: View {
                                                     confidence: match.aiConfidence ?? 0
                                                 )
                                                 .contentShape(Rectangle())
-                                                .onTapGesture { selectedMatchForDetail = match }
+                                                .onTapGesture { openAnalysis(for: match) }
                                             }
                                         }
                                     }
@@ -99,9 +134,16 @@ struct HomeView: View {
                                         .padding(.top, 20)
                                     } else {
                                         ForEach(Array(store.filteredPredictions.enumerated()), id: \.offset) { _, match in
-                                            PredictionRowView(match: match)
-                                                .contentShape(Rectangle())
-                                                .onTapGesture { self.selectedMatchForDetail = match }
+                                            PredictionRowView(
+                                                match: match,
+                                                onUnlock: { matchToUnlock in
+                                                    // 鎖定狀態點擊鎖定區 → 觸發扣點確認對話框（共用邏輯）
+                                                    matchToConfirm = matchToUnlock
+                                                    showConfirmAlert = true
+                                                }
+                                            )
+                                            .contentShape(Rectangle())
+                                            .onTapGesture { openAnalysis(for: match) }
                                         }
                                     }
                                 }
@@ -141,8 +183,46 @@ struct HomeView: View {
             .sheet(item: $selectedMatchForDetail) { match in
                 AIAnalysisDetailView(match: match)
                     .environmentObject(favoritesStore)
+                    .environmentObject(subscriptionManager)
+            }
+            .alert("開啟 AI 賽事詳情分析", isPresented: $showConfirmAlert) {
+                Button("同意・扣除 20 點") {
+                    confirmAndOpenAnalysis()
+                }
+                Button("取消", role: .cancel) {
+                    matchToConfirm = nil
+                }
+            } message: {
+                let remaining = subscriptionManager.diamonds
+                Text("點選同意後將扣除 20 點分析點數查看本場賽事 AI 詳情分析。\n\n目前剩餘：\(remaining) 點")
+            }
+            .overlay(alignment: .bottom) {
+                if showSpendToast {
+                    spendToastView
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: showSpendToast)
+                }
             }
         }
+    }
+    
+    // MARK: - 扣點回饋 Toast
+    private var spendToastView: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "cpu.fill")
+                .font(.caption)
+                .foregroundColor(.blue)
+            Text(spendToastMessage)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundColor(.primary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+        .padding(.bottom, 100)
     }
     
     @ViewBuilder

@@ -1,10 +1,13 @@
 import SwiftUI
 import Combine
 
-/// 大升級：發光質感 AI 數據預測卡片 (完美融合跨聯賽進階因子)
+/// 大升級：發光質感 AI 數據預測卡片 (完美融合跨聯盟進階因子)
 struct PredictionRowView: View {
     var match: Match
     @EnvironmentObject var favoritesStore: FavoritesStore
+    @EnvironmentObject var subscriptionManager: SubscriptionManager
+    /// 點擊解鎖按鈕的回呼（由 HomeView 處理扣點數 + 顯示確認對話框）
+    var onUnlock: ((Match) -> Void)? = nil
 
     // 根據不同聯賽自動更換發光主題色 (NBA 溫暖橘、MLB 科技藍、NPB 日職金、CPBL 職棒綠)
     private var themeColor: Color { LeagueTheme.color(for: match.league) }
@@ -109,9 +112,24 @@ struct PredictionRowView: View {
             .padding(.vertical, 2)
             
             // 3. 安全調用 Components 下的獨立 WinRateBar 雙向勝率條
+            // 邏輯：
+            // - 付費會員 (Standard/Premium) 直接看 → isLocked = false
+            // - 一般會員 (Free/Basic) 已解鎖 → isLocked = false
+            // - 一般會員 (Free/Basic) 未解鎖 → isLocked = true（顯示灰底 + 解鎖提示）
             if let winRate = match.aiWinRateHome {
-                WinRateBar(homeWinRate: winRate, homeTeam: match.homeTeamCN, awayTeam: match.awayTeamCN)
-                    .padding(.vertical, 2)
+                let isLocked = UnlockManager.shared.requiresPayment(tier: subscriptionManager.tier)
+                    && !UnlockManager.shared.isUnlocked(gameId: match.id)
+                WinRateBar(
+                    homeWinRate: winRate,
+                    homeTeam: match.homeTeamCN,
+                    awayTeam: match.awayTeamCN,
+                    isLocked: isLocked,
+                    onUnlockTapped: {
+                        // 點擊鎖定區時，直接彈出扣點確認對話框（與卡片本身共用邏輯）
+                        onUnlock?(match)
+                    }
+                )
+                .padding(.vertical, 2)
             }
             
             // 4. 四大聯賽究極核心解包樞紐

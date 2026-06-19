@@ -19,3 +19,4 @@
 "nav.close" = "關閉";
 "subscribe.title" = "AI 額度儲值中心";
 "launch.tagline" = "智能球賽預測 APP";
+"card.locked_hint" = "🔒 點擊解鎖 AI 推論勝率 (-20 點)";
