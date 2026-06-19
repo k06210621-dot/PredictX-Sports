@@ -1,6 +1,7 @@
 
 import SwiftUI
 import Combine
+import GoogleMobileAds
 
 // MARK: - 個人資訊主頁
 struct ProfileView: View {
@@ -52,17 +53,9 @@ struct ProfileView: View {
                     }
                     .buttonStyle(.plain)
                     
-                    // MARK: ⑤ 升級方案
+                    // MARK: ⑤ 觀看廣告獲取分析點數（僅 Free 方案）
                     if subscriptionManager.tier == .free {
-                        Button(action: { subscriptionManager.showSubscribeView = true }) {
-                            ProfileMenuRow(
-                                icon: "crown.fill",
-                                iconColor: .yellow,
-                                title: "升級 Premium",
-                                subtitle: "解鎖所有 AI 賽事分析功能"
-                            )
-                        }
-                        .buttonStyle(.plain)
+                        AdRewardCardView(subscriptionManager: subscriptionManager)
                     }
                     
                     // MARK: ⑥ AI 推論分析收藏
@@ -133,6 +126,39 @@ struct ProfileView: View {
                         subtitle: "v1.0.0 (Build 1)"
                     )
                     .disabled(true)
+
+                    // MARK: 🛠️ 開發者測試面板（僅測試用，幫助快速切換會員等級）
+                    #if DEBUG
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("🛠️ 開發者測試面板")
+                            .font(.caption.bold())
+                            .foregroundColor(.orange)
+                        HStack {
+                            ForEach([MembershipTier.free, .basic, .standard, .premium], id: \.self) { t in
+                                Button(t.rawValue) {
+                                    subscriptionManager.tier = t
+                                    subscriptionManager.diamonds = 999
+                                    subscriptionManager.diamondDailyCap = 9999
+                                    UserDefaults.standard.set(t.rawValue, forKey: "membership_tier")
+                                    UserDefaults.standard.set(999, forKey: "diamonds")
+                                    UserDefaults.standard.set(9999, forKey: "diamond_cap")
+                                }
+                                .font(.caption2)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(subscriptionManager.tier == t ? Color.blue : Color.gray.opacity(0.3))
+                                .foregroundColor(.white)
+                                .cornerRadius(6)
+                            }
+                        }
+                        Text("當前: \(subscriptionManager.tier.rawValue) | \(subscriptionManager.diamonds) 點")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding()
+                    .background(Color.orange.opacity(0.1))
+                    .cornerRadius(12)
+                    #endif
                 }
                 .padding()
             }
@@ -257,6 +283,9 @@ struct MembershipCardView: View {
     private var subtitleText: String {
         switch subscriptionManager.tier {
         case .free:
+            if subscriptionManager.trialExpired {
+                return "試用已過期・請升級方案"
+            }
             return "試用期剩餘 \(subscriptionManager.trialDaysRemaining) 天"
         case .basic, .standard, .premium:
             return "月費訂閱中・已解鎖所有權限"
@@ -325,4 +354,196 @@ struct ProfileMenuRow: View {
 
 #Preview {
     ProfileView()
+}
+
+// MARK: - 觀看廣告獲取分析點數卡片
+struct AdRewardCardView: View {
+    @ObservedObject var subscriptionManager: SubscriptionManager
+    @State private var showAdSheet: Bool = false
+
+    private var canWatch: Bool {
+        subscriptionManager.canWatchAd()
+    }
+
+    var body: some View {
+        Button(action: { showAdSheet = true }) {
+            HStack(spacing: 16) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.green.opacity(0.15))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "play.rectangle.fill")
+                        .font(.body)
+                        .foregroundColor(.green)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("觀看廣告獲得分析點數")
+                        .font(.body)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    Text(canWatch
+                         ? "每則 +20 點・今日剩餘 \(subscriptionManager.adsRemainingToday) / \(subscriptionManager.adDailyLimit) 則"
+                         : "今日已看完所有廣告・明日 00:00 重新整理")
+                        .font(.caption)
+                        .foregroundColor(canWatch ? .secondary : .orange)
+                }
+
+                Spacer()
+
+                if canWatch {
+                    Text("+\(subscriptionManager.adRewardPoints)")
+                        .font(.caption.bold())
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Color.green)
+                        .clipShape(Capsule())
+                } else {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.gray)
+                }
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding()
+            .background(Color(.secondarySystemBackground))
+            .cornerRadius(16)
+            .shadow(color: Color.black.opacity(0.1), radius: 6, x: 0, y: 3)
+        }
+        .buttonStyle(.plain)
+        .disabled(!canWatch)
+        .onAppear {
+            // 進入畫面時安全地跨日重置（不在 view body 中修改狀態）
+            subscriptionManager.resetAdCountIfNewDay()
+        }
+        .sheet(isPresented: $showAdSheet) {
+            AdRewardView(subscriptionManager: subscriptionManager, isPresented: $showAdSheet)
+        }
+    }
+}
+
+// MARK: - 廣告播放頁（Google AdMob 獎勵廣告）
+struct AdRewardView: View {
+    @ObservedObject var subscriptionManager: SubscriptionManager
+    @Binding var isPresented: Bool
+    @State private var isLoading = true
+    @State private var loadError: String?
+    @State private var isFinished = false
+    
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            
+            VStack(spacing: 24) {
+                HStack {
+                    Spacer()
+                    Button(action: { isPresented = false }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                    .padding()
+                }
+                
+                Spacer()
+                
+                if let error = loadError {
+                    // 廣告載入失敗
+                    VStack(spacing: 20) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 60))
+                            .foregroundColor(.orange)
+                        Text("廣告載入失敗")
+                            .font(.title3.bold())
+                            .foregroundColor(.white)
+                        Text(error)
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.7))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
+                        Button("關閉") { isPresented = false }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.blue)
+                    }
+                } else if !isFinished {
+                    // 載入中
+                    VStack(spacing: 20) {
+                        Image(systemName: "play.rectangle.fill")
+                            .font(.system(size: 60))
+                            .foregroundColor(.green)
+                        Text("正在載入廣告…")
+                            .font(.title3.bold())
+                            .foregroundColor(.white)
+                        if isLoading {
+                            ProgressView()
+                                .tint(.white)
+                                .scaleEffect(1.5)
+                        }
+                    }
+                } else {
+                    // 獎勵領取
+                    VStack(spacing: 20) {
+                        Image(systemName: "gift.fill")
+                            .font(.system(size: 60))
+                            .foregroundColor(.yellow)
+                        Text("廣告播放完畢！")
+                            .font(.title3.bold())
+                            .foregroundColor(.white)
+                        
+                        Button(action: {
+                            rewardAndDismiss()
+                        }) {
+                            HStack {
+                                Image(systemName: "gift.fill")
+                                Text("領取 +\(subscriptionManager.adRewardPoints) 分析點數")
+                            }
+                            .font(.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                            .background(LinearGradient(colors: [.green, .blue],
+                                                      startPoint: .leading, endPoint: .trailing))
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                        }
+                        .padding(.horizontal, 32)
+                    }
+                }
+                
+                Spacer()
+            }
+        }
+        .onAppear {
+            loadAndShowAd()
+        }
+    }
+    
+    private func loadAndShowAd() {
+        let adUnitID = AdMobConfig.rewardedAdUnitID
+        
+        RewardedAd.load(with: adUnitID, request: Request()) { [self] ad, error in
+            isLoading = false
+            if let error = error {
+                loadError = "廣告載入失敗（\(error.localizedDescription)）"
+                return
+            }
+            
+            guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                  let rootVC = windowScene.windows.first?.rootViewController else {
+                loadError = "無法取得畫面控制器"
+                return
+            }
+            
+            ad?.present(from: rootVC) {
+                isFinished = true
+            }
+        }
+    }
+    
+    private func rewardAndDismiss() {
+        _ = subscriptionManager.watchAdForPoints()
+        isPresented = false
+    }
 }
