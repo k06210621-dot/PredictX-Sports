@@ -28,10 +28,15 @@ struct HomeView: View {
     }
 
     /// 執行確認扣點後的開啟邏輯
+    /// 一次扣 20 點，同時解鎖：
+    /// 1. AI 賽事詳情分析（SubscriptionManager 內部）
+    /// 2. 卡片上的 AI 推論勝率橫條（UnlockManager，永久記錄）
     private func confirmAndOpenAnalysis() {
         guard let match = matchToConfirm else { return }
         if subscriptionManager.spendDiamond() {
             subscriptionManager.unlockAnalysis(match.id)
+            // 🔗 同步：永久解鎖勝率橫條（共用 20 點，不重複扣費）
+            UnlockManager.shared.unlock(gameId: match.id)
             // 顯示扣點回饋 toast
             if let fb = subscriptionManager.lastSpendFeedback {
                 spendToastMessage = "已使用 \(fb.cost) 分析點數・剩餘 \(fb.remaining) 點"
@@ -40,6 +45,12 @@ struct HomeView: View {
             }
             selectedMatchForDetail = match
         }
+    }
+
+    /// 進入頁面時：把 SubscriptionManager 舊的解鎖紀錄同步到 UnlockManager
+    /// 確保之前已開啟過的賽事，在新系統下勝率橫條也自動解鎖
+    private func syncUnlockState() {
+        UnlockManager.shared.syncFromSubscriptionManager(subscriptionManager.unlockedAnalysisIds)
     }
     
     var body: some View {
@@ -185,6 +196,7 @@ struct HomeView: View {
                     .environmentObject(favoritesStore)
                     .environmentObject(subscriptionManager)
             }
+            .onAppear { syncUnlockState() }
             .alert("開啟 AI 賽事詳情分析", isPresented: $showConfirmAlert) {
                 Button("同意・扣除 20 點") {
                     confirmAndOpenAnalysis()

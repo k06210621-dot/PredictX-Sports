@@ -19,6 +19,16 @@ final class UnlockManager: ObservableObject {
         self.unlockedGameIds = Set(array)
     }
 
+    /// 從 SubscriptionManager 同步已解鎖的賽事
+    /// 確保舊用戶的解鎖狀態在新系統下仍然有效
+    func syncFromSubscriptionManager(_ unlockedIds: Set<String>) {
+        let newIds = unlockedIds.subtracting(unlockedGameIds)
+        if !newIds.isEmpty {
+            unlockedGameIds.formUnion(newIds)
+            save()
+        }
+    }
+
     /// 判斷是否已解鎖
     func isUnlocked(gameId: String) -> Bool {
         unlockedGameIds.contains(gameId)
