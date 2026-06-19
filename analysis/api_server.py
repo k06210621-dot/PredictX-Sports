@@ -337,20 +337,29 @@ def admin_analyze_games():
         from run_analysis import save_analysis
         from analysis_engine import AnalysisEngine
 
-        conn = get_db()
-        engine = AnalysisEngine(conn=conn)
+        engine = AnalysisEngine()  # 讓 engine 自己管理連線
         results = {}
         for idx, gid in enumerate(game_ids):
             try:
                 result = engine.analyze_game(gid)
-                if result and save_analysis(conn, gid, result):
+                if result:
+                    # 用 engine 自己的連線 save
+                    engine.cur.execute(
+                        """INSERT INTO predictx.game_analysis (game_id, analysis_data, updated_at)
+                           VALUES (%s::uuid, %s::jsonb, CURRENT_TIMESTAMP)
+                           ON CONFLICT (game_id)
+                           DO UPDATE SET analysis_data = EXCLUDED.analysis_data, updated_at = CURRENT_TIMESTAMP""",
+                        (gid, json.dumps(result, ensure_ascii=False))
+                    )
+                    engine.conn.commit()
                     results[gid[:8]] = "success"
                 else:
                     results[gid[:8]] = "no_result"
             except Exception as e:
-                results[gid[:8]] = f"error: {str(e)[:80]}"
+                import traceback
+                results[gid[:8]] = f"error: {str(e)[:120]}"
+                logger.error(f"analyze {gid}: {traceback.format_exc()}")
         engine.close()
-        conn.close()
         return jsonify({"status": "success", "results": results}), 200
     except Exception as e:
         import traceback
