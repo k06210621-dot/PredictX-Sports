@@ -66,6 +66,16 @@ class NPBIngester(BaseIngester):
     _cached_html: Dict[str, str] = {}
     _cached_soup: Dict[str, BeautifulSoup] = {}
 
+    # 健全性檢查：太平洋聯盟球隊（確保日曆頁含跨聯盟賽事，非只抓中央聯盟）
+    PACIFIC_LEAGUE_TEAMS = {
+        "Hokkaido Nippon-Ham Fighters",
+        "Fukuoka SoftBank Hawks",
+        "Chiba Lotte Marines",
+        "Tohoku Rakuten Golden Eagles",
+        "ORIX Buffaloes",
+        "Saitama Seibu Lions",
+    }
+
     def _get_monthly_page(self, year: int, month: int):
         """抓取指定年月的月曆頁（帶快取）"""
         month_str = f"{month:02d}"
@@ -120,6 +130,22 @@ class NPBIngester(BaseIngester):
             game = self._parse_game_row(row, dt)
             if game:
                 games.append(game)
+
+        # 健全性檢查：若太平洋聯盟球隊都沒在抓取結果裡，可能是抓錯頁面（只抓到中央聯盟）
+        team_set = set()
+        for g in games:
+            team_set.add(g["home_team"])
+            team_set.add(g["away_team"])
+        pacific_present = team_set & self.PACIFIC_LEAGUE_TEAMS
+        if games and len(pacific_present) == 0:
+            LOGGER.warning(
+                f"NPB {target_date} 抓取結果不含任何太平洋聯盟球隊！"
+                f"（共 {len(games)} 場）可能為單一聯盟頁面。請檢查來源 URL。"
+            )
+        else:
+            LOGGER.info(
+                f"NPB {target_date} 太平洋聯盟球隊出現: {sorted(pacific_present)}"
+            )
 
         return games
 

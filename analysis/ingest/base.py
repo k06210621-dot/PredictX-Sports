@@ -135,6 +135,18 @@ class BaseIngester(ABC):
                         ok = False
             all_games.extend(games_for_day)
 
+        run_today = today.strftime("%Y-%m-%d")
+        today_games = [g for g in all_games if g.get("match_date") == run_today]
+        if self.league_code == "NPB":
+            npb_today = len(today_games)
+            # 健全性檢查：6 月交流戰密集日，NPB 通常有 5-6 場；非交流戰期間可能僅 3 場（中央聯盟）
+            # 若 NPB 抓取結果 < 3 場，幾乎一定是抓錯頁面
+            if 0 < npb_today < 3:
+                LOGGER.warning(
+                    f"[{self.league_code}] {run_today} 只抓到 {npb_today} 場，"
+                    f"可能是單一聯盟頁面（應含全 12 隊）。請檢查 fetcher 來源 URL。"
+                )
+
         if dry_run:
             LOGGER.info(f"[{self.league_code}] (dry-run) 共 {len(all_games)} 場，不上傳")
             for g in all_games:
