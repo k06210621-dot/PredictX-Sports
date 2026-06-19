@@ -343,7 +343,6 @@ def admin_analyze_games():
             try:
                 result = engine.analyze_game(gid)
                 if result:
-                    # 用 engine 自己的連線 save
                     engine.cur.execute(
                         """INSERT INTO predictx.game_analysis (game_id, analysis_data, updated_at)
                            VALUES (%s::uuid, %s::jsonb, CURRENT_TIMESTAMP)
@@ -357,14 +356,16 @@ def admin_analyze_games():
                     results[gid[:8]] = "no_result"
             except Exception as e:
                 import traceback
-                results[gid[:8]] = f"error: {str(e)[:120]}"
-                logger.error(f"analyze {gid}: {traceback.format_exc()}")
+                tb = traceback.format_exc()
+                results[gid[:8]] = f"error: {str(e)[:200]}"
+                logger.error(f"analyze {gid}: {tb}")
         engine.close()
         return jsonify({"status": "success", "results": results}), 200
     except Exception as e:
         import traceback
-        logger.error(f"admin_analyze_games: {e}\n{traceback.format_exc()}")
-        return jsonify({"error": str(e), "type": type(e).__name__}), 500
+        tb = traceback.format_exc()
+        logger.error(f"admin_analyze_games: {tb}")
+        return jsonify({"error": str(e), "type": type(e).__name__, "trace": tb[:500]}), 500
 
 
 @app.route('/api/insert_games', methods=['POST'])
