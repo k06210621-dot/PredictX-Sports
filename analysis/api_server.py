@@ -321,6 +321,46 @@ def run_analysis():
         return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
+@app.route('/api/admin/analyze_missing', methods=['POST'])
+def admin_analyze_missing():
+    """一次性：對指定 game_ids 跑 AI 分析（補跑缺失分析）"""
+    token = request.headers.get('X-Admin-Token', '')
+    if token != 'predictx-analyze-2026-06-19':
+        return jsonify({"error": "unauthorized"}), 403
+
+    data = request.get_json(silent=True) or {}
+    game_ids = data.get('game_ids', [])
+    if not game_ids:
+        return jsonify({"error": "missing game_ids"}), 400
+
+    try:
+        from analysis_engine import AnalysisEngine
+        engine = AnalysisEngine()
+        results = {}
+        for gid in game_ids:
+            try:
+                result = engine.analyze_game(gid)
+                if result:
+                    import json as _json
+                    engine.cur.execute(
+                        """INSERT INTO predictx.game_analysis (game_id, analysis_data, updated_at)
+                           VALUES (%s::uuid, %s::jsonb, CURRENT_TIMESTAMP)
+                           ON CONFLICT (game_id)
+                           DO UPDATE SET analysis_data = EXCLUDED.analysis_data, updated_at = CURRENT_TIMESTAMP""",
+                        (gid, _json.dumps(result, ensure_ascii=False))
+                    )
+                    engine.conn.commit()
+                    results[gid[:8]] = "success"
+                else:
+                    results[gid[:8]] = "no_result"
+            except Exception as e:
+                results[gid[:8]] = f"error: {str(e)[:100]}"
+        engine.close()
+        return jsonify({"status": "success", "results": results}), 200
+    except Exception as e:
+        return jsonify({"error": str(e), "type": type(e).__name__}), 500
+
+
 @app.route('/api/admin/fix_npb_pairing', methods=['POST'])
 def admin_fix_npb_pairing():
     """一次性：刪除 6/19 NPB 錯誤配對的 2 場 + 補入正確的 2 場 + 重新 AI 分析"""
