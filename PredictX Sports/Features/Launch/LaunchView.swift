@@ -54,12 +54,15 @@ struct LaunchView: View {
                         .font(.title2)
                         .bold()
                         .foregroundColor(.white)
-                    
-                    Text("智能球賽預測 APP")
+                        // 加陰影保護，避免白底場景看不到文字
+                        .shadow(color: Color.black.opacity(0.6), radius: 3, x: 0, y: 1)
+
+                    Text(NSLocalizedString("launch.tagline", comment: "智能球賽預測 APP"))
                         .font(.caption)
                         .fontWeight(.semibold)
                         .foregroundColor(.gray)
                         .tracking(4) // 增加字距營造高級感
+                        .shadow(color: Color.black.opacity(0.4), radius: 2, x: 0, y: 1)
                 }
                 .opacity(isLogoVisible ? 0.9 : 0.0)
                 .offset(y: isLogoVisible ? 0 : 20)
