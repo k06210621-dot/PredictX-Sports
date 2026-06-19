@@ -321,6 +321,43 @@ def run_analysis():
         return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
+@app.route('/api/admin/analyze_games', methods=['POST'])
+def admin_analyze_games():
+    """一次性：對指定 game_ids 執行 AI 分析（補用太平洋聯盟賽事）"""
+    token = request.headers.get('X-Admin-Token', '')
+    if token != 'predictx-analyze-2026-06-19':
+        return jsonify({"error": "unauthorized"}), 403
+
+    data = request.get_json(silent=True) or {}
+    game_ids = data.get('game_ids', [])
+    if not game_ids:
+        return jsonify({"error": "missing game_ids"}), 400
+
+    try:
+        from run_analysis import save_analysis
+        from analysis_engine import AnalysisEngine
+
+        conn = get_db()
+        engine = AnalysisEngine(conn=conn)
+        results = {}
+        for idx, gid in enumerate(game_ids):
+            try:
+                result = engine.analyze_game(gid)
+                if result and save_analysis(conn, gid, result):
+                    results[gid[:8]] = "success"
+                else:
+                    results[gid[:8]] = "no_result"
+            except Exception as e:
+                results[gid[:8]] = f"error: {str(e)[:80]}"
+        engine.close()
+        conn.close()
+        return jsonify({"status": "success", "results": results}), 200
+    except Exception as e:
+        import traceback
+        logger.error(f"admin_analyze_games: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e), "type": type(e).__name__}), 500
+
+
 @app.route('/api/insert_games', methods=['POST'])
 def insert_games():
     """接受外部傳入的賽程資料並寫入資料庫"""
