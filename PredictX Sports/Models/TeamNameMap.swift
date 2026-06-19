@@ -84,7 +84,7 @@ struct TeamNameMap {
         "Hokkaido Nippon-Ham Fighters": "北海道日本火腿鬥士",
         
         // ===== CPBL (中華職棒) =====
-        "Uni-President 7-Eleven Lions": "統一7-ELEVEn獅",
+        "Uni-President 7-ELEVEn Lions": "統一7-ELEVEn獅",
         "CTBC Brothers": "中信兄弟",
         "Fubon Guardians": "富邦悍將",
         "Rakuten Monkeys": "樂天桃猿",
