@@ -324,12 +324,21 @@ def api_games():
 
 @app.route('/api/run_analysis', methods=['POST'])
 def run_analysis():
-    """執行 AI 分析 + 結算（同步執行）"""
+    """執行 AI 分析 + 結算（同步執行）
+
+    可選 body 參數：
+      - game_id: 指定單場強制重跑（會覆寫現有 analysis_data）
+      - max_count: 限制批次數（預設 5）
+    """
     try:
         from run_analysis import get_pending_games, save_analysis
         from analysis_engine import AnalysisEngine
         from settlement_engine import SettlementEngine
         from datetime import datetime, timedelta
+
+        body = request.get_json(silent=True) or {}
+        force_game_id = body.get('game_id')
+        max_count = int(body.get('max_count', 5))
 
         conn = get_db()
         results = {}
@@ -338,6 +347,26 @@ def run_analysis():
             'nvidia_key': bool(os.getenv('NVIDIA_API_KEY'))
         }
 
+        # 強制重跑單場模式
+        if force_game_id:
+            results['mode'] = 'force'
+            engine = AnalysisEngine(conn=conn)
+            try:
+                result = engine.analyze_game(force_game_id)
+                if result and save_analysis(conn, force_game_id, result):
+                    results['analyzed'] = 1
+                    results['game_id'] = force_game_id
+                else:
+                    results['analyzed'] = 0
+                    results['error'] = 'no result from engine'
+            except Exception as e:
+                import traceback
+                results['error'] = str(e)[:500]
+                results['trace'] = traceback.format_exc()[:500]
+            return jsonify(results), 200
+
+        # 批次模式：跑今日 + 明日 pending
+        results['mode'] = 'batch'
         taipei_tz = datetime.now().astimezone().tzinfo
         today = datetime.now(taipei_tz).strftime('%Y-%m-%d')
         tomorrow = (datetime.now(taipei_tz) + timedelta(days=1)).strftime('%Y-%m-%d')
@@ -348,7 +377,7 @@ def run_analysis():
         if pending:
             engine = AnalysisEngine(conn=conn)
             success = 0
-            for idx, game in enumerate(pending[:5]):
+            for idx, game in enumerate(pending[:max_count]):
                 game_id = game['game_id']
                 try:
                     result = engine.analyze_game(game_id)
