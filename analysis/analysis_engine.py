@@ -681,15 +681,26 @@ class AnalysisEngine:
         
         matchup = format_matchup(features['historical_matchup'])
 
-        # 🆕 注入 TheSportsDB 增強資料（逐局比分 + 球場特性）
+        # 🆕 注入 TheSportsDB 增強資料（逐局比分 + 球場特性 + 投手名單）
         try:
             from thesportsdb_enricher import get_enricher
             enricher = get_enricher()
             tdb_section = enricher.build_innings_analysis_section(home_team, away_team)
+
+            # 🆕 [CPBL/NPB/NBA] 投手資料（基於 TheSportsDB 球員名單）
+            # MLB 已用 mlb_pitcher_stats 處理，這是 fallback for 其他聯盟
+            league = features.get('league', '')
+            team_ids = features.get('team_ids', {})
+            if league in ('CPBL', 'NPB', 'NBA') and not features.get('mlb_pitchers'):
+                if home_id := team_ids.get('home'):
+                    tdb_section += enricher.build_pitcher_quality_section(league, str(home_id))
+                if away_id := team_ids.get('away'):
+                    tdb_section += enricher.build_pitcher_quality_section(league, str(away_id))
+
             tdb_section += enricher.build_venue_section(home_team, away_team)
         except Exception as _e:
-            LOGGER = logging.getLogger(__name__)
-            LOGGER.warning(f"TheSportsDB enricher failed (skip): {_e}")
+            import logging as _logging
+            _logging.getLogger(__name__).warning(f"TheSportsDB enricher failed (skip): {_e}")
             tdb_section = ""
 
         

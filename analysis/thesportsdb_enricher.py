@@ -243,6 +243,104 @@ class TheSportsDBEnricher:
         return honours if isinstance(honours, list) else []
 
 
+
+    # ========================================================
+    # 球員逐場/逐季 stats（補強 CPBL/NPB 投手資料缺口）
+    # ========================================================
+
+    def get_player_season_stats(self, player_id: str, season: str = "2026") -> Optional[Dict[str, Any]]:
+        """
+        取得球員某球季的整體 stats（如 Pitcher 的 ERA / Strikeouts）
+
+        TheSportsDB 對 CPBL/NPB 投手資料極少，
+        此方法主要用於 NBA（PPG/RPG/APG）和 MLB 部分球員
+        """
+        data = self._get("lookupplayerstats.php", {"id": player_id})
+        if not data:
+            return None
+        stats_list = data.get("stats")
+        if not stats_list or not isinstance(stats_list, list):
+            return None
+
+        # 找指定球季
+        for s in stats_list:
+            if str(s.get("strSeason")) == season:
+                return s
+
+        # 找不到指定球季，回傳最近一筆
+        return stats_list[0] if stats_list else None
+
+    def get_team_pitchers(self, team_id: str) -> List[Dict[str, Any]]:
+        """
+        取得球隊所有投手（TheSportsDB 限 free tier 最多 10 位球員，
+        過濾出 position 為 Pitcher 的）
+
+        適用於：
+          - NBA：實作上 N/A（無投手概念）
+          - MLB：可選用 5-10 位主力投手
+          - CPBL：僅 1-2 位（資料稀少）
+          - NPB：0 位（TheSportsDB 無資料）
+        """
+        players = self.get_team_roster(team_id)
+        # 過濾投手（NBA 不會有）
+        pitchers = [p for p in players if "pitcher" in (p.get("strPosition") or "").lower()]
+        return pitchers
+
+    def build_pitcher_quality_section(self, league: str, team_id: str) -> str:
+        """
+        建立 AI prompt 的「投手品質」段落（基於球員名單 + stats）
+
+        即使 TheSportsDB 沒有逐場 ERA，也能提供：
+        - 球員姓名 + 位置
+        - 球員國籍 / 經驗
+        - 球員基本 stats（如有）
+        """
+        pitchers = self.get_team_pitchers(team_id)
+        if not pitchers:
+            return ""
+
+        section = f"\n===== 球隊投手名單（{league}）=====\n"
+        section += f"可用資料: {len(pitchers)} 位投手\n"
+
+        for p in pitchers:
+            name = p.get("strPlayer", "")
+            pos = p.get("strPosition", "")
+            nat = p.get("strNationality", "")
+            born = p.get("dateBorn", "")
+
+            # 計算年齡
+            age_str = ""
+            if born:
+                from datetime import datetime
+                try:
+                    bd = datetime.strptime(born, "%Y-%m-%d")
+                    age = datetime.now().year - bd.year
+                    age_str = f", {age} 歲"
+                except Exception:
+                    pass
+
+            section += f"  • {name} ({pos}, {nat}{age_str})\n"
+
+            # 加 stats（如果有）
+            stats = self.get_player_season_stats(p.get("idPlayer", ""))
+            if stats:
+                relevant = {}
+                for k, v in stats.items():
+                    # 只取投手相關 stats
+                    if k in ["strERA", "strWins", "strLosses", "strSaves",
+                             "intWins", "intLosses", "intSaves",
+                             "intEarnedRuns", "intHitsAllowed", "intStrikeouts",
+                             "strAverage", "intPoints", "intAssists", "intRebounds"]:
+                        if v and v != 'null':
+                            relevant[k] = v
+
+                if relevant:
+                    stats_str = ", ".join(f"{k.replace('str', '').replace('int', '')}={v}" for k, v in relevant.items())
+                    section += f"    2026 球季: {stats_str}\n"
+
+        return section
+
+
     def build_innings_analysis_section(
         self,
         home_team: str,
