@@ -42,9 +42,7 @@ elif CLOUD_LLM_PROVIDER == "groq":
 elif CLOUD_LLM_PROVIDER == "ollama":
     CLOUD_LLM_URL = "https://api.ollama.com/api/chat"
     CLOUD_LLM_MODEL = os.environ.get("CLOUD_LLM_MODEL", "qwen3-coder-next")
-    # 🆕 優先讀 Railway 環境變數 OLLAMA_API_KEY；若無，fallback 到硬編碼（用於快速部署）
-    _ollama_key = os.environ.get("OLLAMA_API_KEY", "") or "301650a6f20a4e658663e38289c8f0c2.x7uD4cO4RzMS6mcIvOU_ecF6"
-    CLOUD_LLM_API_KEY = _ollama_key
+    CLOUD_LLM_API_KEY = os.environ.get("OLLAMA_API_KEY", "")
 else:
     CLOUD_LLM_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
     CLOUD_LLM_MODEL = "deepseek-ai/deepseek-v4-flash"
@@ -53,8 +51,7 @@ else:
 # 備援 LLM 配置（當主要 LLM 失敗時使用）
 FALLBACK_LLM_URL = "https://api.ollama.com/api/chat"
 FALLBACK_LLM_MODEL = "minimax-m3"
-_ollama_key_fb = os.environ.get("OLLAMA_API_KEY", "") or "301650a6f20a4e658663e38289c8f0c2.x7uD4cO4RzMS6mcIvOU_ecF6"
-FALLBACK_LLM_API_KEY = _ollama_key_fb
+FALLBACK_LLM_API_KEY = os.environ.get("OLLAMA_API_KEY", "")
 
 # 可透過環境變數 PREDICTX_MODEL 切換模型
 # qwen:latest (4B, ~6s/場) | qwen3.5:9b (9B, ~200s/場，預設) | cloud (雲端 LLM)
@@ -1221,9 +1218,9 @@ Park Factor: {pf:.2f} ({park_interp})
         result = self._try_llm(CLOUD_LLM_URL, CLOUD_LLM_MODEL, CLOUD_LLM_API_KEY, prompt)
         if result:
             return result
-        # 主要 LLM 失敗，試備援（Ollama Cloud）
-        if FALLBACK_LLM_API_KEY and FALLBACK_LLM_URL != CLOUD_LLM_URL:
-            print("  ⚠ Primary LLM failed, trying fallback (Ollama Cloud)...")
+        # 主要 LLM 失敗，試備援（不同模型才切，避免同 URL 同 model 重試）
+        if FALLBACK_LLM_API_KEY and FALLBACK_LLM_MODEL != CLOUD_LLM_MODEL:
+            print(f"  ⚠ Primary LLM ({CLOUD_LLM_MODEL}) failed, trying fallback ({FALLBACK_LLM_MODEL})...")
             return self._try_llm(FALLBACK_LLM_URL, FALLBACK_LLM_MODEL, FALLBACK_LLM_API_KEY, prompt)
         return None
 
