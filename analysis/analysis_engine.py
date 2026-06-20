@@ -685,6 +685,18 @@ class AnalysisEngine:
             return "\n".join(lines)
         
         matchup = format_matchup(features['historical_matchup'])
+
+        # 🆕 注入 TheSportsDB 增強資料（逐局比分 + 球場特性）
+        try:
+            from thesportsdb_enricher import get_enricher
+            enricher = get_enricher()
+            tdb_section = enricher.build_innings_analysis_section(home_team, away_team)
+            tdb_section += enricher.build_venue_section(home_team, away_team)
+        except Exception as _e:
+            LOGGER = logging.getLogger(__name__)
+            LOGGER.warning(f"TheSportsDB enricher failed (skip): {_e}")
+            tdb_section = ""
+
         
         # MLB 即時進階數據（從 statsapi.mlb.com 線上取得）
         mlb_advanced = features.get('mlb_advanced', {})
@@ -1063,6 +1075,8 @@ Park Factor: {pf:.2f} ({park_interp})
 ===== 對陣歷史 =====
 {matchup}
 
+
+{tdb_section}
 {mlb_advanced_section}
 {nba_advanced_section}
 {npb_section}
