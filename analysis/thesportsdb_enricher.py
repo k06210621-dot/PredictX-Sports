@@ -39,6 +39,33 @@ LEAGUE_IDS = {
 }
 
 
+# Hard-coded TheSportsDB team IDs（因 free tier searchteams 限 Arsenal）
+TEAM_ID_MAP = {
+    # MLB
+    "Tampa Bay Rays": "135261",
+    "New York Yankees": "135260",
+    "Los Angeles Dodgers": "135269",
+    "Boston Red Sox": "135271",
+    "Houston Astros": "135272",
+    "Atlanta Braves": "135263",
+    "Philadelphia Phillies": "135275",
+    "Chicago Cubs": "135264",
+    "Seattle Mariners": "135267",
+    "San Diego Padres": "135273",
+    # CPBL
+    "Uni-President 7-ELEVEn Lions": "144301",
+    "CTBC Brothers": "144298",
+    "Fubon Guardians": "144299",
+    "Rakuten Monkeys": "144300",
+    "Wei Chuan Dragons": "144302",
+    "TSG Hawks": "147333",
+    # NPB (部分)
+    "Yomiuri Giants": "140299",
+    "Hanshin Tigers": "140300",
+    "Chunichi Dragons": "140301",
+}
+
+
 class TheSportsDBEnricher:
     """TheSportsDB 增強資料服務"""
 
@@ -187,7 +214,6 @@ class TheSportsDBEnricher:
             return ""
 
         # 從整季賽事找兩隊對戰
-        # 先看哪個聯盟
         league_id = self._guess_league_id(home_team, away_team)
         if not league_id:
             return ""
@@ -196,14 +222,23 @@ class TheSportsDBEnricher:
         if not season_events:
             return ""
 
-        # 過濾兩隊對戰
+        # 過濾兩隊對戰（用 id 對比）
         h2h = []
         for e in season_events:
             h = str(e.get("idHomeTeam", ""))
             a = str(e.get("idAwayTeam", ""))
-            # 正向或反向對戰
             if (h == home_id and a == away_id) or (h == away_id and a == home_id):
                 h2h.append(e)
+
+        # 🆕 eventsseason 不含 strResult，需逐場用 lookupevent 抓逐局比分
+        for game in h2h:
+            event_id = str(game.get("idEvent", ""))
+            if not event_id:
+                continue
+            details = self.get_match_result_details(event_id)
+            if details and details.get("result_detail"):
+                game["strResult"] = details["result_detail"]
+                game["strVenue"] = details.get("venue", game.get("strVenue"))
 
         if not h2h:
             return ""
@@ -400,33 +435,34 @@ class TheSportsDBEnricher:
         return None
 
     def _get_team_id_map_from_db(self) -> Dict[str, str]:
-        """從 Railway DB 抓取球隊英文名 → TheSportsDB ID 對照表"""
+        """回傳球隊英文名 → TheSportsDB ID 對照表
+        優先用 DB，fallback 用 hard-coded map
+        """
+        result = dict(TEAM_ID_MAP)  # 從 hard-coded 開始
+        # 嘗試從 DB 補充（未來 DB 加上 team_external_id 欄位時會自動覆蓋）
         try:
             import psycopg2
-            from dotenv import load_dotenv
             import os
 
-            load_dotenv()
             database_url = os.getenv("DATABASE_URL")
             if not database_url:
-                return {}
+                return result
 
             conn = psycopg2.connect(database_url)
             cur = conn.cursor()
-            # 簡化版：直接用 predictx.teams 表（假設有 team_external_id 欄位）
-            # 若沒有，fallback 回空字典（讓 caller 用其他方式）
             cur.execute("""
                 SELECT english_name, team_id::text
                 FROM predictx.teams
                 WHERE english_name IS NOT NULL
             """)
-            result = {row[0]: row[1] for row in cur.fetchall()}
+            for row in cur.fetchall():
+                result[row[0]] = row[1]
             cur.close()
             conn.close()
             return result
         except Exception as e:
-            LOGGER.warning(f"Failed to load team_id_map from DB: {e}")
-            return {}
+            LOGGER.debug(f"DB team_id_map unavailable, using hard-coded: {e}")
+            return result
 
 
 # 便利函式
