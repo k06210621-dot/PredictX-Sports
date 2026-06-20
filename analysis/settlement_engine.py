@@ -54,10 +54,15 @@ class SettlementEngine:
         
         self.cur.execute(query)
         pending_games = self.cur.fetchall()
-        
+
         if not pending_games:
             print("No games pending settlement.")
             return 0
+
+        # 🆕 先處理 POSTPONED/CANCELLED 的賽事（標記為無法驗證，避免污染驗證率）
+        postponed_count = self._settle_postponed_games()
+        if postponed_count:
+            print(f"  Settled {postponed_count} postponed/cancelled games (marked as not-evaluable).")
 
         settled_count = 0
         for game in pending_games:
@@ -158,6 +163,72 @@ class SettlementEngine:
     def close(self):
         self.cur.close()
         self.conn.close()
+
+    def _settle_postponed_games(self):
+        """
+        處理 POSTPONED / CANCELLED 的賽事
+        目的：
+          1. 避免「幽靈賽事」（status=POSTPONED 但無 actual_result，導致永遠「未驗證」）
+          2. 明確標記為 is_hit=None（驗證率計算時會被過濾）
+          3. 不會污染 AI 驗證率的分母與分子
+
+        設計：
+          - 只處理「已分析過 AI」但「actual_result 還是 NULL」且「狀態為 POSTPONED/CANCELLED」的賽事
+          - 寫入 actual_result = {is_hit: None, reason: "postponed", ...}
+        """
+        query = """
+            SELECT g.game_id, g.status, ga.analysis_data, ht.league
+            FROM predictx.games g
+            JOIN predictx.game_analysis ga ON g.game_id = ga.game_id
+            JOIN predictx.teams ht ON g.home_team_id = ht.team_id
+            WHERE LOWER(g.status) IN ('postponed', 'cancelled', 'suspended')
+              AND (ga.analysis_data->'actual_result' IS NULL
+                   OR (ga.analysis_data->'actual_result'->>'is_hit') IS NULL
+                   OR (ga.analysis_data->'actual_result'->>'is_hit')::text = 'null')
+        """
+        try:
+            self.cur.execute(query)
+            postponed_games = self.cur.fetchall()
+        except Exception:
+            # 連線失效，重新建立
+            self.conn.close()
+            self._get_connection()
+            self.cur = self.conn.cursor()
+            self.cur.execute(query)
+            postponed_games = self.cur.fetchall()
+
+        if not postponed_games:
+            return 0
+
+        count = 0
+        for game in postponed_games:
+            game_id = game['game_id']
+            league = game['league']
+            status = game['status']
+            analysis_data = game['analysis_data'] or {}
+
+            # 寫入 actual_result，is_hit = None（驗證率計算會過濾掉）
+            analysis_data['actual_result'] = {
+                "is_hit": None,
+                "actual_winner": None,
+                "predicted_winner": None,
+                "home_prob_norm": None,
+                "actual_score": None,
+                "reason": f"賽事{status}（無法驗證）",
+                "settled_at": datetime.now().isoformat()
+            }
+
+            update_query = """
+                UPDATE predictx.game_analysis
+                SET analysis_data = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE game_id = %s
+            """
+            self.cur.execute(update_query, (json.dumps(analysis_data), game_id))
+            count += 1
+            print(f"  Marked {status}: {game_id[:8]} ({league})")
+
+        self.conn.commit()
+        return count
 
 if __name__ == "__main__":
     engine = SettlementEngine()

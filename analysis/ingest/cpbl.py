@@ -133,7 +133,32 @@ class CPBLIngester(BaseIngester):
             except (ValueError, TypeError):
                 game_date = target_date
 
-            status = "FINAL" if (home_score is not None and away_score is not None) else "SCHEDULED"
+            # 🆕 改良 status 判斷：CPBL API 多種狀態皆視為已開賽
+            # 原始：只看分數 (有分數 → FINAL，無分數 → SCHEDULED)
+            # 問題：CPBL API 在比賽進行中或剛結束時，可能分數還是 None
+            #       會被誤判為 SCHEDULED，導致永遠不結算
+            # 修正：優先讀 CPBL API 的 GameStatus 欄位（如果有的話）
+            #       若無，依以下規則判斷：
+            #       (1) 兩隊分數都有 → FINAL
+            #       (2) 該日期在「過去」（target_date < 今日）且分數 None → POSTPONED
+            #       (3) 該日期是「今天」且分數 None → 可能是 LIVE 或尚未開打 → SCHEDULED
+            #       (4) 該日期是「未來」 → SCHEDULED
+            game_status_raw = str(g.get("GameStatus", g.get("Status", g.get("StatusCode", "")))).upper()
+            today = datetime.now().strftime("%Y-%m-%d")
+            if home_score is not None and away_score is not None:
+                status = "FINAL"
+            elif game_status_raw in ("FINAL", "F", "GAMEOVER", "COMPLETED", "結束", "已結束"):
+                # API 明確標記為已結束，但分數欄位缺漏
+                # 用 0-0 標記，後續手動或下次 ingest 修正
+                status = "FINAL"
+                home_score = home_score or 0
+                away_score = away_score or 0
+            elif game_date < today:
+                # 過去日期 + 無分數 → 延期/取消
+                status = "POSTPONED"
+            else:
+                # 今天或未來日期 + 無分數 → 尚未開打
+                status = "SCHEDULED"
             games.append({
                 "season": dt.year,
                 "match_date": game_date,
