@@ -65,7 +65,41 @@ def get_db():
 
 @app.route('/health', methods=['GET'])
 def health():
-    return jsonify({"status": "healthy", "service": "PredictX Analysis API"}), 200
+    """完整健康檢查：DB 連線 + 必要環境變數"""
+    checks = {
+        "service": "PredictX Analysis API",
+        "timestamp": datetime.now().isoformat(),
+        "checks": {}
+    }
+    overall_healthy = True
+
+    # 1. DB 連線檢查
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        cur.fetchone()
+        cur.close()
+        conn.close()
+        checks["checks"]["database"] = "ok"
+    except Exception as e:
+        checks["checks"]["database"] = f"error: {type(e).__name__}"
+        overall_healthy = False
+
+    # 2. 必要環境變數檢查
+    required_env = ["DATABASE_URL", "NVIDIA_API_KEY", "PREDICTX_MODEL"]
+    missing = [k for k in required_env if not os.getenv(k)]
+    if missing:
+        checks["checks"]["env_vars"] = f"missing: {missing}"
+        overall_healthy = False
+    else:
+        checks["checks"]["env_vars"] = "ok"
+
+    # 3. TheSportsDB key（CPBL 用，可選）
+    checks["checks"]["thesportsdb_key"] = "configured" if os.getenv("THESPORTSDB_API_KEY", "123") else "missing"
+
+    checks["status"] = "healthy" if overall_healthy else "unhealthy"
+    return jsonify(checks), 200 if overall_healthy else 503
 
 
 @app.route('/api/init_db', methods=['POST'])
