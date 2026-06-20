@@ -16,6 +16,26 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("PredictX-API")
 
+# Sentry 錯誤監控（production）
+# 如果未設 SENTRY_DSN，自動跳過（不影響運作）
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+if SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.flask import FlaskIntegration
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            integrations=[FlaskIntegration()],
+            traces_sample_rate=0.1,  # 10% performance traces
+            environment=os.getenv("RAILWAY_ENVIRONMENT", "production"),
+            release="predictx-api@1.0.0",
+        )
+        logger.info("Sentry 初始化成功")
+    except Exception as e:
+        logger.warning(f"Sentry 初始化失敗（不影響服務）: {e}")
+else:
+    logger.info("未設定 SENTRY_DSN，跳過 Sentry 初始化")
+
 app = Flask(__name__)
 CORS(app)
 
