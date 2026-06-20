@@ -335,14 +335,18 @@ def admin_fix_cpbl_619():
         conn.autocommit = True
         cur = conn.cursor()
         cur.execute("""
-            UPDATE predictx.games
+            UPDATE predictx.games g
             SET status = 'POSTPONED'
-            WHERE match_date = '2026-06-19'
-              AND league = 'CPBL'
-              AND status = 'SCHEDULED'
-              AND home_team_score IS NULL
-              AND away_team_score IS NULL
-            RETURNING game_id
+            FROM predictx.teams th, predictx.teams ta
+            WHERE g.match_date = '2026-06-19'
+              AND UPPER(th.league) = 'CPBL'
+              AND UPPER(ta.league) = 'CPBL'
+              AND g.home_team_id = th.team_id
+              AND g.away_team_id = ta.team_id
+              AND g.status = 'SCHEDULED'
+              AND g.home_team_score IS NULL
+              AND g.away_team_score IS NULL
+            RETURNING g.game_id
         """)
         updated = cur.fetchall()
         # 接著 settlement engine 處理這些 POSTPONED
