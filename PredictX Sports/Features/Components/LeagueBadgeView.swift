@@ -100,14 +100,14 @@ struct LeagueBadgeView: View {
                 }
             }
 
-            // 聯賽名稱（加大字體）
+            // 聯賽名稱（按鈕內文字 1.1x：18 → 20）
             Text(league.rawValue)
-                .font(.system(size: 18, weight: .bold))
+                .font(.system(size: 20, weight: .bold))
                 .foregroundColor(isSelected ? leagueColor : .secondary)
 
-            // 中文名稱（加大字體）
+            // 中文名稱（按鈕內文字 1.1x：14 → 15）
             Text(league.shortLabel)
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(size: 15, weight: .medium))
                 .foregroundColor(.secondary.opacity(0.7))
         }
         .scaleEffect(isSelected ? 1.05 : 0.95)
