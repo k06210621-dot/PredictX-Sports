@@ -355,7 +355,9 @@ def run_analysis():
                     if result and save_analysis(conn, game_id, result):
                         success += 1
                 except Exception as e:
+                    import traceback
                     results[f'e{idx}'] = str(e)[:100]
+                    results[f'e{idx}_trace'] = traceback.format_exc()[:500]
             engine.close()
             results['analyzed'] = success
         else:
