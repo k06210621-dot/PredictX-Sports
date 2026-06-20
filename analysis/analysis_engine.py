@@ -1174,7 +1174,7 @@ Park Factor: {pf:.2f} ({park_interp})
    - **重要：信心 7 必須真正「明顯佔優」才給**，不要因為「想讓用戶相信」而過度自信。{fifa_ou_instruction}
 
 **summary 撰寫指引（重要）**：
-- 至少 200 字，深入分析（如同球評賽前分析節目）
+- 長度控制在 **180-400 字** 之間（精簡但有深度，避免使用者閱讀疲勞）
 - 必須引用具體數據：球員背號/姓名、場均得分/失分、近期戰績、聯盟排名
 - 解讀比賽關鍵：進攻火力 vs 防守強度、投打對位、主客場優勢、心理因素
 - 避免空泛形容詞（"勢均力敵"、"實力接近"），用具體數字與球員名稱
@@ -1195,7 +1195,7 @@ Park Factor: {pf:.2f} ({park_interp})
   "away_win_probability": 0.0, 
   "confidence": 0, 
   "key_factors": ["因素1（引用具體數據）", "因素2", "因素3", "因素4"], 
-  "summary": "深度分析摘要（200+字，引用具體球員與數據）",
+  "summary": "深度分析摘要（180-400字，引用具體球員與數據）",
   "predicted_score": "預測比分"{fifa_ou_field},
   "radar_chart": {{
     "categories": {json.dumps(current_dims, ensure_ascii=False)},
@@ -1480,12 +1480,30 @@ Park Factor: {pf:.2f} ({park_interp})
                 )
                 # 🆕 [fix] 摘要太短（< 150 字）視為不完整，走 fallback
                 is_too_short = len(summary) < 150
+                # 🆕 [fix] 摘要太長（> 400 字）截斷為 400 字以內（避免使用者閱讀疲勞）
+                is_too_long = len(summary) > 400
                 if is_template:
                     print("  AI returned template, using computed fallback")
                     return None  # 走 fallback 路徑
                 if is_too_short:
                     print(f"  ⚠ AI summary too short ({len(summary)} chars < 150), using fallback for richer analysis")
                     return None  # 走 fallback 路徑（fallback 會被替換為更好的摘要）
+                if is_too_long:
+                    print(f"  ⚠ AI summary too long ({len(summary)} chars > 400), truncating to fit UX limit")
+                    # 截斷到 400 字以內，盡量在句號處切斷
+                    truncated = summary[:400]
+                    last_period = max(
+                        truncated.rfind("。"),
+                        truncated.rfind("！"),
+                        truncated.rfind("？"),
+                        truncated.rfind(". "),
+                    )
+                    if last_period > 200:
+                        truncated = truncated[: last_period + 1]
+                    else:
+                        truncated = truncated.rstrip() + "。"
+                    result["summary"] = truncated
+                    print(f"  → Truncated to {len(truncated)} chars")
                 # Step 5: 加入來源可信度評分
                 source_score = self.calculate_source_score()
                 result["source_quality"] = {
