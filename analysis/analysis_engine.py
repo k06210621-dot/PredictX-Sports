@@ -512,12 +512,17 @@ class AnalysisEngine:
                 pitcher_data = fetcher.get_probable_pitcher_data(game_id, home_name, away_name)
                 if pitcher_data:
                     features['mlb_pitchers'] = pitcher_data
-                    hp = pitcher_data['home_pitcher']
-                    ap = pitcher_data['away_pitcher']
+                    # 🆕 [fix] 安全取得 pitcher，避免 None TypeError
+                    hp = pitcher_data.get('home_pitcher') or {}
+                    ap = pitcher_data.get('away_pitcher') or {}
                     if hp.get('stats'):
-                        print(f"  ⚾ Home SP: {hp['name']} (ERA={hp['stats']['era']}, K/9={hp['stats']['k_per_9']})")
+                        print(f"  ⚾ Home SP: {hp.get('name', 'TBD')} (ERA={hp['stats']['era']}, K/9={hp['stats']['k_per_9']})")
+                    elif hp.get('name'):
+                        print(f"  ⚾ Home SP: {hp['name']} (stats 尚未公布)")
                     if ap.get('stats'):
-                        print(f"  ⚾ Away SP: {ap['name']} (ERA={ap['stats']['era']}, K/9={ap['stats']['k_per_9']})")
+                        print(f"  ⚾ Away SP: {ap.get('name', 'TBD')} (ERA={ap['stats']['era']}, K/9={ap['stats']['k_per_9']})")
+                    elif ap.get('name'):
+                        print(f"  ⚾ Away SP: {ap['name']} (stats 尚未公布)")
                 fetcher.close()
             except Exception as e:
                 print(f"  ⚠ MLB data fetch error: {e}")

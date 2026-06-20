@@ -72,6 +72,9 @@ class BaseIngester(ABC):
             "status": status,
             "home_team_score": game.get("home_team_score"),
             "away_team_score": game.get("away_team_score"),
+            # 🆕 先發投手對位（MLB 用）
+            "home_pitcher": game.get("home_pitcher"),
+            "away_pitcher": game.get("away_pitcher"),
         }
 
     def upload(self, games: List[Dict[str, Any]]) -> bool:
