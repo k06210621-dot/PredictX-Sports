@@ -58,7 +58,7 @@ struct PlayerDBView: View {
                         .padding()
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(store.powerModifierColor.opacity(0.08))
-                        .cornerRadius(12)
+                        .cornerRadius(16)
                         .overlay(RoundedRectangle(cornerRadius: 12).stroke(store.powerModifierColor.opacity(0.2), lineWidth: 1))
                         
                         // 3. 核心亮點：虛擬球場熱區分析儀 (Visual Heatmap Grid)
@@ -91,7 +91,7 @@ struct PlayerDBView: View {
                                                 startPoint: .topLeading, endPoint: .bottomTrailing
                                             )
                                         )
-                                        .cornerRadius(10)
+                                        .cornerRadius(16)
                                         .shadow(color: Color.purple.opacity(0.15), radius: 4)
                                     }
                                 }
@@ -115,7 +115,7 @@ struct PlayerDBView: View {
                                             Color.red.opacity(density)
                                                 .overlay(Color.blue.opacity(1.0 - density))
                                         )
-                                        .cornerRadius(8)
+                                        .cornerRadius(16)
                                         .shadow(color: Color.black.opacity(0.1), radius: 3)
                                     }
                                 }

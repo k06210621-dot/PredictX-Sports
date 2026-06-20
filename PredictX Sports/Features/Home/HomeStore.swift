@@ -120,7 +120,12 @@ class HomeStore: ObservableObject {
                     }
                 }
             } catch {
-                print("❌ [History Fetch Error] \(league.rawValue): \(error)")
+                let nsError = error as NSError
+                if nsError.code == NSURLErrorCancelled {
+                    print("⚠️ [History] \(league.rawValue) request was cancelled, will retry on next visit")
+                } else {
+                    print("❌ [History Fetch Error] \(league.rawValue): \(error)")
+                }
             }
         }
     }

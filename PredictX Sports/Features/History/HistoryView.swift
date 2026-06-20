@@ -165,7 +165,7 @@ struct HistoricalMatchCardView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(themeColor.opacity(0.15))
-                    .cornerRadius(6)
+                    .cornerRadius(16)
             }
             
             HStack(spacing: 16) {
@@ -235,10 +235,10 @@ struct HistoricalMatchCardView: View {
                                 .fontWeight(.semibold)
                                 .foregroundColor(isHit ? .green : .red)
                         }
-                        .padding(.horizontal, 10)
+                        .padding(.horizontal, 12)
                         .padding(.vertical, 4)
                         .background((isHit ? Color.green : Color.red).opacity(0.12))
-                        .cornerRadius(8)
+                        .cornerRadius(16)
                     } else {
                         // 比分已有但 settlement 尚未跑（cron 還沒結算）
                         HStack(spacing: 4) {
@@ -250,10 +250,10 @@ struct HistoricalMatchCardView: View {
                                 .fontWeight(.semibold)
                                 .foregroundColor(Color(.tertiaryLabel))
                         }
-                        .padding(.horizontal, 10)
+                        .padding(.horizontal, 12)
                         .padding(.vertical, 4)
                         .background(Color(.tertiarySystemFill).opacity(0.5))
-                        .cornerRadius(8)
+                        .cornerRadius(16)
                     }
                 }
             }

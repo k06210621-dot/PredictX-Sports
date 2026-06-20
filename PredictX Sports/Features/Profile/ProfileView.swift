@@ -148,7 +148,7 @@ struct ProfileView: View {
                                 .padding(.vertical, 4)
                                 .background(subscriptionManager.tier == t ? Color.blue : Color.gray.opacity(0.3))
                                 .foregroundColor(.white)
-                                .cornerRadius(6)
+                                .cornerRadius(16)
                             }
                         }
                         Text("當前: \(subscriptionManager.tier.rawValue) | \(subscriptionManager.diamonds) 點")
@@ -157,7 +157,7 @@ struct ProfileView: View {
                     }
                     .padding()
                     .background(Color.orange.opacity(0.1))
-                    .cornerRadius(12)
+                    .cornerRadius(16)
                     #endif
                 }
                 .padding()
@@ -262,12 +262,12 @@ struct MembershipCardView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
                 .background(Color.white.opacity(0.15))
-                .cornerRadius(12)
+                .cornerRadius(16)
             }
             .padding()
         }
         .background(cardGradient)
-        .cornerRadius(20)
+        .cornerRadius(16)
         .shadow(color: shadowColor.opacity(0.3), radius: 12, x: 0, y: 6)
     }
     
@@ -395,7 +395,7 @@ struct AdRewardCardView: View {
                     Text("+\(subscriptionManager.adRewardPoints)")
                         .font(.caption.bold())
                         .foregroundColor(.white)
-                        .padding(.horizontal, 10)
+                        .padding(.horizontal, 12)
                         .padding(.vertical, 4)
                         .background(Color.green)
                         .clipShape(Capsule())

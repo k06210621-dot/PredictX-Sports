@@ -49,7 +49,10 @@ struct AIAnalysisDetailView: View {
                                     }
                                     .frame(width: 200, height: 24)
                                     
-                                    Text("vs").font(.caption).bold().foregroundColor(Color(.tertiaryLabel))
+                                    Text("vs")
+                                        .font(.caption2)
+                                        .foregroundColor(Color(.tertiaryLabel))
+                                        .opacity(0.5)
                                     
                                     ZStack(alignment: .trailing) {
                                         Capsule().fill(Color.red.opacity(0.25))

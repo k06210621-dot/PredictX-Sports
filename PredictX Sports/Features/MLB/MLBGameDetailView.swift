@@ -162,7 +162,7 @@ struct GameHeaderView: View {
                 .font(.caption)
                 .fontWeight(.medium)
                 .padding(.horizontal, 12)
-                .padding(.vertical, 6)
+                .padding(.vertical, 8)
                 .background(
                     Capsule()
                         .fill(status == "Final" ? Color.green.opacity(0.2) : Color.blue.opacity(0.2))

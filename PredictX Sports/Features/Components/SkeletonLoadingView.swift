@@ -49,7 +49,7 @@ struct PredictionRowSkeleton: View {
         }
         .padding()
         .background(Color.cardBackground)
-        .cornerRadius(20)
+        .cornerRadius(16)
         .overlay(
             RoundedRectangle(cornerRadius: 20)
                 .stroke(Color(red: 0.20, green: 0.22, blue: 0.32), lineWidth: 1)

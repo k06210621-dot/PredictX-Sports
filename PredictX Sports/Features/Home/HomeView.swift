@@ -84,14 +84,14 @@ struct HomeView: View {
                                                 .font(.caption).bold()
                                                 .foregroundColor(.primary)
                                                 .padding(.horizontal, 12)
-                                                .padding(.vertical, 6)
+                                                .padding(.vertical, 8)
                                                 .background(Color.red)
-                                                .cornerRadius(8)
+                                                .cornerRadius(16)
                                         }
                                     }
                                     .padding()
                                     .background(Color.red.opacity(0.12))
-                                    .cornerRadius(12)
+                                    .cornerRadius(16)
                                     .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.red.opacity(0.25), lineWidth: 1))
                                     .padding(.horizontal)
                                 }
@@ -230,7 +230,7 @@ struct HomeView: View {
                 .foregroundColor(.primary)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
         .background(.ultraThinMaterial)
         .clipShape(Capsule())
         .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
@@ -257,7 +257,7 @@ struct HomeView: View {
                 }
             )
             .foregroundColor(isSelected ? .white : themeColor)
-            .cornerRadius(24)
+            .cornerRadius(16)
             .shadow(color: isSelected ? LeagueTheme.shadowColor(for: league) : Color.clear, radius: 8, x: 0, y: 4)
             .onTapGesture {
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
@@ -325,14 +325,17 @@ struct FocusMatchCardView: View {
                         .bold()
                 }
                 .foregroundColor(.orange)
-                .padding(.horizontal, 6)
+                .padding(.horizontal, 8)
                 .padding(.vertical, 2)
                 .background(Color.orange.opacity(0.15))
-                .cornerRadius(6)
+                .cornerRadius(16)
             }
             HStack {
                 Text(homeTeam).bold()
-                Text("vs").foregroundColor(Color(.tertiaryLabel)).font(.caption)
+                Text("vs")
+                    .foregroundColor(Color(.tertiaryLabel))
+                    .font(.caption2)
+                    .opacity(0.5)
                 Text(awayTeam).bold()
             }
             .font(.headline)

@@ -93,7 +93,7 @@ struct SubscribeView: View {
         }
         .font(.system(size: 10, weight: .medium))
         .foregroundColor(.secondary)
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
         .padding(.horizontal, 12)
         .background(Color(.systemGray6))
         .clipShape(Capsule())
@@ -238,7 +238,7 @@ struct SubscribeView: View {
             .font(.caption.bold())
             .foregroundColor(.blue)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
+            .padding(.vertical, 12)
             .background(Color.blue.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 10))
         }
@@ -331,7 +331,7 @@ private struct TierCard: View {
                         Text("推薦")
                             .font(.system(size: 9, weight: .black))
                             .foregroundColor(.white)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .padding(.horizontal, 8).padding(.vertical, 2)
                             .background(Color.orange)
                             .clipShape(Capsule())
                     }
@@ -339,7 +339,7 @@ private struct TierCard: View {
                         Text("最高性價比")
                             .font(.system(size: 9, weight: .black))
                             .foregroundColor(.white)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .padding(.horizontal, 8).padding(.vertical, 2)
                             .background(Color.purple)
                             .clipShape(Capsule())
                     }

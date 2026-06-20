@@ -144,10 +144,10 @@ struct LegalDisclaimerView: View {
                     .font(.caption2)
                     .foregroundColor(.blue.opacity(0.5))
             }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
             .background(Color.blue.opacity(0.06))
-            .cornerRadius(10)
+            .cornerRadius(16)
         }
     }
     

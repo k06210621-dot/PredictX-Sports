@@ -21,15 +21,15 @@ struct AnalyticsView: View {
                         }) {
                             Text("重試")
                                 .font(.caption).bold()
-                                .padding(.horizontal, 10)
+                                .padding(.horizontal, 12)
                                 .padding(.vertical, 4)
                                 .background(Color.orange.opacity(0.2))
-                                .cornerRadius(6)
+                                .cornerRadius(16)
                         }
                     }
                     .padding()
                     .background(Color.orange.opacity(0.08))
-                    .cornerRadius(10)
+                    .cornerRadius(16)
                 }
 
                 ScrollView(.vertical, showsIndicators: false) {
@@ -244,9 +244,9 @@ struct FormDetailRow: View {
             }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
         .background(Color.cardBackground)
-        .cornerRadius(8)
+        .cornerRadius(16)
     }
 
     private var formattedDate: String {

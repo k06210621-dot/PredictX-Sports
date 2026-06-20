@@ -45,7 +45,7 @@ struct PredictionRowView: View {
                         .foregroundColor(themeColor)
                         .font(.caption)
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 12)
                 .padding(.vertical, 4)
                 .background(themeColor.opacity(0.15))
                 .clipShape(Capsule())
@@ -63,7 +63,7 @@ struct PredictionRowView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(Color.secondary.opacity(0.1))
-                .cornerRadius(8)
+                .cornerRadius(16)
                 
                 HStack(spacing: 3) {
                     Image(systemName: "cpu.fill")
@@ -75,7 +75,7 @@ struct PredictionRowView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(Color.blue.opacity(0.1))
-                .cornerRadius(8)
+                .cornerRadius(16)
                 
                 // 收藏星星按鈕
                 Button(action: {

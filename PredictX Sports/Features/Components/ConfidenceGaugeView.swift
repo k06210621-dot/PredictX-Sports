@@ -87,7 +87,7 @@ struct ConfidenceGaugeView: View {
                 .offset(y: 16)
             }
             .frame(height: 150)
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 12)
             
             // 底部主客標籤對應
             HStack {

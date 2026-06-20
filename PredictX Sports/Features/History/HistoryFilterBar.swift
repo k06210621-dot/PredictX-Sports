@@ -30,9 +30,9 @@ struct HistoryFilterBar: View {
                 }
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 10)
+            .padding(.vertical, 12)
             .background(Color.cardBackground.opacity(0.7))
-            .cornerRadius(12)
+            .cornerRadius(16)
 
             // 2. 聯賽 chips
             ScrollView(.horizontal, showsIndicators: false) {
@@ -140,10 +140,10 @@ struct LeagueChip: View {
                     .font(.system(size: 16, weight: .semibold))
             }
             .padding(.horizontal, 18)
-            .padding(.vertical, 10)
+            .padding(.vertical, 12)
             .background(isSelected ? Color.accentColor : Color.cardBackground.opacity(0.6))
             .foregroundColor(isSelected ? .white : .primary)
-            .cornerRadius(20)
+            .cornerRadius(16)
             .overlay(
                 RoundedRectangle(cornerRadius: 20)
                     .stroke(isSelected ? Color.accentColor : Color.gray.opacity(0.3), lineWidth: 1)
@@ -164,10 +164,10 @@ struct DateChip: View {
                 .font(.caption2)
                 .fontWeight(.semibold)
                 .padding(.horizontal, 12)
-                .padding(.vertical, 6)
+                .padding(.vertical, 8)
                 .background(isSelected ? Color.accentColor.opacity(0.85) : Color.cardBackground.opacity(0.5))
                 .foregroundColor(isSelected ? .white : .secondary)
-                .cornerRadius(14)
+                .cornerRadius(16)
         }
         .buttonStyle(.plain)
     }

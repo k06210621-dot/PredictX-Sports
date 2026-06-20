@@ -42,7 +42,7 @@ struct LeagueBadgeWall: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
         .padding(.top, 12) // 整體下移，避免貼頂
     }
 }

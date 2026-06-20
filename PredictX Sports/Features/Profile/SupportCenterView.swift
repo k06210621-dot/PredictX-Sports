@@ -239,7 +239,7 @@ struct FAQItem<Content: View>: View {
                         .font(.caption2)
                         .foregroundColor(.secondary.opacity(0.6))
                 }
-                .padding(.vertical, 10)
+                .padding(.vertical, 12)
                 .padding(.horizontal, 4)
             }
             
