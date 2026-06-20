@@ -17,18 +17,7 @@ struct ProfileView: View {
                     // MARK: ① 會員卡
                     MembershipCardView(subscriptionManager: subscriptionManager)
                     
-                    // MARK: ② AI 額度儲值中心
-                    Button(action: { subscriptionManager.showDiamondsInfo = true }) {
-                        ProfileMenuRow(
-                            icon: "bag.fill",
-                            iconColor: .orange,
-                            title: "AI 額度儲值中心",
-                            subtitle: "儲值取得更多 AI 分析額度"
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    
-                    // MARK: ③ 訂閱中心
+                    // MARK: ② 訂閱中心
                     NavigationLink {
                         SubscribeView()
                     } label: {
@@ -40,7 +29,7 @@ struct ProfileView: View {
                         )
                     }
                     
-                    // MARK: ④ AI 使用額度
+                    // MARK: ③ AI 使用額度
                     Button(action: { subscriptionManager.showDiamondsInfo = true }) {
                         ProfileMenuRow(
                             icon: "cpu.fill",
