@@ -2,172 +2,145 @@
 """
 ingest/cpbl.py
 ==============
-CPBL fetcher — 從 cpbl.com.tw 內部 API (getdetaillist) 抓中職賽程
+CPBL fetcher — 從 TheSportsDB API (League ID 5111) 抓中華職棒賽事
 
-注意：cpbl.com.tw 前端是 AngularJS SPA, 直接 curl HTML 只能拿到
-{{ game.HomeTeamName }} 模板。真實資料要 POST /home/getdetaillist
+TheSportsDB 免費版 API:
+- Base: https://www.thesportsdb.com/api/v1/json
+- API Key: 123 (免費版)
+- Rate limit: 30 req/min
+
+關鍵端點:
+- eventsday.php?d=YYYY-MM-DD&l=5111 → 當日所有 CPBL 賽事
 """
 
-import re
+import os
 import json
 import logging
 from typing import List, Dict, Any
 from datetime import datetime
+import requests
 from .base import BaseIngester
 
 LOGGER = logging.getLogger("ingest.cpbl")
 
-CPBL_API_URL = "https://www.cpbl.com.tw/home/getdetaillist"
-CPBL_COOKIE_URL = "https://www.cpbl.com.tw/"
+# TheSportsDB CPBL League ID
+CPBL_LEAGUE_ID = "5111"
+DEFAULT_THESPORTSDB_KEY = "123"  # 免費版 default
+API_BASE = "https://www.thesportsdb.com/api/v1/json"
 
-# 中職 6 隊中英對照（CPBL API 回傳中文隊名 → 英文全名）
-# 注意：必須與 predictx.teams.english_name 完全一致，否則 /api/insert_games 找不到 team_id
-# 統一獅 → Uni-President 7-ELEVEn Lions（DB 真實名稱）
+# CPBL 6 隊中英對照（TheSportsDB 英文隊名 → DB 統一隊名）
 TEAM_NAME_MAP = {
-    "中信兄弟": "CTBC Brothers",
-    "中信": "CTBC Brothers",
-    "兄弟": "CTBC Brothers",
-    "富邦悍將": "Fubon Guardians",
-    "富邦": "Fubon Guardians",
-    "悍將": "Fubon Guardians",
-    "統一獅": "Uni-President 7-ELEVEn Lions",
-    "統一7-ELEVEn獅": "Uni-President 7-ELEVEn Lions",
-    "統一": "Uni-President 7-ELEVEn Lions",
-    "樂天桃猿": "Rakuten Monkeys",
-    "樂天": "Rakuten Monkeys",
-    "桃猿": "Rakuten Monkeys",
-    "味全龍": "Wei Chuan Dragons",
-    "味全": "Wei Chuan Dragons",
-    "台鋼雄鷹": "TSG Hawks",
-    "台鋼": "TSG Hawks",
-    "雄鷹": "TSG Hawks",
+    "Uni-President Lions": "Uni-President 7-ELEVEn Lions",
+    "CTBC Brothers": "CTBC Brothers",
+    "Fubon Guardians": "Fubon Guardians",
+    "Rakuten Monkeys": "Rakuten Monkeys",
+    "Wei Chuan Dragons": "Wei Chuan Dragons",
+    "TSG Hawks": "TSG Hawks",
 }
 
 
-def _resolve_team(text: str):
-    for kw, full in TEAM_NAME_MAP.items():
-        if kw in text:
-            return full
-    return None
+def _normalize_team_name(english_name: str) -> str:
+    """TheSportsDB 英文隊名 → DB 統一隊名"""
+    return TEAM_NAME_MAP.get(english_name, english_name)
 
 
 class CPBLIngester(BaseIngester):
     league_code = "CPBL"
     league_days_ahead = 2
-    source_name = "cpbl_api"
+    source_name = "thesportsdb_api"
 
     def __init__(self):
         super().__init__()
-        # CPBL API 需要先 GET 首頁拿 cookie
-        self._cookie_obtained = False
+        self.api_key = os.getenv("THESPORTSDB_API_KEY", DEFAULT_THESPORTSDB_KEY)
+        self.api_base = API_BASE
+        # TheSportsDB 用專用 session（不需要台灣網站的 cookie）
+        self.tdb_session = requests.Session()
+        self.tdb_session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            "Accept": "application/json",
+        })
 
-    def _ensure_cookie(self):
-        if self._cookie_obtained:
-            return
+    def _api_get(self, endpoint: str, params: Dict[str, Any] = None) -> Dict:
+        """呼叫 TheSportsDB API"""
+        url = f"{self.api_base}/{self.api_key}/{endpoint}"
         try:
-            self.session.get(CPBL_COOKIE_URL, timeout=15)
-            self._cookie_obtained = True
+            resp = self.tdb_session.get(url, params=params, timeout=20)
+            if resp.status_code == 200:
+                return resp.json()
+            elif resp.status_code == 429:
+                LOGGER.warning("TheSportsDB rate limit hit (429). 等待 60 秒...")
+                import time
+                time.sleep(60)
+                resp = self.tdb_session.get(url, params=params, timeout=20)
+                if resp.status_code == 200:
+                    return resp.json()
+            LOGGER.error(f"TheSportsDB API {endpoint}: HTTP {resp.status_code}")
+            return {}
         except Exception as e:
-            LOGGER.warning(f"CPBL cookie 取得失敗: {e}")
+            LOGGER.error(f"TheSportsDB API {endpoint} 失敗: {e}")
+            return {}
 
     def fetch_games(self, target_date: str) -> List[Dict[str, Any]]:
-        """POST getdetaillist 拿指定日期的賽事"""
-        self._ensure_cookie()
-        dt = datetime.strptime(target_date, "%Y-%m-%d")
-
+        """
+        抓取指定日期（YYYY-MM-DD）的 CPBL 賽事
+        使用 TheSportsDB eventsday.php 端點
+        """
+        LOGGER.info(f"CPBL TheSportsDB: 抓取 {target_date} 賽事 (league_id={CPBL_LEAGUE_ID})")
         try:
-            resp = self.session.post(
-                CPBL_API_URL,
-                data={"gameDate": target_date},
-                headers={
-                    "X-Requested-With": "XMLHttpRequest",
-                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                },
-                timeout=20,
+            data = self._api_get(
+                "eventsday.php",
+                params={"d": target_date, "l": CPBL_LEAGUE_ID},
             )
         except Exception as e:
             raise RuntimeError(f"CPBL API 連線失敗: {e}")
 
-        if resp.status_code != 200:
-            raise RuntimeError(f"CPBL API HTTP {resp.status_code}")
+        events = data.get("events", []) or []
+        LOGGER.info(f"CPBL {target_date} API 回傳 {len(events)} 場賽事")
 
-        try:
-            data = resp.json()
-        except json.JSONDecodeError as e:
-            raise RuntimeError(f"CPBL API 回應非 JSON: {e}")
-
-        if not data.get("Success"):
-            LOGGER.info(f"CPBL {target_date} API Success=False（可能休兵日）")
+        if not events:
             return []
-
-        raw = data.get("GameADetailJson")
-        if not raw:
-            return []
-
-        if isinstance(raw, str):
-            try:
-                game_list = json.loads(raw)
-            except json.JSONDecodeError:
-                return []
-        else:
-            game_list = raw
 
         games: List[Dict[str, Any]] = []
-        for g in game_list:
-            home_raw = g.get("HomeTeamName", "")
-            away_raw = g.get("VisitingTeamName", "")
-            home = _resolve_team(home_raw)
-            away = _resolve_team(away_raw)
-            if not home or not away:
+        for e in events:
+            home_raw = e.get("strHomeTeam", "")
+            away_raw = e.get("strAwayTeam", "")
+            home = _normalize_team_name(home_raw)
+            away = _normalize_team_name(away_raw)
+
+            # 跳過不認識的隊伍（非 CPBL 賽事）
+            if home not in TEAM_NAME_MAP.values() or away not in TEAM_NAME_MAP.values():
+                LOGGER.debug(f"CPBL 跳過非中職賽事: {home_raw} vs {away_raw}")
                 continue
 
-            home_score_raw = g.get("HomeTotalScore")
-            away_score_raw = g.get("VisitingTotalScore")
+            # 分數
+            home_score_raw = e.get("intHomeScore")
+            away_score_raw = e.get("intAwayScore")
             home_score = int(home_score_raw) if (home_score_raw is not None and str(home_score_raw).lstrip('-').isdigit()) else None
             away_score = int(away_score_raw) if (away_score_raw is not None and str(away_score_raw).lstrip('-').isdigit()) else None
 
-            # GameDate 有時帶 "T" 分隔符, 統一取前 10 碼
-            raw_date = g.get("GameDate", "") or target_date
-            try:
-                game_date = datetime.fromisoformat(raw_date.replace("T", " ")[:10]).strftime("%Y-%m-%d")
-            except (ValueError, TypeError):
-                game_date = target_date
-
-            # 🆕 改良 status 判斷：CPBL API 多種狀態皆視為已開賽
-            # 原始：只看分數 (有分數 → FINAL，無分數 → SCHEDULED)
-            # 問題：CPBL API 在比賽進行中或剛結束時，可能分數還是 None
-            #       會被誤判為 SCHEDULED，導致永遠不結算
-            # 修正：優先讀 CPBL API 的 GameStatus 欄位（如果有的話）
-            #       若無，依以下規則判斷：
-            #       (1) 兩隊分數都有 → FINAL
-            #       (2) 該日期在「過去」（target_date < 今日）且分數 None → POSTPONED
-            #       (3) 該日期是「今天」且分數 None → 可能是 LIVE 或尚未開打 → SCHEDULED
-            #       (4) 該日期是「未來」 → SCHEDULED
-            game_status_raw = str(g.get("GameStatus", g.get("Status", g.get("StatusCode", "")))).upper()
-            today = datetime.now().strftime("%Y-%m-%d")
-            if home_score is not None and away_score is not None:
-                status = "FINAL"
-            elif game_status_raw in ("FINAL", "F", "GAMEOVER", "COMPLETED", "結束", "已結束"):
-                # API 明確標記為已結束，但分數欄位缺漏
-                # 用 0-0 標記，後續手動或下次 ingest 修正
-                status = "FINAL"
-                home_score = home_score or 0
-                away_score = away_score or 0
-            elif game_date < today:
-                # 過去日期 + 無分數 → 延期/取消
+            # 狀態: TheSportsDB 用 strStatus (FT=Finished, IN*=In Progress, NS=Not Started)
+            status_raw = (e.get("strStatus") or "").upper()
+            postponed = (e.get("strPostponed") or "no").lower() == "yes"
+            if postponed:
                 status = "POSTPONED"
+            elif status_raw == "FT" and home_score is not None and away_score is not None:
+                status = "FINAL"
+            elif status_raw.startswith("IN"):
+                status = "LIVE"
             else:
-                # 今天或未來日期 + 無分數 → 尚未開打
                 status = "SCHEDULED"
+
+            # 日期
+            date_event = e.get("dateEvent") or target_date
+
             games.append({
-                "season": dt.year,
-                "match_date": game_date,
+                "season": datetime.now().year,
+                "match_date": date_event,
                 "home_team": home,
                 "away_team": away,
                 "status": status,
                 "home_team_score": home_score,
                 "away_team_score": away_score,
             })
-        if not games:
-            LOGGER.info(f"CPBL {target_date} API 回傳空（可能休兵日）")
+
         return games
