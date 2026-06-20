@@ -1150,7 +1150,7 @@ Park Factor: {pf:.2f} ({park_interp})
 {fifa_rankings_section}
 
 請完成以下分析：
-1. 對比兩隊的近期表現與實力差距
+1. 對比兩隊的近期表現與實力差距（引用具體球員姓名/背號/戰績數據）
 2. 參考聯盟排名評估優劣勢
 3. 為以下維度進行 0-10 評分: {json.dumps(current_dims, ensure_ascii=False)}
 4. 給出勝率與預測比分
@@ -1164,6 +1164,13 @@ Park Factor: {pf:.2f} ({park_interp})
    - **10**: 史詩級優勢，幾乎確定（例如最強 ace 對最弱打線），僅限極少數情況使用。
    - **重要：信心 7 必須真正「明顯佔優」才給**，不要因為「想讓用戶相信」而過度自信。{fifa_ou_instruction}
 
+**summary 撰寫指引（重要）**：
+- 至少 200 字，深入分析（如同球評賽前分析節目）
+- 必須引用具體數據：球員背號/姓名、場均得分/失分、近期戰績、聯盟排名
+- 解讀比賽關鍵：進攻火力 vs 防守強度、投打對位、主客場優勢、心理因素
+- 避免空泛形容詞（"勢均力敵"、"實力接近"），用具體數字與球員名稱
+- 中文繁體輸出，不要使用簡體
+
 **重要規則（請嚴格遵守）：**
 - home_win_probability 和 away_win_probability 的總和必須等於 1.0
 - 不允許回傳 0.5/0.5 這種五五波，請根據數據做出明確判斷
@@ -1171,14 +1178,15 @@ Park Factor: {pf:.2f} ({park_interp})
 - 如果客隊有優勢，home_win_probability 應 < 0.5（例如 0.25-0.45）
 - 🆕 **請勿系統性傾向客隊**：歷史數據顯示「主隊在主場有統計顯著優勢」（詳見上方主場優勢提示）。當兩隊實力接近、數據不明時，請給主隊略高的勝率（例如 0.52-0.55），而非傾向客隊。
 - 預測比分必須是具體數字，不能是 "N/A" 或空值
+- key_factors 至少 4 個，每個 15-30 字，引用具體數據
 
 請嚴格按照以下 JSON 格式輸出，**只輸出 JSON**，不要有任何其他文字：
 {{ 
   "home_win_probability": 0.0, 
   "away_win_probability": 0.0, 
   "confidence": 0, 
-  "key_factors": ["因素1", "因素2", "因素3"], 
-  "summary": "分析摘要（至少30字）",
+  "key_factors": ["因素1（引用具體數據）", "因素2", "因素3", "因素4"], 
+  "summary": "深度分析摘要（200+字，引用具體球員與數據）",
   "predicted_score": "預測比分"{fifa_ou_field},
   "radar_chart": {{
     "categories": {json.dumps(current_dims, ensure_ascii=False)},
@@ -1461,9 +1469,14 @@ Park Factor: {pf:.2f} ({park_interp})
                     or "分析摘要" in summary[:10]
                     or "因素1" in summary
                 )
+                # 🆕 [fix] 摘要太短（< 150 字）視為不完整，走 fallback
+                is_too_short = len(summary) < 150
                 if is_template:
                     print("  AI returned template, using computed fallback")
                     return None  # 走 fallback 路徑
+                if is_too_short:
+                    print(f"  ⚠ AI summary too short ({len(summary)} chars < 150), using fallback for richer analysis")
+                    return None  # 走 fallback 路徑（fallback 會被替換為更好的摘要）
                 # Step 5: 加入來源可信度評分
                 source_score = self.calculate_source_score()
                 result["source_quality"] = {
@@ -1593,15 +1606,7 @@ Park Factor: {pf:.2f} ({park_interp})
         away_vals = [round(away_r * (1 - i * 0.05), 1) for i in range(6)]
 
         # Key factors
-        factors = []
-        if home_standings:
-            factors.append(f"{features['game_info']['home_team_name']}排名第{home_standings['rank']}")
-        if away_standings:
-            factors.append(f"{features['game_info']['away_team_name']}排名第{away_standings['rank']}")
-        if home_form.get('win_loss'):
-            factors.append(f"主隊近期{home_form['win_loss']}")
-        if away_form.get('win_loss'):
-            factors.append(f"客隊近期{away_form['win_loss']}")
+        factors = []  # 暫時，等 home_predicted/away_predicted 等變數設定後再補
 
         # Confidence
         fallback_conf = max(home_prob, 1 - home_prob)
@@ -1615,16 +1620,97 @@ Park Factor: {pf:.2f} ({park_interp})
         home_predicted = max(1, min(12, home_predicted))
         away_predicted = max(1, min(12, away_predicted))
 
+        # 🆕 [fix] 建立分析性句子（避免 fallback 摘要過短）
+        # 1. 主隊實力描述
+        home_net = home_avg_f - home_avg_a
+        away_net = away_avg_f - away_avg_a
+        if home_net > 1.5:
+            home_team_strength_sentence = (
+                f"主隊進攻端表現優於防守（淨分差 +{home_net:.1f}），"
+                f"近期戰績顯示火力穩定輸出；"
+            )
+        elif home_net < -1.5:
+            home_team_strength_sentence = (
+                f"主隊防守端漏洞明顯（淨分差 {home_net:+.1f}），"
+                f"近期失分過多成為隱憂；"
+            )
+        else:
+            home_team_strength_sentence = (
+                f"主隊攻守表現接近平衡（淨分差 {home_net:+.1f}）；"
+            )
+
+        # 2. 客隊實力描述
+        if away_net > 1.5:
+            away_team_strength_sentence = (
+                f"客隊整體戰力強勢（淨分差 +{away_net:.1f}），"
+                f"近況明顯優於主隊；"
+            )
+        elif away_net < -1.5:
+            away_team_strength_sentence = (
+                f"客隊防守不佳（淨分差 {away_net:+.1f}），"
+                f"若投打無法互補則難以取勝；"
+            )
+        else:
+            away_team_strength_sentence = f"客隊攻守穩定（淨分差 {away_net:+.1f}）；"
+
+        # 3. 對戰洞察
+        if abs(home_net - away_net) < 0.5:
+            matchup_insight = (
+                f"兩隊淨分差相近，勝負關鍵在投手先發表現與關鍵時刻打擊。"
+            )
+        elif home_net > away_net:
+            matchup_insight = (
+                f"主隊淨分差領先 {home_net - away_net:.1f} 分，加上主場優勢，看好主隊延續氣勢。"
+            )
+        else:
+            matchup_insight = (
+                f"客隊淨分差領先 {away_net - home_net:.1f} 分，整體戰力明顯優於主隊，"
+                f"即便作客仍具備勝算。"
+            )
+
+        # Key factors（至少 4 個）
+        factors = []
+        if home_standings:
+            factors.append(
+                f"{features['game_info']['home_team_name']}排名第{home_standings['rank']}（勝率 {home_standings.get('win_pct', '?')}）"
+            )
+        if away_standings:
+            factors.append(
+                f"{features['game_info']['away_team_name']}排名第{away_standings['rank']}（勝率 {away_standings.get('win_pct', '?')}）"
+            )
+        if home_form.get('win_loss'):
+            factors.append(
+                f"主隊近期{home_form['win_loss']}，場均得{home_avg_f:.1f}失{home_avg_a:.1f}（淨分差 {home_avg_f - home_avg_a:+.1f}）"
+            )
+        if away_form.get('win_loss'):
+            factors.append(
+                f"客隊近期{away_form['win_loss']}，場均得{away_avg_f:.1f}失{away_avg_a:.1f}（淨分差 {away_avg_f - away_avg_a:+.1f}）"
+            )
+        # 補到至少 4 個
+        away_prob = 1 - home_prob  # 在 fallback 路徑，away = 1 - home
+        if len(factors) < 4:
+            if home_prob > away_prob:
+                factors.append(f"主隊具備主場優勢（勝率 {home_prob:.0%}）")
+            else:
+                factors.append(f"客隊實力佔優（勝率 {away_prob:.0%}）")
+        if len(factors) < 4:
+            factors.append(f"預測比分 {home_predicted}-{away_predicted}")
+
         fallback = {
             "home_win_probability": round(home_prob, 4),
             "away_win_probability": round(1 - home_prob, 4),
             "confidence": fallback_conf_norm,
             "key_factors": factors[:4],
-            "summary": f"{features['game_info']['home_team_name']} vs {features['game_info']['away_team_name']}："
-                       f"主隊近期{home_form.get('win_loss', '數據不足')}，"
-                       f"場均{home_avg_f:.1f}分/失{home_avg_a:.1f}分；"
-                       f"客隊近期{away_form.get('win_loss', '數據不足')}，"
-                       f"場均{away_avg_f:.1f}分/失{away_avg_a:.1f}分。",
+            "summary": (
+                f"{features['game_info']['home_team_name']} vs {features['game_info']['away_team_name']}："
+                f"{home_form.get('win_loss', '近期數據不足')}，"
+                f"場均得{home_avg_f:.1f}分/失{home_avg_a:.1f}分（淨分差 {home_avg_f - home_avg_a:+.1f}）；"
+                f"客隊{away_form.get('win_loss', '近期數據不足')}，"
+                f"場均得{away_avg_f:.1f}分/失{away_avg_a:.1f}分（淨分差 {away_avg_f - away_avg_a:+.1f}）。"
+                f"{home_team_strength_sentence}"
+                f"{away_team_strength_sentence}"
+                f"{matchup_insight}"
+            ),
             "predicted_score": f"{home_predicted}-{away_predicted}",
             "radar_chart": {
                 "categories": dims,
