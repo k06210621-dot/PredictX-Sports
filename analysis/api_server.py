@@ -321,53 +321,6 @@ def run_analysis():
         return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
-@app.route('/api/admin/fix_cpbl_619', methods=['POST'])
-def admin_fix_cpbl_619():
-    """一次性：把 6/19 CPBL 三場 SCHEDULED 賽事標記為 POSTPONED
-    原因：CPBL 6/19 真的打完但 ingest 抓時 API 還沒更新到分數，被誤判為 SCHEDULED。
-    真正的分數需要查 CPBL 官方來源手動補，但賽事已過，先標記為 POSTPONED 避免污染驗證率。
-    """
-    token = request.headers.get('X-Admin-Token', '')
-    if token != 'predictx-fix-cpbl-619':
-        return jsonify({"error": "Invalid admin token"}), 403
-    try:
-        conn = get_db()
-        conn.autocommit = True
-        cur = conn.cursor()
-        cur.execute("""
-            UPDATE predictx.games g
-            SET status = 'POSTPONED'
-            FROM predictx.teams th, predictx.teams ta
-            WHERE g.match_date = '2026-06-19'
-              AND UPPER(th.league) = 'CPBL'
-              AND UPPER(ta.league) = 'CPBL'
-              AND g.home_team_id = th.team_id
-              AND g.away_team_id = ta.team_id
-              AND g.status = 'SCHEDULED'
-              AND g.home_team_score IS NULL
-              AND g.away_team_score IS NULL
-            RETURNING g.game_id
-        """)
-        updated = cur.fetchall()
-        # 接著 settlement engine 處理這些 POSTPONED
-        from settlement_engine import SettlementEngine
-        engine = SettlementEngine()
-        postponed_count = engine._settle_postponed_games()
-        engine.close()
-        cur.close()
-        conn.close()
-        return jsonify({
-            "status": "success",
-            "games_marked_postponed": len(updated),
-            "postponed_settled": postponed_count,
-            "message": "6/19 CPBL 三場誤判為 SCHEDULED 的賽事已標記為 POSTPONED，避免污染 AI 驗證率"
-        }), 200
-    except Exception as e:
-        import traceback
-        logger.error(f"Error in /api/admin/fix_cpbl_619: {e}\n{traceback.format_exc()}")
-        return jsonify({"error": str(e), "type": type(e).__name__}), 500
-
-
 @app.route('/api/insert_games', methods=['POST'])
 def insert_games():
     """接受外部傳入的賽程資料並寫入資料庫"""
