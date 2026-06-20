@@ -23,7 +23,7 @@ struct LeagueAccuracy: Identifiable, Hashable {
 
 /// 單場 AI 結算結果 — 最近戰績條使用
 struct RecentSettlement: Identifiable, Hashable {
-    let id: String
+    let id: String           // game_id（UUID）
     let league: String      // 聯賽名稱（顯示用）
     let homeTeam: String
     let awayTeam: String

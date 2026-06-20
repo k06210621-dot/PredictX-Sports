@@ -92,6 +92,7 @@ struct OverallAccuracyCard: View {
 struct RecentFormSection: View {
     let settlements: [RecentSettlement]
     let hitRate: Double
+    @State private var selectedSettlement: RecentSettlement?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -132,7 +133,7 @@ struct RecentFormSection: View {
                 // 🆕 用 offset 當 key 避免資料庫重複 game_id 導致 ID 衝突
                 HStack(spacing: 6) {
                     ForEach(Array(settlements.enumerated()), id: \.offset) { index, item in
-                        FormIndicator(item: item, index: index)
+                        FormIndicator(item: item, index: index, selectedSettlement: $selectedSettlement)
                     }
                 }
                 .padding(.vertical, 4)
@@ -150,7 +151,7 @@ struct RecentFormSection: View {
                 HStack(spacing: 4) {
                     Image(systemName: "info.circle")
                         .font(.system(size: 10))
-                    Text("綠 = AI 模型推論正確・紅 = 推論錯誤・含四大聯盟近 30 天已結算場次")
+                    Text("綠 = AI 模型推論正確・紅 = 推論錯誤・點擊圖示查看詳情")
                         .font(.system(size: 10))
                 }
                 .foregroundColor(Color(.tertiaryLabel))
@@ -161,36 +162,49 @@ struct RecentFormSection: View {
         .background(Color.cardBackground)
         .cornerRadius(16)
         .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 4)
+        // 🆕 點擊 O/X 開啟詳細分析 Sheet
+        .sheet(item: $selectedSettlement) { settlement in
+            SettlementDetailSheet(settlement: settlement)
+        }
     }
 }
 
-/// 單格 W/L 圓角方塊
+/// 單格 W/L 圓角方塊（可點擊 → 開啟 SettlementDetailSheet）
 struct FormIndicator: View {
     let item: RecentSettlement
     let index: Int
+    @Binding var selectedSettlement: RecentSettlement?
 
     var body: some View {
-        VStack(spacing: 3) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(item.isHit
-                          ? LinearGradient(colors: [Color.green, Color.green.opacity(0.7)],
-                                           startPoint: .topLeading, endPoint: .bottomTrailing)
-                          : LinearGradient(colors: [Color.red, Color.red.opacity(0.7)],
-                                           startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .shadow(color: (item.isHit ? Color.green : Color.red).opacity(0.4), radius: 4, x: 0, y: 2)
+        Button {
+            selectedSettlement = item
+        } label: {
+            VStack(spacing: 3) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(item.isHit
+                              ? LinearGradient(colors: [Color.green, Color.green.opacity(0.7)],
+                                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                              : LinearGradient(colors: [Color.red, Color.red.opacity(0.7)],
+                                               startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .shadow(color: (item.isHit ? Color.green : Color.red).opacity(0.4), radius: 4, x: 0, y: 2)
 
-                Text(item.isHit ? "O" : "X")
-                    .font(.system(size: 15, weight: .black, design: .rounded))
-                    .foregroundColor(.primary)
+                    Text(item.isHit ? "O" : "X")
+                        .font(.system(size: 15, weight: .black, design: .rounded))
+                        .foregroundColor(.primary)
+                }
+                .frame(width: 28, height: 28)
+
+                Text(shortLeague(item.league))
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundColor(.secondary)
             }
-            .frame(width: 28, height: 28)
-
-            Text(shortLeague(item.league))
-                .font(.system(size: 8, weight: .bold))
-                .foregroundColor(.secondary)
+            .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity)
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())  // 確保整個區塊都可點擊
+        .accessibilityLabel("\(item.homeTeam) vs \(item.awayTeam)，AI \(item.isHit ? "預測正確" : "預測錯誤")")
+        .accessibilityHint("點擊查看詳細分析")
     }
 
     private func shortLeague(_ league: String) -> String {
