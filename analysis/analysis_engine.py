@@ -763,16 +763,31 @@ class AnalysisEngine:
             h_recent_str = format_recent_games(hp, "主隊")
             a_recent_str = format_recent_games(ap, "客隊")
 
+            # 🆕 [fix] 安全取得 stats 欄位（投手可能 TBD）
+            def safe_get_stats(pitcher):
+                stats = pitcher.get("stats") or {}
+                return {
+                    'era': stats.get('era', 0),
+                    'whip': stats.get('whip', 0),
+                    'k_per_9': stats.get('k_per_9', 0),
+                    'bb_per_9': stats.get('bb_per_9', 0),
+                    'k_bb_ratio': stats.get('k_bb_ratio', 0),
+                    'avg': stats.get('avg', 0),
+                    'ip': stats.get('ip', 0),
+                }
+            h_stats = safe_get_stats(hp)
+            a_stats = safe_get_stats(ap)
+
             mlb_advanced_section += f"""
 
 ===== 先發投手對決（來源：statsapi.mlb.com）=====
 主隊先發: {hp["name"]}
-  本季 ERA={hp["stats"]["era"]:.2f}, WHIP={hp["stats"]["whip"]:.3f}, K/9={hp["stats"]["k_per_9"]:.1f}, BB/9={hp["stats"]["bb_per_9"]:.1f}
-  K/BB={hp["stats"]["k_bb_ratio"]:.2f}, 對手打擊率={hp["stats"]["avg"]:.3f}, 本季投球={hp["stats"]["ip"]}局{h_recent_str}
+  本季 ERA={h_stats['era']:.2f}, WHIP={h_stats['whip']:.3f}, K/9={h_stats['k_per_9']:.1f}, BB/9={h_stats['bb_per_9']:.1f}
+  K/BB={h_stats['k_bb_ratio']:.2f}, 對手打擊率={h_stats['avg']:.3f}, 本季投球={h_stats['ip']}局{h_recent_str}
 
 客隊先發: {ap["name"]}
-  本季 ERA={ap["stats"]["era"]:.2f}, WHIP={ap["stats"]["whip"]:.3f}, K/9={ap["stats"]["k_per_9"]:.1f}, BB/9={ap["stats"]["bb_per_9"]:.1f}
-  K/BB={ap["stats"]["k_bb_ratio"]:.2f}, 對手打擊率={ap["stats"]["avg"]:.3f}, 本季投球={ap["stats"]["ip"]}局{a_recent_str}
+  本季 ERA={a_stats['era']:.2f}, WHIP={a_stats['whip']:.3f}, K/9={a_stats['k_per_9']:.1f}, BB/9={a_stats['bb_per_9']:.1f}
+  K/BB={a_stats['k_bb_ratio']:.2f}, 對手打擊率={a_stats['avg']:.3f}, 本季投球={a_stats['ip']}局{a_recent_str}
 
 💡 分析指引：投手「最近 3 場」表現比「整季」更具預測力。請特別注意：
 - 最近 3 場 ERA 與整季 ERA 的差距（升溫或降溫中）
