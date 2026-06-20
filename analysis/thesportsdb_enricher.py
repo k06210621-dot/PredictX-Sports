@@ -180,6 +180,69 @@ class TheSportsDBEnricher:
     # AI Prompt 整合
     # ========================================================
 
+
+    # ========================================================
+    # 球員資料 (TheSportsDB 球員基本資料)
+    # ========================================================
+
+    def get_team_roster(self, team_id: str) -> List[Dict[str, Any]]:
+        """
+        取得球隊完整球員名單（最多 10 位，free tier 限制）
+
+        回傳每個球員的 dict：
+          - idPlayer: 球員 ID
+          - strPlayer: 球員姓名
+          - strPosition: 位置（如 "Pitcher", "Center"）
+          - strNationality: 國籍
+          - dateBorn: 生日
+          - strHeight, strWeight: 身高體重
+          - strThumb: 球員照片 URL
+          - strCutout: 去背頭像 URL（iOS UI 推薦用）
+        """
+        data = self._get("lookup_all_players.php", {"id": team_id})
+        if not data:
+            return []
+        return data.get("player", []) or []
+
+    def get_player_info(self, player_id: str) -> Optional[Dict[str, Any]]:
+        """取得單一球員完整基本資料"""
+        data = self._get("lookupplayer.php", {"id": player_id})
+        if not data:
+            return None
+        players = data.get("players", [])
+        return players[0] if players else None
+
+    def get_player_contracts(self, player_id: str) -> List[Dict[str, Any]]:
+        """
+        取得球員合約紀錄（NBA 完整，MLB/CPBL/NPB 可能為空）
+
+        回傳每筆合約：
+          - strTeam: 球隊
+          - strYearStart, strYearEnd: 合約起訖年
+          - strBadge: 球隊 logo URL
+        """
+        data = self._get("lookupcontracts.php", {"id": player_id})
+        if not data:
+            return []
+        contracts = data.get("contracts")
+        return contracts if isinstance(contracts, list) else []
+
+    def get_player_honours(self, player_id: str) -> List[Dict[str, Any]]:
+        """
+        取得球員榮譽（獎項、明星賽、入選等）
+
+        回傳每筆榮譽：
+          - strHonour: 獎項名稱
+          - strSeason: 球季
+          - strSport: 運動類型
+        """
+        data = self._get("lookuphonours.php", {"id": player_id})
+        if not data:
+            return []
+        honours = data.get("honours")
+        return honours if isinstance(honours, list) else []
+
+
     def build_innings_analysis_section(
         self,
         home_team: str,

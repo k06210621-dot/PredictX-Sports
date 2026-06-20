@@ -584,6 +584,94 @@ def update_analysis():
         return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
+
+
+# ========================================================
+# 🆕 球員資料端點（TheSportsDB）
+# ========================================================
+
+@app.route('/api/players/roster', methods=['GET'])
+def get_team_roster():
+    """取得球隊完整球員名單（TheSportsDB）
+
+    Query: ?team_id=135260 (MLB 洋基) 或 ?team=New+York+Yankees
+    """
+    try:
+        from thesportsdb_enricher import get_enricher
+        team_id = request.args.get('team_id')
+        if not team_id:
+            return jsonify({"error": "Missing team_id parameter"}), 400
+
+        enricher = get_enricher()
+        players = enricher.get_team_roster(team_id)
+
+        # iOS UI 友善格式
+        normalized = []
+        for p in players:
+            normalized.append({
+                "id": p.get("idPlayer"),
+                "name": p.get("strPlayer", ""),
+                "position": p.get("strPosition", ""),
+                "nationality": p.get("strNationality", ""),
+                "birth_date": p.get("dateBorn"),
+                "height": p.get("strHeight"),
+                "weight": p.get("strWeight"),
+                "photo_url": p.get("strThumb"),
+                "cutout_url": p.get("strCutout"),  # 去背頭像
+            })
+
+        return jsonify({
+            "team_id": team_id,
+            "count": len(normalized),
+            "players": normalized,
+        }), 200
+    except Exception as e:
+        logger.error(f"get_team_roster error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/players/<player_id>', methods=['GET'])
+def get_player_detail(player_id):
+    """取得單一球員完整資料（基本資料 + 合約 + 榮譽）
+
+    Path: /api/players/34164069 (Aaron Judge)
+    """
+    try:
+        from thesportsdb_enricher import get_enricher
+        enricher = get_enricher()
+
+        info = enricher.get_player_info(player_id)
+        if not info:
+            return jsonify({"error": "Player not found"}), 404
+
+        contracts = enricher.get_player_contracts(player_id)
+        honours = enricher.get_player_honours(player_id)
+
+        return jsonify({
+            "player": {
+                "id": info.get("idPlayer"),
+                "name": info.get("strPlayer", ""),
+                "team": info.get("strTeam", ""),
+                "team_id": info.get("idTeam"),
+                "nationality": info.get("strNationality", ""),
+                "position": info.get("strPosition", ""),
+                "birth_date": info.get("dateBorn"),
+                "birth_location": info.get("strBirthLocation"),
+                "height": info.get("strHeight"),
+                "weight": info.get("strWeight"),
+                "jersey_number": info.get("strNumber"),
+                "photo_url": info.get("strThumb"),
+                "cutout_url": info.get("strCutout"),
+                "description": info.get("strDescriptionEN"),
+            },
+            "contracts": contracts,
+            "honours": honours,
+        }), 200
+    except Exception as e:
+        logger.error(f"get_player_detail error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     port = int(os.getenv('PORT', 8081))
     app.run(host="0.0.0.0", port=port, debug=False)

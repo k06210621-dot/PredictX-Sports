@@ -114,7 +114,33 @@ class APIService {
         let decoder = JSONDecoder()
         return try decoder.decode(AIAnalysisModel.self, from: data)
     }
-    
+
+    // MARK: - 🆕 球員資料（TheSportsDB）
+
+    /// 取得球隊完整球員名單（最多 10 位，free tier 限制）
+    func fetchTeamRoster(teamId: String) async throws -> TeamRosterResponse {
+        guard let url = URL(string: "\(baseURL)/api/players/roster?team_id=\(teamId)") else {
+            throw URLError(.badURL)
+        }
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+        return try JSONDecoder().decode(TeamRosterResponse.self, from: data)
+    }
+
+    /// 取得單一球員完整資料（基本資料 + 合約 + 榮譽）
+    func fetchPlayerDetail(playerId: String) async throws -> PlayerDetailResponse {
+        guard let url = URL(string: "\(baseURL)/api/players/\(playerId)") else {
+            throw URLError(.badURL)
+        }
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+        return try JSONDecoder().decode(PlayerDetailResponse.self, from: data)
+    }
+
     // --- New Analytics Endpoints ---
     
     func fetchOverallStats() async throws -> [LeagueAccuracyModel] {
@@ -168,4 +194,66 @@ class APIService {
         let res = try JSONDecoder().decode(SettleResponse.self, from: data)
         return res.settled_count
     }
+}
+
+
+// MARK: - 🆕 球員資料模型（TheSportsDB）
+
+struct TeamRosterResponse: Codable {
+    let team_id: String
+    let count: Int
+    let players: [PlayerBasic]
+}
+
+struct PlayerBasic: Codable, Identifiable {
+    let id: String
+    let name: String
+    let position: String?
+    let nationality: String?
+    let birth_date: String?
+    let height: String?
+    let weight: String?
+    let photo_url: String?
+    let cutout_url: String?
+}
+
+struct PlayerDetailResponse: Codable {
+    let player: PlayerDetail
+    let contracts: [PlayerContract]?
+    let honours: [PlayerHonour]?
+}
+
+struct PlayerDetail: Codable {
+    let id: String
+    let name: String
+    let team: String?
+    let team_id: String?
+    let nationality: String?
+    let position: String?
+    let birth_date: String?
+    let birth_location: String?
+    let height: String?
+    let weight: String?
+    let jersey_number: String?
+    let photo_url: String?
+    let cutout_url: String?
+    let description: String?
+}
+
+struct PlayerContract: Codable {
+    let id: Int?
+    let idPlayer: String?
+    let idTeam: String?
+    let strTeam: String?
+    let strBadge: String?
+    let strYearStart: String?
+    let strYearEnd: String?
+}
+
+struct PlayerHonour: Codable {
+    let id: Int?
+    let idPlayer: String?
+    let strHonour: String?
+    let strSport: String?
+    let strSeason: String?
 }
