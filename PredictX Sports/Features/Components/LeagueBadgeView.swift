@@ -62,8 +62,8 @@ struct LeagueBadgeView: View {
                 if isSelected {
                     Circle()
                         .fill(leagueColor.opacity(0.2))
-                        .frame(width: 80, height: 80)
-                        .blur(radius: 10)
+                        .frame(width: 88, height: 88)
+                        .blur(radius: 11)
                 }
 
                 // 徽章圓底
@@ -73,7 +73,7 @@ struct LeagueBadgeView: View {
                             ? leagueColor
                             : Color(.systemGray6)
                     )
-                    .frame(width: 68, height: 68)
+                    .frame(width: 75, height: 75)
                     .overlay(
                         Circle()
                             .stroke(
@@ -88,26 +88,26 @@ struct LeagueBadgeView: View {
 
                 // 徽章圖示
                 badgeIcon
-                    .font(.system(size: 30, weight: .bold))
+                    .font(.system(size: 33, weight: .bold))
                     .foregroundColor(isSelected ? .white : leagueColor)
 
                 // 選中時的外圈光暈動畫
                 if isSelected && league.hasPulse {
                     Circle()
                         .stroke(leagueColor.opacity(0.3 * pulseAnim), lineWidth: 3)
-                        .frame(width: 76, height: 76)
+                        .frame(width: 84, height: 84)
                         .scaleEffect(1 + 0.08 * pulseAnim)
                 }
             }
 
             // 聯賽名稱（加大字體）
             Text(league.rawValue)
-                .font(.system(size: 16, weight: .bold))
+                .font(.system(size: 18, weight: .bold))
                 .foregroundColor(isSelected ? leagueColor : .secondary)
 
             // 中文名稱（加大字體）
             Text(league.shortLabel)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 14, weight: .medium))
                 .foregroundColor(.secondary.opacity(0.7))
         }
         .scaleEffect(isSelected ? 1.05 : 0.95)
