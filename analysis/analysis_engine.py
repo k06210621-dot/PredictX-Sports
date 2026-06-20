@@ -703,6 +703,40 @@ class AnalysisEngine:
             _logging.getLogger(__name__).warning(f"TheSportsDB enricher failed (skip): {_e}")
             tdb_section = ""
 
+        # 🆕 注入本地球員資料 (CPBL roster + NPB qualified stats)
+        try:
+            from local_player_enricher import (
+                build_cpbl_roster_section,
+                build_npb_qualified_section,
+                cpbl_team_to_code,
+                npb_team_name_to_league_and_code,
+            )
+            league = features.get('league', '')
+
+            if league == 'CPBL':
+                # 用 home_team/away_team 中文名找 CPBL 球隊代碼
+                home_code = cpbl_team_to_code(home_team) if home_team else None
+                away_code = cpbl_team_to_code(away_team) if away_team else None
+                if home_code:
+                    tdb_section += build_cpbl_roster_section(home_code, "home")
+                if away_code:
+                    tdb_section += build_cpbl_roster_section(away_code, "away")
+
+            elif league == 'NPB':
+                # 兩隊的聯盟可能不同，分別注入
+                home_lc = npb_team_name_to_league_and_code(home_team) if home_team else None
+                away_lc = npb_team_name_to_league_and_code(away_team) if away_team else None
+                leagues_to_include = set()
+                if home_lc:
+                    leagues_to_include.add(home_lc[0])
+                if away_lc:
+                    leagues_to_include.add(away_lc[0])
+                for lg in leagues_to_include:
+                    tdb_section += build_npb_qualified_section(lg)
+        except Exception as _e:
+            import logging as _logging
+            _logging.getLogger(__name__).warning(f"Local player enricher failed (skip): {_e}")
+
         
         # MLB 即時進階數據（從 statsapi.mlb.com 線上取得）
         mlb_advanced = features.get('mlb_advanced', {})
