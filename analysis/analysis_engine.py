@@ -155,12 +155,36 @@ class AnalysisEngine:
         # 差距加強（如果原本差距太小）
         favorite_score = h_score if home_favorite else a_score
         underdog_score = a_score if home_favorite else h_score
-        if favorite_score - underdog_score < 1 and prob_diff > 0.1:
-            underdog_score = max(lo, favorite_score - 2)
-            if home_favorite:
-                h_score, a_score = favorite_score, underdog_score
-            else:
-                h_score, a_score = underdog_score, favorite_score
+
+        # 🆕 [fix] 根據勝率差距動態調整比分差距
+        # prob_diff > 0.4 → favorite 應至少贏 3 分以上
+        # prob_diff > 0.2 → 至少 2 分差距
+        # prob_diff > 0.1 → 至少 1 分差距
+        target_gap = 1
+        if prob_diff > 0.4:
+            target_gap = 3
+        elif prob_diff > 0.2:
+            target_gap = 2
+        elif prob_diff > 0.1:
+            target_gap = 1
+
+        # 確保 favorite_score >= target_gap + lo，否則先提升 favorite
+        current_gap = favorite_score - underdog_score
+        if current_gap < target_gap:
+            # 計算需要多少調整
+            deficit = target_gap - current_gap
+            # 先提升 favorite_score
+            favorite_score = min(hi, favorite_score + deficit)
+            # 再降低 underdog_score，但不能低於 lo
+            underdog_score = max(lo, underdog_score)
+            # 若還不夠，就再降 underdog（但不能低於 lo）
+            if favorite_score - underdog_score < target_gap:
+                underdog_score = max(lo, favorite_score - target_gap)
+
+        if home_favorite:
+            h_score, a_score = favorite_score, underdog_score
+        else:
+            h_score, a_score = underdog_score, favorite_score
 
         return f"{h_score}-{a_score}"
 
@@ -1540,30 +1564,35 @@ Park Factor: {pf:.2f} ({park_interp})
         else:
             home_prob = 0.5
         
+        # 🆕 [fix] 預測比分應考慮淨分差，不只是進攻得分
+        # 弱隊場均失分高 → 對強隊應失更多分
         home_avg_f = home_form.get('avg_goals_for', 0) or 0
         home_avg_a = home_form.get('avg_goals_against', 0) or 0
         away_avg_f = away_form.get('avg_goals_for', 0) or 0
         away_avg_a = away_form.get('avg_goals_against', 0) or 0
-        
-        h_form_score = home_avg_f / max(home_avg_a, 0.1) if home_avg_a > 0 else home_avg_f
-        a_form_score = away_avg_f / max(away_avg_a, 0.1) if away_avg_a > 0 else away_avg_f
-        
-        total = h_form_score + a_form_score
-        home_r = round(h_form_score / total * 10, 1) if total > 0 else 5.0
-        away_r = round(a_form_score / total * 10, 1) if total > 0 else 5.0
-        
+
+        # Radar chart 維度（用於 fallback 也保留 AI-style 6 維度）
         league = features.get('league', '')
         leauge_dims_map = {
             "MLB": ["球隊整體戰力", "打線火力", "先發投手", "牛棚表現", "主客場因素", "近期狀態"],
             "NBA": ["團隊整體戰力", "進攻效率", "防守強度", "籃板能力", "關鍵球處理", "近期狀態"],
             "FIFA": ["整體戰術實力", "前場進攻", "中場掌控", "後防穩定", "門將表現", "近期狀態"],
         }
-        dims = leauge_dims_map.get(league.upper() if league else "", 
-                ["整體戰力", "進攻能力", "防守能力", "戰術執行", "環境因素", "近期狀態"])
-        
-        home_vals = [round(home_r * (1 - i*0.05), 1) for i in range(6)]
-        away_vals = [round(away_r * (1 - i*0.05), 1) for i in range(6)]
-        
+        dims = leauge_dims_map.get(
+            league.upper() if league else "",
+            ["整體戰力", "進攻能力", "防守能力", "戰術執行", "環境因素", "近期狀態"],
+        )
+
+        # 用淨分差計算 radar 值（0-10 範圍）
+        h_form_score = home_avg_f / max(home_avg_a, 0.1) if home_avg_a > 0 else home_avg_f
+        a_form_score = away_avg_f / max(away_avg_a, 0.1) if away_avg_a > 0 else away_avg_f
+        total = h_form_score + a_form_score
+        home_r = round(h_form_score / total * 10, 1) if total > 0 else 5.0
+        away_r = round(a_form_score / total * 10, 1) if total > 0 else 5.0
+        home_vals = [round(home_r * (1 - i * 0.05), 1) for i in range(6)]
+        away_vals = [round(away_r * (1 - i * 0.05), 1) for i in range(6)]
+
+        # Key factors
         factors = []
         if home_standings:
             factors.append(f"{features['game_info']['home_team_name']}排名第{home_standings['rank']}")
@@ -1573,9 +1602,19 @@ Park Factor: {pf:.2f} ({park_interp})
             factors.append(f"主隊近期{home_form['win_loss']}")
         if away_form.get('win_loss'):
             factors.append(f"客隊近期{away_form['win_loss']}")
-        
-        fallback_conf = max(home_prob, 1-home_prob)
+
+        # Confidence
+        fallback_conf = max(home_prob, 1 - home_prob)
         fallback_conf_norm = max(1, min(10, round(fallback_conf * 10)))
+
+        # 預測單隊得分 = (己隊進攻實力 + 對手防守弱點) / 2
+        home_predicted = round(((home_avg_f or 3) + (away_avg_a or 3)) / 2)
+        away_predicted = round(((away_avg_f or 3) + (home_avg_a or 3)) / 2)
+
+        # 確保範圍合理（棒球 1-12）
+        home_predicted = max(1, min(12, home_predicted))
+        away_predicted = max(1, min(12, away_predicted))
+
         fallback = {
             "home_win_probability": round(home_prob, 4),
             "away_win_probability": round(1 - home_prob, 4),
@@ -1586,7 +1625,7 @@ Park Factor: {pf:.2f} ({park_interp})
                        f"場均{home_avg_f:.1f}分/失{home_avg_a:.1f}分；"
                        f"客隊近期{away_form.get('win_loss', '數據不足')}，"
                        f"場均{away_avg_f:.1f}分/失{away_avg_a:.1f}分。",
-            "predicted_score": f"{int(home_avg_f*0.8)}-{int(away_avg_f*0.8)}",
+            "predicted_score": f"{home_predicted}-{away_predicted}",
             "radar_chart": {
                 "categories": dims,
                 "home_team": [min(10, h) for h in home_vals],
