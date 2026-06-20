@@ -40,6 +40,12 @@ class HomeStore: ObservableObject {
     }
     
     func importAllSportsData() async {
+        await refresh()
+    }
+
+    /// 公開 refresh 入口（給 UI 下拉更新呼叫）
+    /// - 用 await + isLoading 避免重複觸發
+    func refresh() async {
         guard !isLoading else { return }
         isLoading = true
         defer { isLoading = false }

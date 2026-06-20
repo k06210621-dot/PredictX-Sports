@@ -11,6 +11,12 @@ struct HomeView: View {
     @State private var spendToastMessage: String = ""
     @State private var showConfirmAlert: Bool = false
     @State private var matchToConfirm: Match? = nil
+    // 🆕 [B] 卡片點擊反饋：每張卡片短暫縮放效果
+    @State private var tapScale: [String: Double] = [:]
+    // 🆕 [D] 解鎖成功反饋：toast 訊息 + 閃光效果
+    @State private var showUnlockToast: Bool = false
+    @State private var unlockToastMessage: String = ""
+    @State private var flashGameId: String? = nil
 
     /// 點擊賽事卡片的權限閘門
     private func openAnalysis(for match: Match) {
@@ -43,6 +49,13 @@ struct HomeView: View {
                 showSpendToast = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) { showSpendToast = false }
             }
+            // 🆕 [D] 解鎖成功 toast + 閃光
+            unlockToastMessage = "✅ 已解鎖 AI 推論隊伍強度"
+            showUnlockToast = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { showUnlockToast = false }
+            // 閃光效果：標記 gameId，UI 層 0.3s 內閃爍
+            flashGameId = match.id
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { flashGameId = nil }
             selectedMatchForDetail = match
         }
     }
@@ -76,17 +89,22 @@ struct HomeView: View {
                                                 .font(.caption2).foregroundColor(.secondary)
                                         }
                                         Spacer()
+                                        // 🆕 [E] 強化重試按鈕：加箭頭圖示 + 標準化樣式
                                         Button(action: {
                                             store.errorMessage = nil
-                                            Task { await store.importAllSportsData() }
+                                            Task { await store.refresh() }
                                         }) {
-                                            Text("重試")
-                                                .font(.caption).bold()
-                                                .foregroundColor(.primary)
-                                                .padding(.horizontal, 12)
-                                                .padding(.vertical, 8)
-                                                .background(Color.red)
-                                                .cornerRadius(16)
+                                            HStack(spacing: 4) {
+                                                Image(systemName: "arrow.clockwise")
+                                                    .font(.caption2.bold())
+                                                Text(NSLocalizedString("action.retry", comment: ""))
+                                                    .font(.caption).bold()
+                                            }
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 14)
+                                            .padding(.vertical, 8)
+                                            .background(Color.red)
+                                            .clipShape(Capsule())
                                         }
                                     }
                                     .padding()
@@ -115,7 +133,19 @@ struct HomeView: View {
                                                     confidence: match.aiConfidence ?? 0
                                                 )
                                                 .contentShape(Rectangle())
-                                                .onTapGesture { openAnalysis(for: match) }
+                                                .scaleEffect(tapScale[match.id] ?? 1.0)
+                                                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: tapScale[match.id])
+                                                .onTapGesture {
+                                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                                                        tapScale[match.id] = 0.97
+                                                    }
+                                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                                                            tapScale[match.id] = 1.0
+                                                        }
+                                                    }
+                                                    openAnalysis(for: match)
+                                                }
                                             }
                                         }
                                     }
@@ -197,6 +227,10 @@ struct HomeView: View {
                     .environmentObject(subscriptionManager)
             }
             .onAppear { syncUnlockState() }
+            // 🆕 [A] 下拉更新：使用者可在首頁下拉刷新賽事資料
+            .refreshable {
+                await store.refresh()
+            }
             .alert("開啟 AI 賽事詳情分析", isPresented: $showConfirmAlert) {
                 Button("同意・扣除 20 點") {
                     confirmAndOpenAnalysis()
@@ -213,6 +247,13 @@ struct HomeView: View {
                     spendToastView
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                         .animation(.spring(response: 0.4, dampingFraction: 0.7), value: showSpendToast)
+                }
+                // 🆕 [D] 解鎖成功 toast（綠色 + 較大，置於 showSpendToast 上方）
+                if showUnlockToast {
+                    unlockToastView
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: showUnlockToast)
+                        .padding(.bottom, 60)
                 }
             }
         }
@@ -234,6 +275,30 @@ struct HomeView: View {
         .background(.ultraThinMaterial)
         .clipShape(Capsule())
         .shadow(color: .black.opacity(0.2), radius: 8, y: 4)
+        .padding(.bottom, 100)
+    }
+
+    // 🆕 [D] 解鎖成功 toast（綠色 + 勾號圖示，強化付費成就感）
+    private var unlockToastView: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 28, height: 28)
+                Image(systemName: "checkmark")
+                    .font(.caption.bold())
+                    .foregroundColor(.white)
+            }
+            Text(unlockToastMessage)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .foregroundColor(.primary)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .shadow(color: .green.opacity(0.3), radius: 12, y: 4)
         .padding(.bottom, 100)
     }
     

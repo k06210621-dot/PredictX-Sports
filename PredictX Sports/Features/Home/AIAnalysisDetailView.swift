@@ -21,8 +21,20 @@ struct AIAnalysisDetailView: View {
                         Image(systemName: "exclamationmark.triangle.fill").font(.largeTitle).foregroundColor(.orange)
                         Text(NSLocalizedString("analysis.load_failed", comment: "")).font(.headline).foregroundColor(.primary)
                         Text(error).font(.caption).foregroundColor(.secondary).multilineTextAlignment(.center)
-                        Button(NSLocalizedString("action.retry", comment: "")) { Task { await loadAnalysis() } }
-                            .buttonStyle(.borderedProminent)
+                        // 🆕 [E] 強化重試按鈕：加箭頭圖示 + 標準化樣式
+                        Button(action: { Task { await loadAnalysis() } }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.subheadline.bold())
+                                Text(NSLocalizedString("action.retry", comment: ""))
+                                    .font(.subheadline.bold())
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 22)
+                            .padding(.vertical, 10)
+                            .background(Color.blue)
+                            .clipShape(Capsule())
+                        }
                     }
                     .padding()
                 } else if let analysis = analysis {
@@ -197,10 +209,20 @@ struct AIAnalysisDetailView: View {
     }
     
     private func loadAnalysis() async {
+        // 🆕 [C] 快取優先：避免重複扣點困擾
+        if let cached = AnalysisCache.shared.get(gameId: match.id) {
+            print("⚡ [Analysis] cache hit for gameId: \(match.id)")
+            self.analysis = cached
+            self.isLoading = false
+            return
+        }
+
         isLoading = true
         print("🔍 [Analysis] loading for gameId: \(match.id)")
         do {
-            self.analysis = try await APIService.shared.fetchAIAnalysis(gameId: match.id)
+            let result = try await APIService.shared.fetchAIAnalysis(gameId: match.id)
+            self.analysis = result
+            AnalysisCache.shared.set(result, gameId: match.id)
             print("✅ [Analysis] loaded successfully: conf=\(self.analysis?.prediction?.confidence ?? -1)")
             isLoading = false
         } catch {
