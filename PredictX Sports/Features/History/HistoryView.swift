@@ -185,10 +185,14 @@ struct HistoricalMatchCardView: View {
                     // ✅ 永遠只顯示「真實比分」（homeScore + awayScore 兩者皆有才顯示）
                     // 不再用 aiTotalScorePredict 作為「最終比分」替代，避免誤導
                     if let homeScore = match.homeScore, let awayScore = match.awayScore {
+                        // 用 lineLimit(1) + minimumScaleFactor 避免大數字被擠壓變形
                         Text("\(homeScore) - \(awayScore)")
                             .font(.title2)
                             .fontWeight(.heavy)
                             .foregroundColor(themeColor)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                            .frame(minWidth: 80)  // 防止 layout 擠壓
                         Text("最終比分")
                             .font(.system(size: 9))
                             .foregroundColor(Color(.tertiaryLabel))
