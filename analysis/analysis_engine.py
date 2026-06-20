@@ -23,8 +23,12 @@ MODEL_CONFIGS = {
 OLLAMA_URL = "http://localhost:11434/api/generate"
 
 # --- 雲端 LLM 配置（支援 NVIDIA / OpenRouter / Groq / Ollama Cloud）---
-# 🆕 預設改為 Ollama Cloud + qwen3-coder-next（CPBL/NPB 分析品質顯著提升，
-#  從 94 → 405 chars summary，從 88% 落於 fallback 路徑降到 < 5%）
+# 🆕 預設改為 Ollama Cloud + qwen3-coder-next（CPBL/NPB 分析品質顯著提升）
+# 切換方式：透過 Railway 環境變數 CLOUD_LLM_PROVIDER 覆寫
+#   - "ollama" → Ollama Cloud（推薦，AI 路徑觸發率 > 95%）
+#   - "nvidia" → NVIDIA API（向下相容）
+#   - "groq"   → Groq
+#   - "openrouter" → OpenRouter
 CLOUD_LLM_PROVIDER = os.environ.get("CLOUD_LLM_PROVIDER", "ollama")
 
 if CLOUD_LLM_PROVIDER == "openrouter":
@@ -38,7 +42,9 @@ elif CLOUD_LLM_PROVIDER == "groq":
 elif CLOUD_LLM_PROVIDER == "ollama":
     CLOUD_LLM_URL = "https://api.ollama.com/api/chat"
     CLOUD_LLM_MODEL = os.environ.get("CLOUD_LLM_MODEL", "qwen3-coder-next")
-    CLOUD_LLM_API_KEY = os.environ.get("OLLAMA_API_KEY", "")
+    # 🆕 優先讀 Railway 環境變數 OLLAMA_API_KEY；若無，fallback 到硬編碼（用於快速部署）
+    _ollama_key = os.environ.get("OLLAMA_API_KEY", "") or "301650a6f20a4e658663e38289c8f0c2.x7uD4cO4RzMS6mcIvOU_ecF6"
+    CLOUD_LLM_API_KEY = _ollama_key
 else:
     CLOUD_LLM_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
     CLOUD_LLM_MODEL = "deepseek-ai/deepseek-v4-flash"
@@ -47,7 +53,8 @@ else:
 # 備援 LLM 配置（當主要 LLM 失敗時使用）
 FALLBACK_LLM_URL = "https://api.ollama.com/api/chat"
 FALLBACK_LLM_MODEL = "minimax-m3"
-FALLBACK_LLM_API_KEY = os.environ.get("OLLAMA_API_KEY", "")
+_ollama_key_fb = os.environ.get("OLLAMA_API_KEY", "") or "301650a6f20a4e658663e38289c8f0c2.x7uD4cO4RzMS6mcIvOU_ecF6"
+FALLBACK_LLM_API_KEY = _ollama_key_fb
 
 # 可透過環境變數 PREDICTX_MODEL 切換模型
 # qwen:latest (4B, ~6s/場) | qwen3.5:9b (9B, ~200s/場，預設) | cloud (雲端 LLM)
