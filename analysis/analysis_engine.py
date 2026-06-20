@@ -117,10 +117,6 @@ class AnalysisEngine:
 
         # 決定誰是 favorite（勝率高者）
         prob_diff = abs(home_prob - away_prob)
-        if prob_diff < 0.05:
-            # 差距 < 5% 視為五五波，不校正（保留 LLM 原始預測）
-            return predicted_score or f"{lo}-{lo}"
-
         home_favorite = home_prob > away_prob
 
         # 解析原比分為 (home, away)
@@ -130,29 +126,28 @@ class AnalysisEngine:
             original_score = (mid, mid)
         h_score, a_score = original_score
 
-        # 修正方向：favorite 必須贏
-        if home_favorite and h_score <= a_score:
-            # home 應該贏但沒贏 → 調高 home（如果太低則加 1），或調低 away
-            if h_score == a_score:
+        # 偵測矛盾：favorite 的比分是否 <= underdog
+        contradiction = (home_favorite and h_score <= a_score) or (not home_favorite and a_score <= h_score)
+
+        if not contradiction:
+            # 無矛盾，直接回傳（即使 prob_diff 很小）
+            return f"{h_score}-{a_score}"
+
+        # 🆕 [fix] 有矛盾時一律修正，不再因 prob_diff < 0.05 跳過
+        # 修正策略：favorite 分數 = max(原分數) + 1，underdog = min(原分數)
+        # 若原分數相同（如 2-2），favorite +1
+        if h_score == a_score:
+            if home_favorite:
                 h_score = min(h_score + 1, hi)
             else:
-                # 翻轉：max +1 → favorite, min → underdog
-                new_fav = max(h_score, a_score) + 1
-                new_und = min(h_score, a_score)
-                if home_favorite:
-                    h_score, a_score = new_fav, new_und
-                else:
-                    h_score, a_score = new_und, new_fav
-        elif (not home_favorite) and a_score <= h_score:
-            if h_score == a_score:
                 a_score = min(a_score + 1, hi)
+        else:
+            new_fav = max(h_score, a_score) + 1
+            new_und = min(h_score, a_score)
+            if home_favorite:
+                h_score, a_score = new_fav, new_und
             else:
-                new_fav = max(h_score, a_score) + 1
-                new_und = min(h_score, a_score)
-                if home_favorite:
-                    h_score, a_score = new_fav, new_und
-                else:
-                    h_score, a_score = new_und, new_fav
+                h_score, a_score = new_und, new_fav
         # 確保在範圍內
         h_score = max(lo, min(hi, h_score))
         a_score = max(lo, min(hi, a_score))
