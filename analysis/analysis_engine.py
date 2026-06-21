@@ -1860,6 +1860,36 @@ Park Factor: {pf:.2f} ({park_interp})
                     league=features.get('league', '')
                 )
 
+                # 🆕 [Recipe 8] radar_chart 補齊邏輯（修雷達圖消失 bug）
+                # 修正: LLM 常回傳空陣列的 radar_chart ({"categories": [], ...})
+                # 舊邏輯只在「完全沒 key」時補空 dict,不會修「空陣列」情況
+                # 新邏輯: 任一欄位為空時,用 _compute_team_radar_scores 補上本地計算值
+                radar = result.get('radar_chart')
+                radar_invalid = (
+                    not isinstance(radar, dict) or
+                    not radar.get('categories') or
+                    not radar.get('home_team') or
+                    not radar.get('away_team')
+                )
+                if radar_invalid:
+                    league_lc = (features.get('league') or '').upper()
+                    dims_map = {
+                        "MLB": ["球隊整體戰力", "打線火力", "先發投手", "牛棚表現", "主客場因素", "近期狀態"],
+                        "NPB": ["球隊整體戰力", "打線火力", "先發投手", "牛棚表現", "主客場因素", "近期狀態"],
+                        "CPBL": ["球隊整體戰力", "打線火力", "先發投手", "牛棚表現", "主客場因素", "近期狀態"],
+                        "NBA": ["團隊整體戰力", "進攻效率", "防守強度", "籃板能力", "關鍵球處理", "近期狀態"],
+                        "FIFA": ["整體戰術實力", "前場進攻", "中場掌控", "後防穩定", "門將表現", "近期狀態"],
+                    }
+                    dims = dims_map.get(league_lc, ["整體戰力", "進攻能力", "防守能力", "戰術執行", "環境因素", "近期狀態"])
+                    home_radar_scores = self._compute_team_radar_scores(features, 'home')
+                    away_radar_scores = self._compute_team_radar_scores(features, 'away')
+                    result['radar_chart'] = {
+                        "categories": dims,
+                        "home_team": [min(10, max(0, h)) for h in home_radar_scores['values']],
+                        "away_team": [min(10, max(0, a)) for a in away_radar_scores['values']],
+                    }
+                    print(f"  📊 Recipe 8 雷達圖補齊: {len(dims)} 維")
+
                 return result
         
         # Fallback: 若 AI 輸出異常，使用數據計算的替代方案
