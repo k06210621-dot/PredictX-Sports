@@ -45,9 +45,13 @@ if not _database_url:
 
 _parsed = urlparse.urlparse(_database_url)
 
+_db_minconn = int(os.getenv('DB_POOL_MIN', '2'))
+_db_maxconn = int(os.getenv('DB_POOL_MAX', '20'))
+logger.info(f"DB connection pool: minconn={_db_minconn}, maxconn={_db_maxconn}")
+
 DB_POOL = pool.ThreadedConnectionPool(
-    minconn=2,
-    maxconn=10,  # 依 Railway 方案允許的最大連線數調整
+    minconn=_db_minconn,
+    maxconn=_db_maxconn,  # 可透過 Railway 環境變數 DB_POOL_MAX 調整
     host=_parsed.hostname,
     port=_parsed.port,
     dbname=_parsed.path.lstrip('/'),
