@@ -90,6 +90,103 @@ class AnalysisEngine:
         scores = [self.source_registry[s] for s in self.used_sources]
         return round(sum(scores) / len(scores), 2)
 
+    def _compute_team_radar_scores(self, features, side='home'):
+        """根據 stats 計算 6 維雷達圖分數（0-10）。
+        side: 'home' or 'away'
+        MLB 維度順序：球隊整體戰力, 打線火力, 先發投手, 牛棚表現, 主客場因素, 近期狀態
+        """
+        league = (features.get('league') or '').upper()
+        form = features.get(f'{side}_recent_form') or {}
+        standings = features.get(f'{side}_standings') or {}
+        opponent_form = features.get(f'{"away" if side == "home" else "home"}_recent_form') or {}
+        pitcher_data = features.get('mlb_pitchers') or features.get('pitchers') or {}
+
+        avg_for = float(form.get('avg_goals_for') or 0)
+        avg_against = float(form.get('avg_goals_against') or 0)
+        opp_avg_for = float(opponent_form.get('avg_goals_for') or 0)
+        opp_avg_against = float(opponent_form.get('avg_goals_against') or 0)
+
+        win_pct = float(standings.get('win_pct') or 0.5)
+        rank = standings.get('rank') or 15
+
+        pitcher = pitcher_data.get(f'{side}_pitcher') or {}
+        pitcher_stats = pitcher.get('stats') or {}
+
+        def clamp(v, lo=1.0, hi=10.0):
+            return max(lo, min(hi, round(v, 1)))
+
+        def rank_to_score(r):
+            # 排名 1 = 10 分，排名 30 = 1 分
+            try:
+                r = int(r)
+                return max(1.0, 11.0 - r * 10.0 / 30.0)
+            except Exception:
+                return 5.0
+
+        # 近期勝率（W-L 字串 "3-2" → 0.6）
+        wl_str = form.get('win_loss') or ''
+        recent_winrate = 0.5
+        if wl_str and '-' in wl_str:
+            try:
+                w, l = wl_str.split('-')[:2]
+                w = int(w); l = int(l)
+                total = w + l
+                if total > 0:
+                    recent_winrate = w / total
+            except Exception:
+                pass
+
+        if league in ('MLB', 'NPB', 'CPBL'):
+            # 球隊整體戰力：基於勝率（最直接的實力指標）
+            team_strength = clamp(win_pct * 10) if win_pct and win_pct > 0 else clamp(rank_to_score(rank))
+            # 打線火力：場均得分（棒球常見 3-6 分，2.5→5 分基準）
+            offense = clamp((avg_for - 2.5) * 2 + 5)
+            # 先發投手：若有 ERA → 低 ERA 高分
+            era = pitcher_stats.get('era')
+            if era is not None:
+                pitcher_score = clamp(10 - (float(era) - 2.5) * 1.5)
+            else:
+                pitcher_score = clamp(5 + (avg_for - avg_against) * 0.8)
+            # 牛棚：用對手場均得分推估（聯盟平均 ~4.5 為基準）
+            bullpen = clamp(10 - max(0, opp_avg_for - 4.0) * 1.2)
+            # 主客場因素
+            home_away = 7.0 if side == 'home' else 5.0
+            venue_wr = standings.get('home_win_pct') if side == 'home' else standings.get('away_win_pct')
+            if venue_wr is not None:
+                home_away = clamp(float(venue_wr) * 10)
+            # 近期狀態
+            recent = clamp(recent_winrate * 10)
+            values = [team_strength, offense, pitcher_score, bullpen, home_away, recent]
+        elif league == 'NBA':
+            team_strength = clamp(win_pct * 10) if win_pct and win_pct > 0 else clamp(rank_to_score(rank))
+            offense = clamp((avg_for - 100) * 0.2 + 5)
+            defense = clamp(10 - max(0, opp_avg_for - 110) * 0.2)
+            clutch = clamp(5 + (avg_for - avg_against) * 0.3)
+            home_away = 6.5 if side == 'home' else 5.0
+            venue_wr = standings.get('home_win_pct') if side == 'home' else standings.get('away_win_pct')
+            if venue_wr is not None:
+                home_away = clamp(float(venue_wr) * 10)
+            recent = clamp(recent_winrate * 10)
+            values = [team_strength, offense, defense, clutch, home_away, recent]
+        elif league == 'FIFA':
+            team_strength = clamp(win_pct * 10) if win_pct and win_pct > 0 else 5.0
+            attack = clamp((avg_for - 1.0) * 2.5 + 5)
+            midfield = clamp(5 + (avg_for - avg_against) * 0.5)
+            defense = clamp(10 - max(0, opp_avg_for - 1.2) * 3)
+            home_away = 6.0 if side == 'home' else 5.0
+            recent = clamp(recent_winrate * 10)
+            values = [team_strength, attack, midfield, defense, home_away, recent]
+        else:
+            team_strength = clamp(win_pct * 10) if win_pct and win_pct > 0 else 5.0
+            offense = clamp((avg_for - 2) * 1.5 + 5)
+            defense = clamp(10 - max(0, avg_against - 3) * 1.5)
+            execution = clamp(5 + (avg_for - avg_against) * 0.5)
+            home_away = 6.0 if side == 'home' else 5.0
+            recent = clamp(recent_winrate * 10)
+            values = [team_strength, offense, defense, execution, home_away, recent]
+
+        return {'values': values}
+
     def _reconcile_predicted_score(self, predicted_score, home_prob, away_prob, league=""):
         """
         校正 predicted_score，確保與勝率一致。
@@ -1294,15 +1391,44 @@ Park Factor: {pf:.2f} ({park_interp})
                 print(f"  Raw (first 200): {text[:200]}")
                 return None
         
-        # 處理嵌套結構
+        # 處理嵌套結構（修正：先保留外層雷達圖/分析，再合併所有巢狀區塊，避免丟失 radar_chart + 重要欄位）
         if isinstance(result, dict):
-            for key in ['result', 'analysis', 'output', 'prediction']:
-                if key in result and isinstance(result[key], dict):
-                    nested = result[key]
-                    if any(k in nested for k in ['home_win_probability', 'home_team', 'summary']):
-                        result = nested
-                        break
-        
+            # 🆕 [fix] 不再「整個 replace」子字典，而是「淺層合併」：所有巢狀區塊的欄位都併入外層
+            outer_radar = result.get('radar_chart') if isinstance(result.get('radar_chart'), dict) else None
+            outer_key_factors = result.get('key_factors') if isinstance(result.get('key_factors'), list) else None
+            outer_summary = result.get('summary') if isinstance(result.get('summary'), str) else None
+            outer_predicted_score = result.get('predicted_score') if isinstance(result.get('predicted_score'), str) else None
+
+            merged = dict(result)  # 保留外層所有欄位
+            visited_keys = set()
+            # 反覆合併巢狀區塊（支援 result→prediction→hp 多層巢狀）
+            for _ in range(3):  # 最多 3 層深度
+                progressed = False
+                for key in ['result', 'analysis', 'output', 'prediction']:
+                    if key in visited_keys:
+                        continue
+                    if key in merged and isinstance(merged[key], dict):
+                        nested = merged[key]
+                        visited_keys.add(key)
+                        for nk, nv in nested.items():
+                            if nk not in merged or merged.get(nk) in ('', 0.0, 0, None, [], {}):
+                                merged[nk] = nv
+                                progressed = True
+                if not progressed:
+                    break
+
+            # 確保外層的雷達圖不會被巢狀區塊的（多半為空）覆蓋
+            if outer_radar:
+                merged['radar_chart'] = outer_radar
+            if outer_key_factors:
+                merged['key_factors'] = outer_key_factors
+            if outer_summary:
+                merged['summary'] = outer_summary
+            if outer_predicted_score:
+                merged['predicted_score'] = outer_predicted_score
+
+            result = merged
+
         # 中文鍵名映射
         if isinstance(result, dict):
             cn_map = {
@@ -1323,16 +1449,16 @@ Park Factor: {pf:.2f} ({park_interp})
             for old_k, new_k in cn_map.items():
                 if old_k in result:
                     result[new_k] = result.pop(old_k)
-            
+
             # 補齊缺失欄位
             for field in ['home_win_probability', 'away_win_probability', 'confidence', 'summary', 'predicted_score']:
                 if field not in result:
                     result[field] = 0.0 if field in ['home_win_probability', 'away_win_probability', 'confidence'] else ''
             if 'key_factors' not in result:
                 result['key_factors'] = [result['summary'][:20]] if result.get('summary') else []
-            if 'radar_chart' not in result:
+            if 'radar_chart' not in result or not isinstance(result.get('radar_chart'), dict):
                 result['radar_chart'] = {"categories": [], "home_team": [], "away_team": []}
-        
+
         return result
 
     def _call_local_ollama(self, prompt):
@@ -1395,15 +1521,41 @@ Park Factor: {pf:.2f} ({park_interp})
                     print(f"  Raw (first 300): {text_to_parse[:300]}")
                     return None
             
-            # 處理嵌套結構
+            # 處理嵌套結構（修正：先保留外層雷達圖/分析，再合併所有巢狀區塊）
             if isinstance(result, dict):
-                for key in ['result', 'analysis', 'output', 'prediction']:
-                    if key in result and isinstance(result[key], dict):
-                        nested = result[key]
-                        if any(k in nested for k in ['home_win_probability', 'home_team', 'summary']):
-                            result = nested
-                            break
-            
+                outer_radar = result.get('radar_chart') if isinstance(result.get('radar_chart'), dict) else None
+                outer_key_factors = result.get('key_factors') if isinstance(result.get('key_factors'), list) else None
+                outer_summary = result.get('summary') if isinstance(result.get('summary'), str) else None
+                outer_predicted_score = result.get('predicted_score') if isinstance(result.get('predicted_score'), str) else None
+
+                merged = dict(result)
+                visited_keys = set()
+                for _ in range(3):  # 最多 3 層深度
+                    progressed = False
+                    for key in ['result', 'analysis', 'output', 'prediction']:
+                        if key in visited_keys:
+                            continue
+                        if key in merged and isinstance(merged[key], dict):
+                            nested = merged[key]
+                            visited_keys.add(key)
+                            for nk, nv in nested.items():
+                                if nk not in merged or merged.get(nk) in ('', 0.0, 0, None, [], {}):
+                                    merged[nk] = nv
+                                    progressed = True
+                    if not progressed:
+                        break
+
+                if outer_radar:
+                    merged['radar_chart'] = outer_radar
+                if outer_key_factors:
+                    merged['key_factors'] = outer_key_factors
+                if outer_summary:
+                    merged['summary'] = outer_summary
+                if outer_predicted_score:
+                    merged['predicted_score'] = outer_predicted_score
+
+                result = merged
+
             # 中文鍵名映射
             if isinstance(result, dict):
                 cn_map = {
@@ -1424,14 +1576,14 @@ Park Factor: {pf:.2f} ({park_interp})
                 for old_k, new_k in cn_map.items():
                     if old_k in result:
                         result[new_k] = result.pop(old_k)
-                
+
                 # 補齊缺失欄位
                 for field in ['home_win_probability', 'away_win_probability', 'confidence', 'summary', 'predicted_score']:
                     if field not in result:
                         result[field] = 0.0 if field in ['home_win_probability', 'away_win_probability', 'confidence'] else ''
                 if 'key_factors' not in result:
                     result['key_factors'] = [result['summary'][:20]] if result.get('summary') else []
-                if 'radar_chart' not in result:
+                if 'radar_chart' not in result or not isinstance(result.get('radar_chart'), dict):
                     result['radar_chart'] = {"categories": [], "home_team": [], "away_team": []}
                 if 'home_total_score' not in result:
                     result['home_total_score'] = 0.0
@@ -1620,14 +1772,11 @@ Park Factor: {pf:.2f} ({park_interp})
             ["整體戰力", "進攻能力", "防守能力", "戰術執行", "環境因素", "近期狀態"],
         )
 
-        # 用淨分差計算 radar 值（0-10 範圍）
-        h_form_score = home_avg_f / max(home_avg_a, 0.1) if home_avg_a > 0 else home_avg_f
-        a_form_score = away_avg_f / max(away_avg_a, 0.1) if away_avg_a > 0 else away_avg_f
-        total = h_form_score + a_form_score
-        home_r = round(h_form_score / total * 10, 1) if total > 0 else 5.0
-        away_r = round(a_form_score / total * 10, 1) if total > 0 else 5.0
-        home_vals = [round(home_r * (1 - i * 0.05), 1) for i in range(6)]
-        away_vals = [round(away_r * (1 - i * 0.05), 1) for i in range(6)]
+        # 用 stats 計算有意義的 6 維雷達圖（避免線性遞減造成每隊 6 個相近數字）
+        home_radar = self._compute_team_radar_scores(features, 'home')
+        away_radar = self._compute_team_radar_scores(features, 'away')
+        home_vals = home_radar['values']
+        away_vals = away_radar['values']
 
         # Key factors
         factors = []  # 暫時，等 home_predicted/away_predicted 等變數設定後再補
