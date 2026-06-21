@@ -1259,14 +1259,14 @@ Park Factor: {pf:.2f} ({park_interp})
 1. 對比兩隊的近期表現與實力差距（引用具體球員姓名/背號/戰績數據）
 2. 參考聯盟排名評估優劣勢
 3. 為以下維度進行 0-10 評分: {json.dumps(current_dims, ensure_ascii=False)}
-4. 給出勝率與預測比分
+4. 給出推論機率與推演比分
 5. **信心指數 (confidence) 必須是 1-10 的整數**。請依下列標準精確評估：
-   - **1-3**: 數據嚴重不足或兩隊實力極為接近，勝率可能僅 50-55%。請誠實給低分。
-   - **4-5**: 有基本數據但仍有重大不確定因素，預期命中率 55-60%。
-   - **6**: 數據明確顯示一方略佔優（主場優勢、近期狀態等），預期命中率 60-65%。
-   - **7**: 數據顯示一方明顯佔優（投手對位、打線強度等差異顯著），預期命中率 70-75%。
-   - **8**: 數據強烈支持一方（投手實力差距大、戰績懸殊），預期命中率 80-85%。
-   - **9**: 極高把握（如 ace 對弱投、戰績懸殊且近期狀態都好），預期命中率 85-90%。
+   - **1-3**: 數據嚴重不足或兩隊實力極為接近，推論機率可能僅 50-55%。請誠實給低分。
+   - **4-5**: 有基本數據但仍有重大不確定因素，預期驗證率 55-60%。
+   - **6**: 數據明確顯示一方略佔優（主場優勢、近期狀態等），預期驗證率 60-65%。
+   - **7**: 數據顯示一方明顯佔優（投手對位、打線強度等差異顯著），預期驗證率 70-75%。
+   - **8**: 數據強烈支持一方（投手實力差距大、戰績懸殊），預期驗證率 80-85%。
+   - **9**: 極高把握（如 ace 對弱投、戰績懸殊且近期狀態都好），預期驗證率 85-90%。
    - **10**: 史詩級優勢，幾乎確定（例如最強 ace 對最弱打線），僅限極少數情況使用。
    - **重要：信心 7 必須真正「明顯佔優」才給**，不要因為「想讓用戶相信」而過度自信。{fifa_ou_instruction}
 
@@ -1276,6 +1276,7 @@ Park Factor: {pf:.2f} ({park_interp})
 - 解讀比賽關鍵：進攻火力 vs 防守強度、投打對位、主客場優勢、心理因素
 - 避免空泛形容詞（"勢均力敵"、"實力接近"），用具體數字與球員名稱
 - 中文繁體輸出，不要使用簡體
+- **合規用語要求（嚴格遵守）**：摘要中禁止使用「預測獲勝」「預測比分」「贏 X 分以上」「下注」「賠率」「賭博」「投注」等博弈術語。請改用「推論」「模型推演」「領先 X 分以上推演機率」「分析顯示」等中性數據分析用語。例如：「預測光芒以 6-3 獲勝」→「模型推演光芒以 6-3 領先」；「贏 2 分以上機率 55-60%」→「領先 2 分以上推演機率 55-60%」。球隊戰績的「勝率」（如「主場勝率 100%」）可保留，但 AI 推論結果禁止使用「預測勝率」「預測獲勝」等用語
 
 **重要規則（請嚴格遵守）：**
 - home_win_probability 和 away_win_probability 的總和必須等於 1.0
@@ -1283,7 +1284,7 @@ Park Factor: {pf:.2f} ({park_interp})
 - 如果主隊有優勢，home_win_probability 應 > 0.5（例如 0.55-0.75）
 - 如果客隊有優勢，home_win_probability 應 < 0.5（例如 0.25-0.45）
 - 🆕 **請勿系統性傾向客隊**：歷史數據顯示「主隊在主場有統計顯著優勢」（詳見上方主場優勢提示）。當兩隊實力接近、數據不明時，請給主隊略高的勝率（例如 0.52-0.55），而非傾向客隊。
-- 預測比分必須是具體數字，不能是 "N/A" 或空值
+- 推演比分必須是具體數字，不能是 "N/A" 或空值
 - key_factors 至少 4 個，每個 15-30 字，引用具體數據
 
 請嚴格按照以下 JSON 格式輸出，**只輸出 JSON**，不要有任何其他文字：
@@ -1293,7 +1294,7 @@ Park Factor: {pf:.2f} ({park_interp})
   "confidence": 0, 
   "key_factors": ["因素1（引用具體數據）", "因素2", "因素3", "因素4"], 
   "summary": "深度分析摘要（180-400字，引用具體球員與數據）",
-  "predicted_score": "預測比分"{fifa_ou_field},
+  "predicted_score": "推演比分"{fifa_ou_field},
   "radar_chart": {{
     "categories": {json.dumps(current_dims, ensure_ascii=False)},
     "home_team": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -1765,19 +1766,78 @@ Park Factor: {pf:.2f} ({park_interp})
                     normalized_conf = max(1, min(10, round(raw_conf)))
                 result["confidence"] = normalized_conf
 
+                # 🆕 [Recipe 7: 方法 E] 基於特徵的置信度動態調整
+                # 戰績差距、投手差距、排名差距若明顯,主動調高置信度
+                # 目的: 讓強弱懸殊賽事自然落在 8-9 區間,提升分佈多樣性
+                feature_boost = 0
+                boost_reasons = []
+
+                home_standings_raw = features.get('home_standings') or {}
+                away_standings_raw = features.get('away_standings') or {}
+                home_win_pct_raw = float(home_standings_raw.get('win_pct', 0.5) or 0.5)
+                away_win_pct_raw = float(away_standings_raw.get('win_pct', 0.5) or 0.5)
+                win_pct_diff = abs(home_win_pct_raw - away_win_pct_raw)
+
+                # 條件 1: 戰績差距 > 20%
+                if win_pct_diff > 0.20:
+                    feature_boost += 1
+                    boost_reasons.append(f"戰績差距 {win_pct_diff:.0%}")
+
+                # 條件 2: 投手 ERA 差距 > 1.5
+                lg_check = (features.get('league') or '').upper()
+                if lg_check in ('MLB', 'NPB', 'CPBL'):
+                    pitcher_data_check = features.get('mlb_pitchers') or features.get('npb_pitchers') or features.get('cpbl_pitchers') or features.get('pitchers') or {}
+                    home_p = pitcher_data_check.get('home_pitcher') or {}
+                    away_p = pitcher_data_check.get('away_pitcher') or {}
+                    h_era = float((home_p.get('stats') or {}).get('era', 0) or 0)
+                    a_era = float((away_p.get('stats') or {}).get('era', 0) or 0)
+                    if h_era > 0 and a_era > 0:
+                        era_diff = abs(h_era - a_era)
+                        if era_diff > 1.5:
+                            feature_boost += 1
+                            boost_reasons.append(f"投手 ERA 差距 {era_diff:.2f}")
+
+                # 條件 3: 排名差距 > 10 名
+                home_rank = home_standings_raw.get('rank')
+                away_rank = away_standings_raw.get('rank')
+                if home_rank and away_rank:
+                    rank_diff = abs(int(home_rank) - int(away_rank))
+                    if rank_diff > 10:
+                        feature_boost += 1
+                        boost_reasons.append(f"排名差距 {rank_diff}")
+
+                if feature_boost > 0:
+                    old_conf = normalized_conf
+                    normalized_conf = min(10, normalized_conf + feature_boost)
+                    result["confidence"] = normalized_conf
+                    print(f"  📈 Recipe 7 置信度提升: {old_conf} → {normalized_conf} (依據: {', '.join(boost_reasons)})")
+
                 # 🆕 信心度-勝率一致性檢查
-                # 若信心度顯示「明顯佔優」(>= 7)，但勝率差距 < 10% (prob_diff < 0.10)
-                # 表示信心度過度自信，自動加大勝率差距至符合該信心度的合理範圍
+                # 根據調整後的置信度,動態計算最低勝率差距門檻
+                # 強弱懸殊賽事(置信度 8-9)會自動要求更大勝率差距
                 prob_diff = abs(home_prob - away_prob)
+
+                # 🆕 [Recipe 7: 方法 B 改良] 主場優勢動態化
+                # 強隊主場 (戰績前 1/3): 0.56,一般: 0.54,弱隊主場: 0.52
+                # 應用於一致性檢查的最低差距門檻
+                home_advantage = 0.54
+                if home_win_pct_raw > 0.60:
+                    home_advantage = 0.56  # 強隊主場優勢更明顯
+                elif home_win_pct_raw < 0.45:
+                    home_advantage = 0.52  # 弱隊主場優勢較弱
+
                 min_prob_diff_map = {
                     1: 0.00, 2: 0.00, 3: 0.00,
                     4: 0.04, 5: 0.06,    # 信心 4-5：至少有 4-6% 差距
                     6: 0.08,             # 信心 6：至少 8% 差距
-                    7: 0.15,             # 信心 7：至少 15% 差距（明顯佔優）
-                    8: 0.20,             # 信心 8：至少 20% 差距
-                    9: 0.25,             # 信心 9：至少 25% 差距
+                    7: 0.13,             # 信心 7：至少 13% 差距（明顯佔優,放寬讓更多場次落入）
+                    8: 0.18,             # 信心 8：至少 18% 差距（放寬 2pp）
+                    9: 0.23,             # 信心 9：至少 23% 差距（放寬 2pp）
                     10: 0.30,            # 信心 10：至少 30% 差距
                 }
+                # 弱主場時下修 1pp,避免弱隊主場差距被過度放大
+                if home_advantage < 0.54:
+                    min_prob_diff_map = {k: max(0, v - 0.01) for k, v in min_prob_diff_map.items()}
                 min_diff = min_prob_diff_map.get(normalized_conf, 0.0)
                 if prob_diff + 0.005 < min_diff:  # 🆕 加 0.005 容忍度避免浮點數問題
                     # 強制加大差距：把 favorite 提升到 (0.5 + min_diff/2 + 0.01)，underdog 對應降低
