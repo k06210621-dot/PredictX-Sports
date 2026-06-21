@@ -969,9 +969,12 @@ class AnalysisEngine:
   K/BB={a_stats['k_bb_ratio']:.2f}, 對手打擊率={a_stats['avg']:.3f}, 本季投球={a_stats['ip']}局{a_recent_str}
 
 💡 分析指引：投手「最近 3 場」表現比「整季」更具預測力。請特別注意：
-- 最近 3 場 ERA 與整季 ERA 的差距（升溫或降溫中）
-- 若最近 3 場被打爆（ERA > 6），即使整季很好，下場也應降低其球隊勝率
-- 若最近 3 場極佳（ERA < 2.0），即使整季普通，也應提升其球隊勝率"""
+- **【強制規則】當近 3 場 ERA 與整季 ERA 差距 ≥ 3.0 時，必須以「近 3 場」為主要預測依據，整季數據僅供參考**
+- **【強制規則】若近 3 場被打爆（ERA > 6.0），即使整季 ERA 漂亮，下場該球隊勝率應下修至少 5-10%**
+- **【強制規則】若近 3 場極佳（ERA < 2.0），即使整季普通，下場該球隊勝率應上修至少 3-5%**
+- **【強制規則】summary 中必須明確寫出「近 3 場 ERA vs 整季 ERA」的對比數字**
+- 投手明顯「降溫中」的徵兆：近 3 場被打全壘打數增加、WHIP > 1.5、被安打率上升
+- 投手明顯「升溫中」的徵兆：近 3 場 K/9 > 10、WHIP < 1.0、對手打擊率 < .220"""
 
         # 🆕 Bullpen 疲勞指數
         bullpen = pitchers.get("bullpen_fatigue", {})
@@ -1690,6 +1693,68 @@ Park Factor: {pf:.2f} ({park_interp})
                 
                 result["home_win_probability"] = round(home_prob, 4)
                 result["away_win_probability"] = round(away_prob, 4)
+
+                # 🆕 [Recipe 6 post-process] 投手近況調整（MLB/NPB/CPBL 棒球類）
+                # 當投手近 3 場 ERA 與整季 ERA 差距過大時，強制校正勝率
+                # 原因：AI prompt 已加強引導，但 LLM 仍會被戰績/排名蓋過，需後處理保險
+                lg = (features.get('league') or '').upper()
+                if lg in ('MLB', 'NPB', 'CPBL'):
+                    pitcher_data = features.get('mlb_pitchers') or features.get('npb_pitchers') or features.get('pitchers') or {}
+                    pitcher_adjustment_log = []
+
+                    for side, current_prob_name in [('home', 'home_prob'), ('away', 'away_prob')]:
+                        p = pitcher_data.get(f'{side}_pitcher') or {}
+                        if not p:
+                            continue
+                        season_stats = p.get('stats') or {}
+                        recent = p.get('recent_stats') or {}
+                        recent_summary = recent.get('summary') or {}
+
+                        season_era = float(season_stats.get('era', 0) or 0)
+                        recent_era = float(recent_summary.get('era', 0) or 0)
+                        recent_count = int(recent_summary.get('count', 0) or 0)
+
+                        # 至少需要 2 場 recent data 才調整（避免 1 場爆量誤判）
+                        if recent_count < 2 or season_era == 0 or recent_era == 0:
+                            continue
+
+                        era_diff = recent_era - season_era
+                        adjustment = 0.0
+                        reason = ""
+
+                        # 降溫中：近 3 場比整季差很多
+                        if recent_era > 6.0 and era_diff > 3.0:
+                            adjustment = -0.08  # 該隊勝率降 8%
+                            reason = f"{side}_pitcher 降溫中（近3場 ERA={recent_era}, 整季={season_era}）"
+                        elif recent_era > 5.0 and era_diff > 2.5:
+                            adjustment = -0.05
+                            reason = f"{side}_pitcher 略降溫（近3場 ERA={recent_era}, 整季={season_era}）"
+                        # 升溫中：近 3 場比整季好很多
+                        elif recent_era < 2.0 and era_diff < -2.5:
+                            adjustment = +0.06
+                            reason = f"{side}_pitcher 升溫中（近3場 ERA={recent_era}, 整季={season_era}）"
+                        elif recent_era < 2.5 and era_diff < -1.5:
+                            adjustment = +0.04
+                            reason = f"{side}_pitcher 略升溫（近3場 ERA={recent_era}, 整季={season_era}）"
+
+                        if adjustment != 0.0:
+                            if side == 'home':
+                                home_prob = max(0.30, min(0.85, home_prob + adjustment))
+                                away_prob = 1.0 - home_prob
+                            else:
+                                away_prob = max(0.30, min(0.85, away_prob + adjustment))
+                                home_prob = 1.0 - away_prob
+                            pitcher_adjustment_log.append(f"{reason} → 勝率調整 {adjustment:+.2f}")
+
+                    if pitcher_adjustment_log:
+                        result["home_win_probability"] = round(home_prob, 4)
+                        result["away_win_probability"] = round(away_prob, 4)
+                        # 把調整理由寫進 summary（若 LLM 沒強調 recent ERA 對比）
+                        existing_summary = result.get("summary", "") or ""
+                        adjustment_note = "\n\n[投手近況校正] " + "; ".join(pitcher_adjustment_log)
+                        if "近 3 場" not in existing_summary and "近3場" not in existing_summary:
+                            result["summary"] = existing_summary + adjustment_note
+                        print(f"  ⚾ Recipe 6 投手調整: {pitcher_adjustment_log}")
 
                 # 信心指數標準化: 若 Ollama 回傳 0~1 分數則轉換為 1~10 評分
                 raw_conf = float(result.get("confidence", 0.0))
