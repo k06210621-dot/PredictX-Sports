@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, g
 from flask_cors import CORS
 import sys
 import os
@@ -6,9 +6,11 @@ import logging
 from decimal import Decimal
 from datetime import date, datetime
 import psycopg2
+from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 import json
 from dotenv import load_dotenv
+import urllib.parse as urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 load_dotenv()
@@ -36,11 +38,30 @@ if SENTRY_DSN:
 else:
     logger.info("未設定 SENTRY_DSN，跳過 Sentry 初始化")
 
+# === 資料庫連線池初始化（模組載入時只建立一次） ===
+_database_url = os.getenv('DATABASE_URL')
+if not _database_url:
+    raise RuntimeError('DATABASE_URL 未設定，無法啟動應用')
+
+_parsed = urlparse.urlparse(_database_url)
+
+DB_POOL = pool.ThreadedConnectionPool(
+    minconn=2,
+    maxconn=10,  # 依 Railway 方案允許的最大連線數調整
+    host=_parsed.hostname,
+    port=_parsed.port,
+    dbname=_parsed.path.lstrip('/'),
+    user=_parsed.username,
+    password=_parsed.password,
+    cursor_factory=RealDictCursor,
+)
+
 app = Flask(__name__)
 CORS(app)
 
 _stats_engine = None
 _settler_engine = None
+
 
 def _get_stats():
     global _stats_engine
@@ -49,12 +70,14 @@ def _get_stats():
         _stats_engine = StatsEngine()
     return _stats_engine
 
+
 def _get_settler():
     global _settler_engine
     if _settler_engine is None:
         from settlement_engine import SettlementEngine
         _settler_engine = SettlementEngine()
     return _settler_engine
+
 
 def convert_decimals(obj):
     if isinstance(obj, Decimal):
@@ -67,20 +90,20 @@ def convert_decimals(obj):
         return [convert_decimals(v) for v in obj]
     return obj
 
+
 def get_db():
-    database_url = os.getenv('DATABASE_URL')
-    if database_url:
-        if database_url.startswith('postgres://'):
-            database_url = database_url.replace('postgres://', 'postgresql://', 1)
-        return psycopg2.connect(database_url, cursor_factory=RealDictCursor)
-    return psycopg2.connect(
-        host=os.getenv('DB_HOST', 'localhost'),
-        port=int(os.getenv('DB_PORT', 5432)),
-        dbname=os.getenv('DB_NAME', 'predictx'),
-        user=os.getenv('DB_USER', 'jero'),
-        password=os.getenv('DB_PASSWORD', ''),
-        cursor_factory=RealDictCursor
-    )
+    """從連線池取得一條連線，存入 g 供請求期間複用"""
+    if 'db' not in g:
+        g.db = DB_POOL.getconn()
+    return g.db
+
+
+@app.teardown_appcontext
+def close_db(exc):
+    """請求結束時將連線歸還連線池（而非關閉）"""
+    conn = g.pop('db', None)
+    if conn is not None:
+        DB_POOL.putconn(conn)
 
 
 @app.route('/health', methods=['GET'])
@@ -100,7 +123,7 @@ def health():
         cur.execute("SELECT 1")
         cur.fetchone()
         cur.close()
-        conn.close()
+        # 注意：這裡不呼叫 conn.close()，因為連線要歸還池中
         checks["checks"]["database"] = "ok"
     except Exception as e:
         checks["checks"]["database"] = f"error: {type(e).__name__}"
@@ -135,7 +158,7 @@ def init_db():
         results['schema_created'] = True
 
         schema_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'db', 'schema.sql')
-        seed_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'db', 'seed_core.sql')
+        seed_path = os.path.join(os.path.dirname(os.path.abspath(__file__file__)), 'db', 'seed_core.sql')
 
         with open(schema_path, 'r') as f:
             raw = f.read()
@@ -181,8 +204,7 @@ def init_db():
             results['game_count'] = 0
 
         cur.close()
-        conn.close()
-
+        # 注意：這裡不呼叫 conn.close()，連線會在 teardown 時歸還池中
         return jsonify({"status": "success", "details": results}), 200
     except Exception as e:
         import traceback
@@ -313,7 +335,7 @@ def api_games():
         cur.execute(sql, (league, league, league, str(days)))
         games = cur.fetchall()
         cur.close()
-        conn.close()
+        # 不呼叫 conn.close()，連線會在 teardown 時歸還池中
         results = [convert_decimals(dict(row)) for row in games]
         return jsonify(results)
     except Exception as e:
@@ -363,6 +385,7 @@ def run_analysis():
                 import traceback
                 results['error'] = str(e)[:500]
                 results['trace'] = traceback.format_exc()[:500]
+            # 不呼叫 conn.close()，連線會在 teardown 時歸還池中
             return jsonify(results), 200
 
         # 批次模式：跑今日 + 明日 pending
@@ -398,7 +421,7 @@ def run_analysis():
         except Exception as e:
             results['settle_error'] = str(e)[:200]
 
-        conn.close()
+        # 不呼叫 conn.close()，連線會在 teardown 時歸還池中
         return jsonify({"status": "success", "details": results}), 200
     except Exception as e:
         import traceback
@@ -497,7 +520,7 @@ def insert_games():
                 skipped += 1
 
         cur.close()
-        conn.close()
+        # 不呼叫 conn.close()，連線會在 teardown 時歸還池中
         return jsonify({"status": "success", "inserted": inserted, "updated": updated, "skipped": skipped}), 200
     except Exception as e:
         import traceback
@@ -545,7 +568,7 @@ def update_score():
             return jsonify({"error": "No fields to update"}), 400
 
         cur.close()
-        conn.close()
+        # 不呼叫 conn.close()，連線會在 teardown 時歸還池中
         return jsonify({"status": "success", "updated": cur.rowcount}), 200
     except Exception as e:
         import traceback
@@ -560,7 +583,7 @@ def get_game_analysis(game_id):
     cur.execute("SELECT analysis_data FROM predictx.game_analysis WHERE game_id = %s::uuid", (game_id,))
     row = cur.fetchone()
     cur.close()
-    conn.close()
+    # 不呼叫 conn.close()，連線會在 teardown 時歸還池中
     if row:
         raw = row['analysis_data']
         result = {
@@ -605,14 +628,12 @@ def update_analysis():
         )
         conn.commit()
         cur.close()
-        conn.close()
+        # 不呼叫 conn.close()，連線會在 teardown 時歸還池中
         return jsonify({"status": "success", "game_id": game_id}), 200
     except Exception as e:
         import traceback
         logger.error(f"update_analysis: {e}\n{traceback.format_exc()}")
         return jsonify({"error": str(e), "type": type(e).__name__}), 500
-
-
 
 
 # ========================================================
@@ -707,4 +728,3 @@ if __name__ == "__main__":
 
 
 # 已於 2026-06-17 移除 FIFA 端點 — 不再提供 FIFA 相關 API 行為
-
