@@ -240,15 +240,17 @@ class SubscriptionManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
+            guard let self else { return }
             Task { @MainActor in
-                self?.checkDailyReset()
+                self.checkDailyReset()
             }
         }
 
         // 定時器：每 60 秒檢查一次是否跨日
         midnightTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            guard let self else { return }
             Task { @MainActor in
-                self?.checkDailyReset()
+                self.checkDailyReset()
             }
         }
     }

@@ -152,7 +152,7 @@ struct HomeView: View {
                                     .padding(.horizontal)
                                 }
                                 
-                                SportsSectionHeader(title: "聯賽預測中心", icon: "sportscourt.fill")
+                                SportsSectionHeader(title: "聯賽分析中心", icon: "sportscourt.fill")
                                     .padding(.top, 4)
                                 ScrollView(.horizontal, showsIndicators: false) {
                                     HStack(spacing: 12) {
@@ -163,7 +163,7 @@ struct HomeView: View {
                                     .padding(.horizontal)
                                 }
                                 
-                                SportsSectionHeader(title: "\(store.selectedLeague.rawValue) AI 數據預報", icon: "cpu.fill")
+                                SportsSectionHeader(title: "\(store.selectedLeague.rawValue) AI 數據分析", icon: "cpu.fill")
                                     .padding(.top, 4)
                                 VStack(spacing: 14) {
                                     if store.filteredPredictions.isEmpty {

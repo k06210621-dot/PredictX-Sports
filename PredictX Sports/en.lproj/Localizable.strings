@@ -7,7 +7,7 @@
 "action.retry" = "Retry";
 "section.ai_win_rate" = "AI Predicted Strength";
 "label.confidence" = "Confidence: %@/10";
-"label.predicted_score" = "Predicted Score: %@";
+"label.predicted_score" = "Model Projection: %@";
 "disclaimer.ai_accuracy" = "AI predictions are for reference only. Actual game results depend on many unpredictable factors.";
 "section.radar_chart" = "Capability Analysis";
 "section.ai_summary" = "AI Deep Analysis Summary";
@@ -18,5 +18,5 @@
 "nav.title" = "AI Match Analysis";
 "nav.close" = "Close";
 "subscribe.title" = "AI Credits Store";
-"launch.tagline" = "AI Sports Prediction APP";
+"launch.tagline" = "AI Sports Analysis APP";
 "card.locked_hint" = "🔒 Tap to unlock AI team strength (-20 pts)";

@@ -130,7 +130,7 @@ struct SettlementDetailSheet: View {
             HStack(spacing: 8) {
                 Image(systemName: settlement.isHit ? "checkmark.circle.fill" : "xmark.circle.fill")
                     .foregroundColor(settlement.isHit ? .green : .red)
-                Text(settlement.isHit ? "AI 預測正確" : "AI 預測錯誤")
+                Text(settlement.isHit ? "AI 推論正確" : "AI 推論錯誤")
                     .font(.subheadline.bold())
                     .foregroundColor(settlement.isHit ? .green : .red)
             }
@@ -149,7 +149,7 @@ struct SettlementDetailSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: 0) {
-                scoreColumn(title: "AI 預測比分", score: settlement.predictedScore ?? "—", tint: .blue)
+                scoreColumn(title: "模型推演比分", score: settlement.predictedScore ?? "—", tint: .blue)
                 Divider().frame(height: 40)
                 scoreColumn(title: "實際比分",
                             score: formatActualScore(),
@@ -192,7 +192,7 @@ struct SettlementDetailSheet: View {
 
     private func confidenceCard(prediction: AIAnalysisModel.Prediction) -> some View {
         VStack(spacing: 12) {
-            Text("AI 預測機率與信心")
+            Text("AI 推論機率與信心")
                 .font(.subheadline.bold())
                 .foregroundColor(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)

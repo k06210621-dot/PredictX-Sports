@@ -75,7 +75,7 @@ struct ConfidenceGaugeView: View {
                     
                     if let score = scorePrediction {
                         HStack(spacing: 6) {
-                            Text("預測分數")
+                            Text("推演比分")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                             Text(score)

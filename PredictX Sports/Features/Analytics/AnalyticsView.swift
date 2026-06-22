@@ -122,7 +122,7 @@ struct RecentFormSection: View {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: .blue))
                         .scaleEffect(0.8)
-                    Text("正在從已結算賽事載入戰績...")
+                    Text("正在從已結算賽事載入驗證紀錄...")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -203,7 +203,7 @@ struct FormIndicator: View {
         }
         .buttonStyle(.plain)
         .contentShape(Rectangle())  // 確保整個區塊都可點擊
-        .accessibilityLabel("\(item.homeTeam) vs \(item.awayTeam)，AI \(item.isHit ? "預測正確" : "預測錯誤")")
+        .accessibilityLabel("\(item.homeTeam) vs \(item.awayTeam)，AI \(item.isHit ? "推論正確" : "推論錯誤")")
         .accessibilityHint("點擊查看詳細分析")
     }
 
@@ -251,7 +251,7 @@ struct FormDetailRow: View {
                         .foregroundColor(.primary)
                 }
                 if let predict = item.predictedScore, !predict.isEmpty {
-                    Text("推 \(predict)")
+                    Text("模型推演 \(predict)")
                         .font(.system(size: 9))
                         .foregroundColor(Color(.tertiaryLabel))
                 }

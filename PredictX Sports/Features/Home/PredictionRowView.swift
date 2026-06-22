@@ -167,7 +167,7 @@ struct PredictionRowView: View {
     private func expandMLBPanel(_ mlb: MLBSpecificTags) -> some View {
         Divider().background(Color.blue.opacity(0.15))
         VStack(alignment: .leading, spacing: 6) {
-            Text("MLB 關鍵預測因子").font(.system(size: 10, weight: .bold)).foregroundColor(.blue)
+            Text("MLB 關鍵分析因子").font(.system(size: 10, weight: .bold)).foregroundColor(.blue)
             HStack(spacing: 20) {
                 VStack(alignment: .leading) {
                     HStack(spacing: 4) {

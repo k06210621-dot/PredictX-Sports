@@ -99,7 +99,7 @@
 					};
 				};
 			};
-			buildConfigurationList = CA5D18872FB868B100430A53 /* Build configuration list for PBXProject " " */;
+			buildConfigurationList = CA5D18872FB868B100430A53 /* Build configuration list for PBXProject "PredictX-Sports" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -275,6 +275,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = CustomInfo.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "PredictX Sports | 智能球賽分析";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -308,6 +310,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = CustomInfo.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "PredictX Sports | 智能球賽分析";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -333,7 +337,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		CA5D18872FB868B100430A53 /* Build configuration list for PBXProject " " */ = {
+		CA5D18872FB868B100430A53 /* Build configuration list for PBXProject "PredictX-Sports" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				CA5D18952FB868B200430A53 /* Debug */,

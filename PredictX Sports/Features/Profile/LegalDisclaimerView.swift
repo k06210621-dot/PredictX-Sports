@@ -315,7 +315,7 @@ private var sections: [DisclaimerSection] {
                 ParagraphItem(text: "使用者因依據本平台提供之以下內容所作出的任何決策："),
                 ParagraphItem(bullet: "AI 分析結果", icon: "brain", color: .orange),
                 ParagraphItem(bullet: "統計數據", icon: "chart.xyaxis.line", color: .orange),
-                ParagraphItem(bullet: "推論預測", icon: "forward.fill", color: .orange),
+                ParagraphItem(bullet: "AI 推論分析", icon: "forward.fill", color: .orange),
                 ParagraphItem(bullet: "歷史資料", icon: "clock.fill", color: .orange),
                 ParagraphItem(text: "包括但不限於以下行為所產生之任何損失："),
                 ParagraphItem(bullet: "投資決策", icon: "dollarsign.circle", color: .red),
