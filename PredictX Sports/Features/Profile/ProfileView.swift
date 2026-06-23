@@ -42,8 +42,10 @@ struct ProfileView: View {
                     }
                     .buttonStyle(.plain)
                     
-                    // MARK: ⑤ 觀看廣告獲取分析點數（僅 Free 方案）
-                    if subscriptionManager.tier == .free {
+                    // MARK: ⑤ 觀看廣告獲取分析點數（Free / Basic 都可隨時看）
+                    // 條件：訂閱在 Free 或 Basic 狀態（Standard/Premium 不需要靠廣告取得點數）
+                    // 不限制 diamonds = 0 → 讓使用者任何時候想看廣告都能看
+                    if subscriptionManager.tier == .free || subscriptionManager.tier == .basic {
                         AdRewardCardView(subscriptionManager: subscriptionManager)
                     }
                     
@@ -355,7 +357,13 @@ struct AdRewardCardView: View {
     }
 
     var body: some View {
-        Button(action: { showAdSheet = true }) {
+        Button(action: {
+            if canWatch {
+                showAdSheet = true
+            } else {
+                subscriptionManager.showSubscribeView = true
+            }
+        }) {
             HStack(spacing: 16) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12)
