@@ -395,30 +395,43 @@ struct FocusMatchCardView: View {
                 .background(Color.orange.opacity(0.15))
                 .cornerRadius(16)
             }
-            // 🆕 [2026-06-24] 隊伍名稱中英並列：英文為主、中文小字輔助
+            // 🆕 [2026-06-24 v2] 主隊靠左、客隊靠右、VS 置中
             VStack(alignment: .leading, spacing: 4) {
+                // 英文隊名：主隊靠左、客隊靠右
                 HStack {
-                    Text(homeTeam).bold()
-                    Text("vs")
+                    Text(homeTeam)
+                        .bold()
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text("VS")
+                        .font(.caption.bold())
                         .foregroundColor(Color(.tertiaryLabel))
-                        .font(.caption2)
                         .opacity(0.5)
-                    Text(awayTeam).bold()
+                        .padding(.horizontal, 6)
+                    Text(awayTeam)
+                        .bold()
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .font(.headline)
                 .foregroundColor(.primary)
                 
+                // 中文隊名：主隊靠左、客隊靠右
                 HStack {
                     Text(homeTeamCN)
-                    Text("vs")
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text("VS")
+                        .font(.system(size: 9))
                         .foregroundColor(Color(.tertiaryLabel))
-                        .font(.caption2)
                         .opacity(0.5)
+                        .padding(.horizontal, 6)
                     Text(awayTeamCN)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 .font(.caption)
                 .foregroundColor(.secondary.opacity(0.85))
-                .lineLimit(1)
             }
             
             HStack(spacing: 4) {
