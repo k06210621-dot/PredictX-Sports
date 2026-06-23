@@ -170,7 +170,7 @@ struct HistoricalMatchCardView: View {
             
             // 🆕 [2026-06-24] 完全還原為備份版（2026-06-19 v1.0.0_最終完整版）
             // - 隊伍名稱不額外加 lineLimit（備份版沒有）
-            // - 比分區保留 lineLimit + minimumScaleFactor + frame(minWidth: 80)
+            // - 比分區保留 lineLimit + minimumScaleFactor + frame(minWidth: 40)
             HStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(match.homeTeam)
@@ -195,7 +195,7 @@ struct HistoricalMatchCardView: View {
                             .foregroundColor(themeColor)
                             .lineLimit(1)
                             .minimumScaleFactor(0.6)
-                            .frame(minWidth: 80)  // 防止 layout 擠壓
+                            .frame(minWidth: 40)  // 防止 layout 擠壓
                         Text("最終比分")
                             .font(.system(size: 9))
                             .foregroundColor(Color(.tertiaryLabel))
