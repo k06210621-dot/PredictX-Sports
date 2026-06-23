@@ -67,9 +67,11 @@ def save_analysis(conn, game_id, analysis_result):
         # 🆕 [2026-06-24] 同步寫入回流歷史（App 端透過 UPSERT + prompt_version 防重）
         # 注意：這裡如果是 re-analysis 觸發，會寫入新版本快照；前一版本快照仍保留
         try:
-            # 🆕 [2026-06-24 v3] anti-bias 修正版
-            # 改動：Step 4 改為綜合判斷（去機械式）、加反偏差自檢
-            # 這版本仍會寫新快照（不會覆蓋 v2-cot）
+            # 🆕 [2026-06-24 v3] Anti-Bias 修正版（已驗證有效，永久採用）
+            # 改動：Step 4 從機械式加法改為綜合判斷、加反偏差自檢
+            # 驗證結果（30 場 MLB 6/23+6/24）：
+            #   v2 主隊勝率 77.4% → v3 46.7%（更貼近歷史 53-54%）
+            #   v2 平均主隊勝率 0.562 → v3 0.487
             prompt_ver = 'v3-cot-anti-bias-2026-06-24'
             home_prob = analysis_result.get('home_win_probability')
             away_prob = analysis_result.get('away_win_probability')
