@@ -168,20 +168,18 @@ struct HistoricalMatchCardView: View {
                     .cornerRadius(16)
             }
             
-            // 🆕 [2026-06-24] 還原為原始樣式（commit 9925ee7 之前），保留 lineLimit 防止斷句
+            // 🆕 [2026-06-24] 完全還原為備份版（2026-06-19 v1.0.0_最終完整版）
+            // - 隊伍名稱不額外加 lineLimit（備份版沒有）
+            // - 比分區保留 lineLimit + minimumScaleFactor + frame(minWidth: 80)
             HStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(match.homeTeam)
                         .font(.headline)
                         .bold()
                         .foregroundColor(.primary)
-                        .lineLimit(1)                  // 防止英文換行
-                        .minimumScaleFactor(0.7)
                     Text(match.homeTeamCN)
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                        .lineLimit(1)                  // 防止中文換行
-                        .minimumScaleFactor(0.8)
                 }
 
                 Spacer()
@@ -190,10 +188,14 @@ struct HistoricalMatchCardView: View {
                     // ✅ 永遠只顯示「真實比分」（homeScore + awayScore 兩者皆有才顯示）
                     // 不再用 aiTotalScorePredict 作為「最終比分」替代，避免誤導
                     if let homeScore = match.homeScore, let awayScore = match.awayScore {
+                        // 用 lineLimit(1) + minimumScaleFactor 避免大數字被擠壓變形
                         Text("\(homeScore) - \(awayScore)")
                             .font(.title2)
                             .fontWeight(.heavy)
                             .foregroundColor(themeColor)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                            .frame(minWidth: 80)  // 防止 layout 擠壓
                         Text("最終比分")
                             .font(.system(size: 9))
                             .foregroundColor(Color(.tertiaryLabel))
@@ -216,13 +218,9 @@ struct HistoricalMatchCardView: View {
                         .font(.headline)
                         .bold()
                         .foregroundColor(.primary)
-                        .lineLimit(1)                  // 防止英文換行
-                        .minimumScaleFactor(0.7)
                     Text(match.awayTeamCN)
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                        .lineLimit(1)                  // 防止中文換行
-                        .minimumScaleFactor(0.8)
                 }
             }
             
