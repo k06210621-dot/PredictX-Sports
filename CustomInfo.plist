@@ -145,6 +145,24 @@
 		<dict><key>SKAdNetworkIdentifier</key><string>4732ar7463.skadnetwork</string></dict>
 		<dict><key>SKAdNetworkIdentifier</key><string>7fbzv9p8qi.skadnetwork</string></dict>
 		<dict><key>SKAdNetworkIdentifier</key><string>ejmm5x24um.skadnetwork</string></dict>
+		<!-- 🆕 [2026-06-23] 加入 Facebook Audience Network 17 個 SKAdNetwork -->
+		<!-- 這 17 個是 Facebook 公開文件版本，配合你 Google Mobile Ads SDK 內的 Meta Audience Network 中介 -->
+		<dict><key>SKAdNetworkIdentifier</key><string>bvpn9usa9w.skadnetwork</string></dict>
+		<dict><key>SKAdNetworkIdentifier</key><string>lr83yxv5p9.skadnetwork</string></dict>
+		<dict><key>SKAdNetworkIdentifier</key><string>qqz5jfrtxr.skadnetwork</string></dict>
+		<dict><key>SKAdNetworkIdentifier</key><string>t6d3zqufuq.skadnetwork</string></dict>
+		<dict><key>SKAdNetworkIdentifier</key><string>7zu134td1j.skadnetwork</string></dict>
+		<dict><key>SKAdNetworkIdentifier</key><string>8fqg8c97g9.skadnetwork</string></dict>
+		<dict><key>SKAdNetworkIdentifier</key><string>8s372fu65p.skadnetwork</string></dict>
+		<dict><key>SKAdNetworkIdentifier</key><string>kbd757yxy3.skadnetwork</string></dict>
+		<dict><key>SKAdNetworkIdentifier</key><string>m9m4y4kdfg.skadnetwork</string></dict>
+		<dict><key>SKAdNetworkIdentifier</key><string>mdm46w4j8p.skadnetwork</string></dict>
+		<dict><key>SKAdNetworkIdentifier</key><string>wg4vffrzm9.skadnetwork</string></dict>
+		<dict><key>SKAdNetworkIdentifier</key><string>xmn3qp2nn7.skadnetwork</string></dict>
+		<dict><key>SKAdNetworkIdentifier</key><string>xy9t38ct57.skadnetwork</string></dict>
+		<dict><key>SKAdNetworkIdentifier</key><string>zmvfpc5aq8.skadnetwork</string></dict>
+		<dict><key>SKAdNetworkIdentifier</key><string>32z4k7te4n.skadnetwork</string></dict>
+		<dict><key>SKAdNetworkIdentifier</key><string>6qx8k73dqv.skadnetwork</string></dict>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
