@@ -67,8 +67,10 @@ def save_analysis(conn, game_id, analysis_result):
         # 🆕 [2026-06-24] 同步寫入回流歷史（App 端透過 UPSERT + prompt_version 防重）
         # 注意：這裡如果是 re-analysis 觸發，會寫入新版本快照；前一版本快照仍保留
         try:
-            # 預設 prompt_version，可根據需要改用動態讀取
-            prompt_ver = 'v2-cot-2026-06-24'
+            # 🆕 [2026-06-24 v3] anti-bias 修正版
+            # 改動：Step 4 改為綜合判斷（去機械式）、加反偏差自檢
+            # 這版本仍會寫新快照（不會覆蓋 v2-cot）
+            prompt_ver = 'v3-cot-anti-bias-2026-06-24'
             home_prob = analysis_result.get('home_win_probability')
             away_prob = analysis_result.get('away_win_probability')
             confidence = analysis_result.get('confidence')
