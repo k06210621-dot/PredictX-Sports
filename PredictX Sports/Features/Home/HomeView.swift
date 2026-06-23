@@ -395,16 +395,31 @@ struct FocusMatchCardView: View {
                 .background(Color.orange.opacity(0.15))
                 .cornerRadius(16)
             }
-            HStack {
-                Text(homeTeam).bold()
-                Text("vs")
-                    .foregroundColor(Color(.tertiaryLabel))
-                    .font(.caption2)
-                    .opacity(0.5)
-                Text(awayTeam).bold()
+            // 🆕 [2026-06-24] 隊伍名稱中英並列：英文為主、中文小字輔助
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(homeTeam).bold()
+                    Text("vs")
+                        .foregroundColor(Color(.tertiaryLabel))
+                        .font(.caption2)
+                        .opacity(0.5)
+                    Text(awayTeam).bold()
+                }
+                .font(.headline)
+                .foregroundColor(.primary)
+                
+                HStack {
+                    Text(homeTeamCN)
+                    Text("vs")
+                        .foregroundColor(Color(.tertiaryLabel))
+                        .font(.caption2)
+                        .opacity(0.5)
+                    Text(awayTeamCN)
+                }
+                .font(.caption)
+                .foregroundColor(.secondary.opacity(0.85))
+                .lineLimit(1)
             }
-            .font(.headline)
-            .foregroundColor(.primary)
             
             HStack(spacing: 4) {
                 Image(systemName: "calendar")
@@ -414,8 +429,9 @@ struct FocusMatchCardView: View {
             }
             .foregroundColor(.secondary)
         }
+        // 🆕 [2026-06-24] 卡片寬度 +10%（240 → 264）
         .padding()
-        .frame(width: 240)
+        .frame(width: 264)
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(Color.cardBackground)
@@ -447,7 +463,8 @@ struct FocusFallbackCardView: View {
                 .foregroundColor(Color(.tertiaryLabel))
         }
         .padding()
-        .frame(width: 240)
+        // 🆕 [2026-06-24] Fallback 卡片寬度同步 +10%（240 → 264）
+        .frame(width: 264)
         .background(Color.cardBackground)
         .cornerRadius(16)
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.blue.opacity(0.2), lineWidth: 1))
