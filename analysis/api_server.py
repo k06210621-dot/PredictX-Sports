@@ -287,6 +287,104 @@ def get_trend():
         return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
+# 🆕 [2026-06-24] Rolling Accuracy API — 提供給 prompt 動態注入用
+# 路徑：GET /analytics/accuracy_rolling?league=MLB&window=30
+# 回傳：{ league, window, total, hits, hit_rate, oldest, newest }
+@app.route('/analytics/accuracy_rolling', methods=['GET'])
+def get_accuracy_rolling():
+    """取得最近 N 場已結算 AI 預測的命中率（給 prompt 動態注入用）"""
+    league = request.args.get('league', type=str)
+    window = request.args.get('window', default=30, type=int)
+    prompt_version = request.args.get('prompt_version', type=str)  # 可選：只計算特定 prompt 版本
+    
+    if window < 1 or window > 365:
+        return jsonify({"error": "window must be between 1 and 365"}), 400
+    
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        # 用 ROW_NUMBER 取最近 N 場已結算
+        if prompt_version:
+            cur.execute(
+                """
+                WITH ranked AS (
+                    SELECT league, is_hit, prediction_time,
+                           ROW_NUMBER() OVER (ORDER BY prediction_time DESC) AS rn
+                    FROM predictx.ai_prediction_history
+                    WHERE league = %s
+                      AND is_hit IS NOT NULL
+                      AND prompt_version = %s
+                )
+                SELECT 
+                  COUNT(*) AS total,
+                  SUM(CASE WHEN is_hit THEN 1 ELSE 0 END) AS hits,
+                  ROUND(100.0 * SUM(CASE WHEN is_hit THEN 1 ELSE 0 END)::numeric 
+                        / NULLIF(COUNT(*), 0), 1) AS hit_rate,
+                  MIN(prediction_time)::date AS oldest,
+                  MAX(prediction_time)::date AS newest
+                FROM ranked
+                WHERE rn <= %s
+                """,
+                (league.upper() if league else None, prompt_version, window)
+            )
+        else:
+            cur.execute(
+                """
+                WITH ranked AS (
+                    SELECT league, is_hit, prediction_time,
+                           ROW_NUMBER() OVER (ORDER BY prediction_time DESC) AS rn
+                    FROM predictx.ai_prediction_history
+                    WHERE league = %s
+                      AND is_hit IS NOT NULL
+                )
+                SELECT 
+                  COUNT(*) AS total,
+                  SUM(CASE WHEN is_hit THEN 1 ELSE 0 END) AS hits,
+                  ROUND(100.0 * SUM(CASE WHEN is_hit THEN 1 ELSE 0 END)::numeric 
+                        / NULLIF(COUNT(*), 0), 1) AS hit_rate,
+                  MIN(prediction_time)::date AS oldest,
+                  MAX(prediction_time)::date AS newest
+                FROM ranked
+                WHERE rn <= %s
+                """,
+                (league.upper() if league else None, window)
+            )
+        
+        row = cur.fetchone()
+        cur.close()
+        # 不關 conn（會歸還連線池）
+        
+        if row is None:
+            row = {'total': 0, 'hits': 0, 'hit_rate': None, 'oldest': None, 'newest': None}
+        else:
+            row = dict(row)  # 確保是 dict（RealDictCursor 已 dict，但保險轉換）
+        
+        total = row.get('total') or 0
+        hits = row.get('hits') or 0
+        hit_rate_raw = row.get('hit_rate')
+        hit_rate = float(hit_rate_raw) if hit_rate_raw is not None else 0.0
+        
+        oldest = row.get('oldest')
+        newest = row.get('newest')
+        
+        return jsonify({
+            "league": league.upper() if league else None,
+            "window": window,
+            "prompt_version": prompt_version,
+            "total": total,
+            "hits": hits,
+            "hit_rate": hit_rate,
+            "oldest": oldest.isoformat() if oldest else None,
+            "newest": newest.isoformat() if newest else None,
+            "is_sufficient": total >= 10  # 樣本 >= 10 才算有意義
+        }), 200
+    except Exception as e:
+        import traceback
+        logger.error(f"accuracy_rolling error: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e), "type": type(e).__name__}), 500
+
+
 @app.route('/analytics/settle', methods=['POST'])
 def trigger_settlement():
     try:

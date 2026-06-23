@@ -765,12 +765,54 @@ class AnalysisEngine:
 
     def generate_win_probability_prompt(self, features):
         """
-        構建勝率預測的 Prompt（強化版：注入真實數據）
+        構建勝率預測的 Prompt（強化版：注入真實數據 + Chain-of-Thought + rolling accuracy）
         """
         game = features['game_info']
         home_team = game['home_team_name']
         away_team = game['away_team_name']
         league = features['league']
+
+        # 🆕 [2026-06-24] 取得最近 30 場 AI 命中率（讓 LLM 自我校正）
+        # 若樣本 < 10 不注入（避免誤導）
+        rolling_accuracy_str = ""
+        try:
+            self.cur.execute(
+                """
+                WITH ranked AS (
+                    SELECT is_hit, prediction_time,
+                           ROW_NUMBER() OVER (ORDER BY prediction_time DESC) AS rn
+                    FROM predictx.ai_prediction_history
+                    WHERE league = %s
+                      AND is_hit IS NOT NULL
+                )
+                SELECT 
+                  COUNT(*) AS total,
+                  SUM(CASE WHEN is_hit THEN 1 ELSE 0 END) AS hits
+                FROM ranked
+                WHERE rn <= 30
+                """,
+                (league.upper(),)
+            )
+            row = self.cur.fetchone()
+            # RealDictCursor 用 row['key'] 不用 row[0]
+            total = int(row['total']) if row and row.get('total') else 0
+            hits = int(row['hits']) if row and row.get('hits') else 0
+            if total >= 10:
+                rolling_acc = hits / total
+                rolling_accuracy_str = f"""
+
+═══════════════════════════════════════
+📈 AI 自我校驗資訊（資料飛輪）
+═══════════════════════════════════════
+本聯盟 ({league}) 近 30 場 AI 預測命中率：**{rolling_acc*100:.1f}%**（{hits}/{total} 場）
+- 若命中率 > 60%：模型目前狀態良好，請保持信心（confidence 可稍微提高）
+- 若命中率 < 50%：模型可能過度自信，請下修 confidence 並重新校驗
+- 此資訊是實際結算回饋，用於資料飛輪自我調整
+"""
+        except Exception as e:
+            # 失敗不影響主流程
+            print(f"  ⚠ rolling accuracy fetch failed (non-fatal): {e}")
+            rolling_accuracy_str = ""
         
         def format_form(form):
             if not form or not form['recent_games']:
@@ -1340,6 +1382,7 @@ Park Factor: {pf:.2f} ({park_interp})
 🎯 主場優勢與聯盟特性
 ═══════════════════════════════════════
 {home_advantage_full}
+{rolling_accuracy_str}
 
 ═══════════════════════════════════════
 ⚖️ Compliance 與格式要求
