@@ -59,11 +59,67 @@ def get_pending_games(conn, target_dates: list):
 
 
 def save_analysis(conn, game_id, analysis_result):
-    """寫入或更新 analysis_data"""
+    """寫入或更新 analysis_data，並同步寫入 ai_prediction_history 回流快照"""
     if not analysis_result:
         return False
     cur = conn.cursor()
     try:
+        # 🆕 [2026-06-24] 同步寫入回流歷史（App 端透過 UPSERT + prompt_version 防重）
+        # 注意：這裡如果是 re-analysis 觸發，會寫入新版本快照；前一版本快照仍保留
+        try:
+            # 預設 prompt_version，可根據需要改用動態讀取
+            prompt_ver = 'v2-cot-2026-06-24'
+            home_prob = analysis_result.get('home_win_probability')
+            away_prob = analysis_result.get('away_win_probability')
+            confidence = analysis_result.get('confidence')
+            pred_score = analysis_result.get('predicted_score', '')
+
+            # 取得 league + team names（從 result 中不一定有，用 game_id 從 games 表抓）
+            cur.execute(
+                """
+                SELECT t_home.league,
+                       t_home.english_name AS home_name,
+                       t_away.english_name AS away_name,
+                       g.match_date
+                FROM predictx.games g
+                JOIN predictx.teams t_home ON g.home_team_id = t_home.team_id
+                JOIN predictx.teams t_away ON g.away_team_id = t_away.team_id
+                WHERE g.game_id = %s::uuid
+                """,
+                (game_id,)
+            )
+            g_row = cur.fetchone()
+            league = g_row['league'] if g_row else None
+            home_name = g_row['home_name'] if g_row else None
+            away_name = g_row['away_name'] if g_row else None
+
+            # 🆕 確保 ai_prediction_history 寫入前存在（舊 snapshot 為 v1-baseline）
+            cur.execute(
+                """
+                INSERT INTO predictx.ai_prediction_history (
+                    game_id, league, prediction_time,
+                    home_team, away_team,
+                    home_win_probability, away_win_probability, confidence, predicted_score,
+                    prompt_version
+                ) VALUES (%s::uuid, %s, NOW(), %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (game_id, prompt_version) DO NOTHING
+                """,
+                (
+                    game_id, league, home_name, away_name,
+                    float(home_prob) if home_prob is not None else None,
+                    float(away_prob) if away_prob is not None else None,
+                    int(confidence) if confidence is not None else None,
+                    str(pred_score)[:10] if pred_score else None,
+                    prompt_ver
+                )
+            )
+        except Exception as hist_err:
+            print(f"  ⚠ ai_prediction_history write fail (non-fatal): {hist_err}")
+            conn.rollback()
+            # 重開游標（rollback 後 ORIG cursor 已關）
+            cur = conn.cursor()
+
+        # 主要寫入（原本功能）
         cur.execute(
             """INSERT INTO predictx.game_analysis (game_id, analysis_data, updated_at)
                VALUES (%s, %s, CURRENT_TIMESTAMP)
@@ -80,7 +136,10 @@ def save_analysis(conn, game_id, analysis_result):
         conn.rollback()
         return False
     finally:
-        cur.close()
+        try:
+            cur.close()
+        except Exception:
+            pass
 
 
 def main():

@@ -153,11 +153,30 @@ class SettlementEngine:
         }
 
         update_query = """
-            UPDATE predictx.game_analysis 
-            SET analysis_data = %s, updated_at = CURRENT_TIMESTAMP 
+            UPDATE predictx.game_analysis
+            SET analysis_data = %s, updated_at = CURRENT_TIMESTAMP
             WHERE game_id = %s
         """
         self.cur.execute(update_query, (json.dumps(analysis_data), game_id))
+
+        # 🆕 [2026-06-24] 同步補寫 ai_prediction_history 回流（只補尚未結算的歷史快照）
+        # 注意：如果同一場有多個 prompt_version 快照，全部都會被更新
+        try:
+            self.cur.execute(
+                """
+                UPDATE predictx.ai_prediction_history
+                SET settled_at = NOW(),
+                    actual_winner = %s,
+                    is_hit = %s
+                WHERE game_id = %s::uuid
+                  AND settled_at IS NULL
+                """,
+                (actual_winner, is_hit, game_id)
+            )
+        except Exception as hist_err:
+            # 不讓歷史表寫入失敗影響結算
+            print(f"  ⚠ ai_prediction_history update skip (non-fatal): {hist_err}")
+
         print(f"  Settled (win/loss): {int(actual_home_score)}-{int(actual_away_score)}, hit={is_hit}")
 
     def close(self):
