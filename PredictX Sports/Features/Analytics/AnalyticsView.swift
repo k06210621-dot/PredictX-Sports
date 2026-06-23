@@ -3,6 +3,7 @@ import Charts
 
 struct AnalyticsView: View {
     @StateObject private var store = AnalyticsStore()
+    @EnvironmentObject var subscriptionManager: SubscriptionManager
     
     var body: some View {
         NavigationStack {
@@ -38,9 +39,15 @@ struct AnalyticsView: View {
                     } else {
                         VStack(alignment: .leading, spacing: 25) {
                             OverallAccuracyCard(accuracy: store.overallAccuracy)
-                            RecentFormSection(settlements: store.recentSettlements, hitRate: store.recentFormRate)
-                            LeagueSelectionSection(store: store)
-                            TrendChartSection(selectedLeague: store.selectedLeague, trends: store.winRateTrends)
+                            
+                            // Free Trial 與 Basic 方案：遮蔽其餘內容
+                            if subscriptionManager.tier == .free || subscriptionManager.tier == .basic {
+                                LockedAnalyticsContent()
+                            } else {
+                                RecentFormSection(settlements: store.recentSettlements, hitRate: store.recentFormRate)
+                                LeagueSelectionSection(store: store)
+                                TrendChartSection(selectedLeague: store.selectedLeague, trends: store.winRateTrends)
+                            }
                         }
                         .padding()
                     }
@@ -48,6 +55,88 @@ struct AnalyticsView: View {
             }
             .background(SportsDarkBackground())
             .navigationTitle("AI 模型驗證中心")
+        }
+    }
+}
+
+// MARK: - 鎖定狀態（Free Trial / Basic 方案顯示）
+struct LockedAnalyticsContent: View {
+    @EnvironmentObject var subscriptionManager: SubscriptionManager
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            // 模糊化佔位
+            VStack(spacing: 12) {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.white.opacity(0.05))
+                    .frame(height: 80)
+                    .overlay(
+                        HStack {
+                            Circle()
+                                .fill(Color.white.opacity(0.08))
+                                .frame(width: 40, height: 40)
+                            VStack(alignment: .leading, spacing: 6) {
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(Color.white.opacity(0.08))
+                                    .frame(width: 120, height: 12)
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(Color.white.opacity(0.05))
+                                    .frame(width: 80, height: 10)
+                            }
+                            Spacer()
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color.white.opacity(0.08))
+                                .frame(width: 60, height: 20)
+                        }
+                        .padding(.horizontal, 16)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.white.opacity(0.05))
+                    .frame(height: 200)
+                    .overlay(
+                        VStack(spacing: 8) {
+                            ForEach(0..<4) { _ in
+                                HStack {
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(Color.white.opacity(0.08))
+                                        .frame(width: 100, height: 12)
+                                    Spacer()
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(Color.white.opacity(0.08))
+                                        .frame(width: 50, height: 12)
+                                }
+                                .padding(.horizontal, 16)
+                            }
+                        }
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+            .blur(radius: 8)
+            
+            // 升級提示
+            VStack(spacing: 12) {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 32))
+                    .foregroundColor(.secondary)
+                Text("升級至 Standard 以上方案\n即可查看完整驗證率分析")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                Button(action: {
+                    subscriptionManager.showSubscribeView = true
+                }) {
+                    Text("查看方案")
+                        .font(.subheadline.bold())
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 10)
+                        .background(Color.blue)
+                        .clipShape(Capsule())
+                }
+            }
+            .padding(.top, 8)
         }
     }
 }

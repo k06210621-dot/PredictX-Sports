@@ -173,27 +173,10 @@ class APIService {
         
         return try JSONDecoder().decode([HitRateTrendModel].self, from: data)
     }
-    
-    func triggerSettlement() async throws -> Int {
-        guard let url = URL(string: "\(baseURL)/analytics/settle") else {
-            throw URLError(.badURL)
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            throw URLError(.badServerResponse)
-        }
-        
-        struct SettleResponse: Codable {
-            let settled_count: Int
-        }
-        
-        let res = try JSONDecoder().decode(SettleResponse.self, from: data)
-        return res.settled_count
-    }
+
+    // ⚠️ triggerSettlement() 已移除 (2026-06-24 死碼清理)
+    // 此方法無任何呼叫者，settlement 是 Railway cron 自動跑的
+    // 若未來需要手動觸發 settlement，可從 git history 找回（commit 524be08 之前）
 }
 
 

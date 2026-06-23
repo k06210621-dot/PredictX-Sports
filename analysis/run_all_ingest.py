@@ -119,26 +119,49 @@ def main():
         cls, desc = LEAGUE_REGISTRY[code]
         LOGGER.info(f"\n[{code}] 昨日補抓 ({desc})")
         ingester = cls()
-        # 美東日期聯盟：抓 APP 昨日 - 1 天 = 美東昨日
-        league_target = (
-            (datetime.strptime(app_yesterday, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
-            if code in US_DATE_LEAGUES
-            else app_yesterday
-        )
+
+        # 🆕 時區陷阱修正：DB match_date = 美東日期（mlb.py:71 寫入 target_date），
+        #    /api/games 顯示端 +1 天。Backfill 若直接用「app_yesterday - 1」對齊美東昨日，
+        #    會錯過當天 ingest 寫入但尚未完成的美東日期（games 還停在 SCHEDULED）。
+        #    永久修法：兩個方向都跑一次（MLB/NBA: 美東 +0 與 -1）。
+        backfill_dates: list = [app_yesterday]
         if code in US_DATE_LEAGUES:
-            LOGGER.info(f"⏰ {code} 時區換算：APP 顯示 {app_yesterday} → 抓美東 {league_target}")
-        try:
-            ok = ingester.backfill_yesterday(target_date=league_target, dry_run=args.dry_run)
-            backfill_results[code] = "OK" if ok else "PARTIAL_FAIL"
-        except Exception as e:
-            LOGGER.error(f"[{code}] ❌ 補抓整體失敗: {e}", exc_info=True)
-            backfill_results[code] = "FAIL"
-        finally:
+            us_yesterday = (
+                datetime.strptime(app_yesterday, "%Y-%m-%d") - timedelta(days=1)
+            ).strftime("%Y-%m-%d")
+            backfill_dates.append(us_yesterday)
+            LOGGER.info(
+                f"⏰ {code} 時區雙向補抓：APP {app_yesterday} ↔ 美東 {app_yesterday} + 美東 {us_yesterday}"
+            )
+        else:
+            LOGGER.info(f"⏰ {code} 補抓 APP 昨日 = {app_yesterday}")
+
+        league_results = []
+        for league_target in backfill_dates:
             try:
-                if hasattr(ingester, "close"):
-                    ingester.close()
-            except Exception:
-                pass
+                ok = ingester.backfill_yesterday(
+                    target_date=league_target, dry_run=args.dry_run
+                )
+                league_results.append(("OK" if ok else "PARTIAL_FAIL", league_target))
+            except Exception as e:
+                LOGGER.error(
+                    f"[{code}] ❌ {league_target} 補抓失敗: {e}", exc_info=True
+                )
+                league_results.append(("FAIL", league_target))
+            finally:
+                try:
+                    if hasattr(ingester, "close"):
+                        ingester.close()
+                except Exception:
+                    pass
+
+        if any(s == "OK" for s, _ in league_results):
+            backfill_results[code] = "OK"
+        elif all(s == "FAIL" for s, _ in league_results):
+            backfill_results[code] = "FAIL"
+        else:
+            backfill_results[code] = "PARTIAL_FAIL"
+        LOGGER.info(f"  ↳ {code} 結果明細: {league_results}")
 
     bf_elapsed = time.time() - bf_start
     LOGGER.info("\n" + "=" * 60)

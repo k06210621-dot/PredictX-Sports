@@ -304,7 +304,7 @@ class SubscriptionManager: ObservableObject {
     }
 
     func canUseFavorites() -> Bool {
-        tier != .free || !trialExpired
+        tier != .free
     }
 
     func canSeeHighConfidence() -> Bool {

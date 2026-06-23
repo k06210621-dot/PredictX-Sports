@@ -20,3 +20,34 @@
 "subscribe.title" = "AI 額度儲值中心";
 "launch.tagline" = "智能球賽分析 APP";
 "card.locked_hint" = "🔒 點擊解鎖 AI 推論隊伍強度 (-20 點)";
+/*
+  Trial Disclosure + Auto-stop row - added 2026-06-22
+  Apple App Review Guidelines 3.1.1: prior to trial start, app must clearly identify duration,
+  content/services no longer accessible after trial ends, and downstream charges.
+*/
+"trial.expiry.title" = "試用期滿後功能差異";
+"trial.expiry.line1" = "試用期內享 Premium 完整權益（30 天）";
+"trial.expiry.line2" = "過期後停用：模型驗證率儀表板";
+"trial.expiry.line3" = "過期後停用：每日 AI 推論點數自動補充";
+"trial.expiry.line4" = "可隨時取消試用・不會收費";
+"trial.expiry.line5" = "訂閱可重新解鎖完整功能・最低 NT$ 99/月";
+"subscribe.features.title" = "方案功能對照";
+"feature.daily_points" = "每日 AI 分析點數";
+"feature.free.60pts" = "60 點";
+"feature.basic.120pts" = "120 點";
+"feature.unlimited" = "無限";
+"feature.player_db" = "球員資料庫";
+"feature.favorites" = "收藏賽事分析";
+"feature.dashboard" = "模型驗證率儀表板";
+"feature.push" = "推播通知";
+"feature.trial_expired" = "試用期過期後";
+"feature.auto_stop" = "自動停止";
+"legal.trial_disclosure" = "試用期 30 天・可隨時取消・不會收費（若在試用期內取消，App Store 不會向你收取任何費用）";
+"legal.terms_agree" = "點擊上方按鈕即代表同意 [服務條款] 與 [隱私權政策]";
+"legal.auto_renew" = "• 訂閱會自動續訂・可在 iPhone「設定」>「Apple ID」>「訂閱項目」中隨時取消";
+"legal.cancel_retain" = "• 取消後仍可使用剩餘的訂閱期間・不會退還當期費用";
+"legal.disclaimer" = "• PredictX Sports 為運動數據分析工具・所有 AI 推論結果僅供參考・不構成任何投注建議";
+"trial.alert.title" = "試用期即將結束";
+"trial.alert.ok" = "了解";
+"trial.alert.view_plans" = "查看方案";
+"trial.alert.message" = "你的 30 天試用期還剩 X 天。\n\n過期後將停用：\n• 模型驗證率儀表板\n• 每日 AI 推論點數自動補充\n\n訂閱可重新解鎖完整功能。";

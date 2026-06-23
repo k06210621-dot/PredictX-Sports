@@ -23,9 +23,10 @@ struct SubscribeView: View {
                     VStack(spacing: 24) {
                         header
                         legalShield
+                        trialExpiryDisclosure
                         tierSelection
                         if !isAnnual {
-                            Text("切換年訂以享有 8 折優惠・每方案每月最高省 NT$ \(Int(annuallySavedForSelectedTier()))")
+                            Text("切換年訂可享約 83 折優惠・每年最高省 NT$ \(annuallySavedForSelectedTier())")
                                 .font(.caption2)
                                 .foregroundColor(Color(.tertiaryLabel))
                                 .multilineTextAlignment(.center)
@@ -99,6 +100,44 @@ struct SubscribeView: View {
         .clipShape(Capsule())
     }
 
+    // MARK: - 試用期過期後功能差異表（Apple App Review Guidelines 3.1.1 要求明確標示）
+    // 條文原文：Prior to the start of the trial, your app must clearly identify its duration,
+    //          the content or services that will no longer be accessible when the trial ends,
+    //          and any downstream charges the user would need to pay for full functionality.
+
+    private var trialExpiryDisclosure: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label(NSLocalizedString("trial.expiry.title", comment: "試用期滿後功能差異"), systemImage: "info.circle")
+                .font(.subheadline.bold())
+                .foregroundColor(.white)
+
+            VStack(alignment: .leading, spacing: 6) {
+                trialRow(icon: "checkmark.circle.fill", color: .green,
+                         text: NSLocalizedString("trial.expiry.line1", comment: "試用期內享 Premium 完整權益（30 天）"))
+                trialRow(icon: "xmark.circle.fill", color: .orange,
+                         text: NSLocalizedString("trial.expiry.line2", comment: "過期後停用：模型驗證率儀表板"))
+                trialRow(icon: "xmark.circle.fill", color: .orange,
+                         text: NSLocalizedString("trial.expiry.line3", comment: "過期後停用：每日 AI 推論點數自動補充"))
+                trialRow(icon: "checkmark.circle.fill", color: .blue,
+                         text: NSLocalizedString("trial.expiry.line4", comment: "可隨時取消試用・不會收費"))
+                trialRow(icon: "checkmark.circle.fill", color: .blue,
+                         text: NSLocalizedString("trial.expiry.line5", comment: "訂閱可重新解鎖完整功能・最低 NT$ 99/月"))
+            }
+            .font(.caption2)
+            .foregroundColor(.white.opacity(0.85))
+        }
+        .padding(12)
+        .background(Color.black.opacity(0.25))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func trialRow(icon: String, color: Color, text: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon).foregroundColor(color).font(.caption2)
+            Text(text)
+        }
+    }
+
     // MARK: - 方案選擇
 
     private var tierSelection: some View {
@@ -108,7 +147,7 @@ struct SubscribeView: View {
                 billingToggle(title: "月訂", isSelected: !isAnnual) {
                     isAnnual = false
                 }
-                billingToggle(title: "年訂・省 20%", isSelected: isAnnual) {
+                billingToggle(title: "年訂・約 83 折", isSelected: isAnnual) {
                     isAnnual = true
                 }
             }
@@ -194,37 +233,88 @@ struct SubscribeView: View {
     }
 
     private func priceStringForPaywall() -> String {
-        let productID = selectedTier.productID(isAnnual: isAnnual)
-        if let p = products.first(where: { $0.id == productID }) {
-            return p.displayPrice
+        if isAnnual {
+            return "NT$ \(selectedTier.yearlyPriceTWD)"
+        } else {
+            return "NT$ \(selectedTier.monthlyPriceTWD)"
         }
-        // 載入失敗時顯示 fallback 價格
-        return selectedTier.fallbackPrice(isAnnual: isAnnual)
     }
 
     // MARK: - 功能對照表
 
     private var featuresChart: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("方案功能對照", systemImage: "list.bullet.rectangle")
+            Label(NSLocalizedString("subscribe.features.title", comment: "方案功能對照"), systemImage: "list.bullet.rectangle")
                 .font(.headline.bold())
                 .foregroundColor(.white)
 
             VStack(spacing: 0) {
-                FeatureRow(label: "每日 AI 分析點數", free: "60 點", basic: "120 點", standard: "無限", premium: "無限")
+                // 方案名稱標題列
+                HStack(spacing: 8) {
+                    Text("")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .layoutPriority(1)
+                    headerCell(text: "Free", color: .gray)
+                    headerCell(text: "Basic", color: .green)
+                    headerCell(text: "Standard", color: .blue)
+                    headerCell(text: "Premium", color: .purple)
+                }
+                .padding(.vertical, 6).padding(.horizontal, 4)
+
                 Divider().background(Color(.separator))
-                FeatureRow(label: "球員資料庫", free: "✓", basic: "✓", standard: "✓", premium: "✓")
+                FeatureRow(label: NSLocalizedString("feature.daily_points", comment: "每日 AI 分析點數"),
+                           free: NSLocalizedString("feature.free.60pts", comment: "60 點"),
+                           basic: NSLocalizedString("feature.basic.120pts", comment: "120 點"),
+                           standard: NSLocalizedString("feature.unlimited", comment: "無限"),
+                           premium: NSLocalizedString("feature.unlimited", comment: "無限"))
                 Divider().background(Color(.separator))
-                FeatureRow(label: "收藏賽事分析", free: "✓", basic: "✓", standard: "✓", premium: "✓")
+                FeatureRow(label: NSLocalizedString("feature.player_db", comment: "球員資料庫"),
+                           free: "✓", basic: "✓", standard: "✓", premium: "✓")
                 Divider().background(Color(.separator))
-                FeatureRow(label: "模型驗證率儀表板", free: "—", basic: "—", standard: "✓", premium: "✓")
+                FeatureRow(label: NSLocalizedString("feature.favorites", comment: "收藏賽事分析"),
+                           free: "——", basic: "✓", standard: "✓", premium: "✓")
                 Divider().background(Color(.separator))
-                FeatureRow(label: "推播通知", free: "—", basic: "—", standard: "—", premium: "✓")
+                FeatureRow(label: NSLocalizedString("feature.dashboard", comment: "模型驗證率儀表板"),
+                           free: "—", basic: "—", standard: "✓", premium: "✓")
+                Divider().background(Color(.separator))
+                FeatureRow(label: NSLocalizedString("feature.push", comment: "推播通知"),
+                           free: "—", basic: "—", standard: "—", premium: "✓")
+                Divider().background(Color(.separator))
+                trialExpiredFeatureRow
             }
             .padding(8)
             .background(Color.black.opacity(0.2))
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
+    }
+
+    // MARK: - 試用期過期後狀態列（Apple 條文 3.1.1 要求明確標示）
+    // 在「功能對照表」內加一列，明確標示「過期後」各 tier 自動停止
+
+    private var trialExpiredFeatureRow: some View {
+        HStack(spacing: 8) {
+            Text(NSLocalizedString("feature.trial_expired", comment: "試用期過期後"))
+                .font(.caption)
+                .foregroundColor(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
+
+            expiredCell(text: NSLocalizedString("feature.auto_stop", comment: "自動停止"))
+            expiredCell(text: NSLocalizedString("feature.auto_stop", comment: "自動停止"))
+            expiredCell(text: NSLocalizedString("feature.auto_stop", comment: "自動停止"))
+            expiredCell(text: NSLocalizedString("feature.auto_stop", comment: "自動停止"))
+        }
+        .padding(.vertical, 8).padding(.horizontal, 4)
+    }
+
+    private func expiredCell(text: String) -> some View {
+        Text(text)
+            .font(.caption2.bold())
+            .foregroundColor(.white)
+            .frame(width: 48)
+            .padding(.vertical, 4)
+            .background(Color.red.opacity(0.4))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 
     // MARK: - 恢復購買
@@ -248,22 +338,27 @@ struct SubscribeView: View {
 
     private var legalLinks: some View {
         VStack(spacing: 6) {
-            Text("點擊上方按鈕即代表同意 [服務條款] 與 [隱私權政策]")
+            Text(NSLocalizedString("legal.trial_disclosure", comment: "試用期 30 天・可隨時取消・不會收費（若在試用期內取消，App Store 不會向你收取任何費用）"))
                 .font(.caption2)
                 .foregroundColor(Color(.tertiaryLabel))
                 .multilineTextAlignment(.center)
 
-            Text("• 訂閱會自動續訂・可在 iPhone「設定」>「Apple ID」>「訂閱項目」中隨時取消")
+            Text(NSLocalizedString("legal.terms_agree", comment: "點擊上方按鈕即代表同意 [服務條款] 與 [隱私權政策]"))
                 .font(.caption2)
                 .foregroundColor(Color(.tertiaryLabel))
                 .multilineTextAlignment(.center)
 
-            Text("• 取消後仍可使用剩餘的訂閱期間・不會退還當期費用")
+            Text(NSLocalizedString("legal.auto_renew", comment: "• 訂閱會自動續訂・可在 iPhone「設定」>「Apple ID」>「訂閱項目」中隨時取消"))
                 .font(.caption2)
                 .foregroundColor(Color(.tertiaryLabel))
                 .multilineTextAlignment(.center)
 
-            Text("• PredictX Sports 為運動數據分析工具・所有 AI 推論結果僅供參考・不構成任何投注建議")
+            Text(NSLocalizedString("legal.cancel_retain", comment: "• 取消後仍可使用剩餘的訂閱期間・不會退還當期費用"))
+                .font(.caption2)
+                .foregroundColor(Color(.tertiaryLabel))
+                .multilineTextAlignment(.center)
+
+            Text(NSLocalizedString("legal.disclaimer", comment: "• PredictX Sports 為運動數據分析工具・所有 AI 推論結果僅供參考・不構成任何投注建議"))
                 .font(.caption2)
                 .foregroundColor(Color(.tertiaryLabel))
                 .multilineTextAlignment(.center)
@@ -298,7 +393,8 @@ struct SubscribeView: View {
 
     private func annuallySavedForSelectedTier() -> Int {
         let monthly = selectedTier.monthlyPriceTWD
-        return Int(Double(monthly) * 12 * annualDiscount)
+        let annualTotal = monthly * 12
+        return annualTotal - selectedTier.yearlyPriceTWD
     }
 }
 
@@ -382,12 +478,19 @@ private struct TierCard: View {
 
     private var displayPrice: String {
         if isAnnual {
-            let yearMonthly = Double(tier.monthlyPriceTWD * 12) * (1 - annualDiscount)
-            return "NT$ \(Int(yearMonthly)) / 月 (年訂)"
+            return "NT$ \(tier.yearlyPriceTWD) / 年"
         } else {
             return "NT$ \(tier.monthlyPriceTWD) / 月"
         }
     }
+}
+
+/// 方案名稱標題列用（字體較大、無背景）
+private func headerCell(text: String, color: Color) -> some View {
+    Text(text)
+        .font(.caption.bold())
+        .foregroundColor(color)
+        .frame(width: 48)
 }
 
 // MARK: - 功能對照表 row
@@ -423,6 +526,14 @@ private struct FeatureRow: View {
             .padding(.vertical, 4)
             .background(color.opacity(0.15))
             .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    /// 方案名稱標題列用（字體較大、無背景）
+    private func headerCell(text: String, color: Color) -> some View {
+        Text(text)
+            .font(.caption.bold())
+            .foregroundColor(color)
+            .frame(width: 48)
     }
 }
 
@@ -468,9 +579,18 @@ enum ProductTier: CaseIterable {
     /// 月付 TWD 標價（同步顯示用，實際下單以 StoreKit 為準）
     var monthlyPriceTWD: Int {
         switch self {
-        case .basic: return 99
-        case .standard: return 299
-        case .premium: return 399
+        case .basic: return 100
+        case .standard: return 290
+        case .premium: return 390
+        }
+    }
+
+    /// 年付 TWD 標價（同步 App Store Connect 實際價格）
+    var yearlyPriceTWD: Int {
+        switch self {
+        case .basic: return 990
+        case .standard: return 2990
+        case .premium: return 3850
         }
     }
 
@@ -494,9 +614,8 @@ enum ProductTier: CaseIterable {
     /// 載入失敗時的 fallback 顯示（同步於 App Store Connect 價格）
     func fallbackPrice(isAnnual: Bool) -> String {
         if isAnnual {
-            let year = Double(monthlyPriceTWD * 12) * 0.8
-            return "NT$ \(Int(year))"
+            return "NT$ \(yearlyPriceTWD)"
         }
-        return "NT\(monthlyPriceTWD)"
+        return "NT$ \(monthlyPriceTWD) / 月"
     }
 }

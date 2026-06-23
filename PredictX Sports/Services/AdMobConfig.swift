@@ -10,5 +10,6 @@ enum AdMobConfig {
     static let rewardedAdUnitID = "ca-app-pub-6186518924141006/5661662420"
     
     /// 測試模式：設為 true 時使用測試廣告（不會產生收益但可正常開發測試）
-    static let isTestMode = true
+    /// 送審前必須改為 false（Apple App Review 4.0+ 禁止 test ads in production build）
+    static let isTestMode = false
 }

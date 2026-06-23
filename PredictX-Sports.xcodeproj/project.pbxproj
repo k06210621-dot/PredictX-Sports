@@ -8,9 +8,13 @@
 
 /* Begin PBXBuildFile section */
 		CA5A295D2FE4BF5500249E1E /* GoogleMobileAds in Frameworks */ = {isa = PBXBuildFile; productRef = CA5A295C2FE4BF5500249E1E /* GoogleMobileAds */; };
+		F942F7AC715B2CB01EC6779A /* Pods_PredictX_Sports.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3B971389D7F1367DAB38890D /* Pods_PredictX_Sports.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		3B971389D7F1367DAB38890D /* Pods_PredictX_Sports.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_PredictX_Sports.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		3CBA466D343A22F597F308C5 /* Pods-PredictX Sports.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-PredictX Sports.release.xcconfig"; path = "Target Support Files/Pods-PredictX Sports/Pods-PredictX Sports.release.xcconfig"; sourceTree = "<group>"; };
+		5984B720BED740CA674BD96D /* Pods-PredictX Sports.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-PredictX Sports.debug.xcconfig"; path = "Target Support Files/Pods-PredictX Sports/Pods-PredictX Sports.debug.xcconfig"; sourceTree = "<group>"; };
 		CA5D188C2FB868B100430A53 /* PredictX Sports.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "PredictX Sports.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -28,15 +32,26 @@
 			buildActionMask = 2147483647;
 			files = (
 				CA5A295D2FE4BF5500249E1E /* GoogleMobileAds in Frameworks */,
+				F942F7AC715B2CB01EC6779A /* Pods_PredictX_Sports.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		5BD4F960EADE0478F49D1252 /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				5984B720BED740CA674BD96D /* Pods-PredictX Sports.debug.xcconfig */,
+				3CBA466D343A22F597F308C5 /* Pods-PredictX Sports.release.xcconfig */,
+			);
+			path = Pods;
+			sourceTree = "<group>";
+		};
 		CA5A295E2FE4C00900249E1E /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				3B971389D7F1367DAB38890D /* Pods_PredictX_Sports.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -47,6 +62,7 @@
 				CA5D188E2FB868B100430A53 /* PredictX Sports */,
 				CA5A295E2FE4C00900249E1E /* Frameworks */,
 				CA5D188D2FB868B100430A53 /* Products */,
+				5BD4F960EADE0478F49D1252 /* Pods */,
 			);
 			sourceTree = "<group>";
 		};
@@ -65,9 +81,11 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = CA5D18972FB868B200430A53 /* Build configuration list for PBXNativeTarget "PredictX Sports" */;
 			buildPhases = (
+				710CB5AE094BDF81DCA06CBD /* [CP] Check Pods Manifest.lock */,
 				CA5D18882FB868B100430A53 /* Sources */,
 				CA5D18892FB868B100430A53 /* Frameworks */,
 				CA5D188A2FB868B100430A53 /* Resources */,
+				E2C0F14AB6596B9C19F84DA0 /* [CP] Copy Pods Resources */,
 			);
 			buildRules = (
 			);
@@ -132,6 +150,52 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		710CB5AE094BDF81DCA06CBD /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-PredictX Sports-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		E2C0F14AB6596B9C19F84DA0 /* [CP] Copy Pods Resources */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-PredictX Sports/Pods-PredictX Sports-resources-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			inputPaths = (
+			);
+			name = "[CP] Copy Pods Resources";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-PredictX Sports/Pods-PredictX Sports-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-PredictX Sports/Pods-PredictX Sports-resources.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		CA5D18882FB868B100430A53 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -181,7 +245,7 @@
 				DEVELOPMENT_TEAM = 9KNQAT34D5;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -245,7 +309,7 @@
 				DEVELOPMENT_TEAM = 9KNQAT34D5;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -266,6 +330,7 @@
 		};
 		CA5D18982FB868B200430A53 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 5984B720BED740CA674BD96D /* Pods-PredictX Sports.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -301,6 +366,7 @@
 		};
 		CA5D18992FB868B200430A53 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 3CBA466D343A22F597F308C5 /* Pods-PredictX Sports.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;

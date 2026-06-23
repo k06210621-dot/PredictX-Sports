@@ -1,0 +1,3 @@
+ls: .railvey: No such file or directory
+ls: rails: No such file or directory
+ls: variables*: No such file or directory

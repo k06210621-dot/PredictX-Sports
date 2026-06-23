@@ -20,3 +20,33 @@
 "subscribe.title" = "AI Credits Store";
 "launch.tagline" = "AI Sports Analysis APP";
 "card.locked_hint" = "🔒 Tap to unlock AI team strength (-20 pts)";
+/*
+  Trial Disclosure + Auto-stop row - added 2026-06-22
+  Apple App Review Guidelines 3.1.1
+*/
+"trial.expiry.title" = "After Trial Ends";
+"trial.expiry.line1" = "During trial, enjoy full Premium benefits (30 days)";
+"trial.expiry.line2" = "Disabled after expiry: Model verification dashboard";
+"trial.expiry.line3" = "Disabled after expiry: Daily AI inference points auto-refill";
+"trial.expiry.line4" = "Cancel anytime during trial. No charge.";
+"trial.expiry.line5" = "Subscribe to restore full features. From NT$ 99/month.";
+"subscribe.features.title" = "Plan Feature Comparison";
+"feature.daily_points" = "Daily AI analysis points";
+"feature.free.60pts" = "60 pts";
+"feature.basic.120pts" = "120 pts";
+"feature.unlimited" = "Unlimited";
+"feature.player_db" = "Player database";
+"feature.favorites" = "Favorite match analysis";
+"feature.dashboard" = "Model verification dashboard";
+"feature.push" = "Push notifications";
+"feature.trial_expired" = "After trial expires";
+"feature.auto_stop" = "Auto-stop";
+"legal.trial_disclosure" = "30-day trial. Cancel anytime. No charge (if you cancel during the trial, the App Store will not charge you).";
+"legal.terms_agree" = "By tapping the button above, you agree to our [Terms of Service] and [Privacy Policy]";
+"legal.auto_renew" = "• Subscription auto-renews. You can cancel anytime in iPhone Settings > Apple ID > Subscriptions.";
+"legal.cancel_retain" = "• After cancellation, you can continue using the remaining subscription period. No refund for the current period.";
+"legal.disclaimer" = "• PredictX Sports is a sports data analysis tool. All AI inferences are for reference only and do not constitute any betting advice.";
+"trial.alert.title" = "Trial ending soon";
+"trial.alert.ok" = "Got it";
+"trial.alert.view_plans" = "View plans";
+"trial.alert.message" = "Your 30-day trial has X days left.\n\nAfter expiry, the following will be disabled:\n• Model verification dashboard\n• Daily AI inference points auto-refill\n\nSubscribe to restore full features.";
