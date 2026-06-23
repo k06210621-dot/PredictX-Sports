@@ -77,22 +77,30 @@ struct PredictionRowView: View {
                 .background(Color.blue.opacity(0.1))
                 .cornerRadius(16)
                 
-                // 收藏星星按鈕
-                Button(action: {
-                    favoritesStore.toggle(match: match)
-                }) {
-                    Image(systemName: favoritesStore.isFavorited(gameId: match.id) ? "star.fill" : "star")
-                        .font(.system(size: 16))
-                        .foregroundColor(favoritesStore.isFavorited(gameId: match.id) ? .yellow : .gray.opacity(0.5))
+                // 收藏星星按鈕 (僅限付費方案)
+                if subscriptionManager.canUseFavorites() {
+                    Button(action: {
+                        favoritesStore.toggle(match: match)
+                    }) {
+                        Image(systemName: favoritesStore.isFavorited(gameId: match.id) ? "star.fill" : "star")
+                            .font(.system(size: 16))
+                            .foregroundColor(favoritesStore.isFavorited(gameId: match.id) ? .yellow : .gray.opacity(0.5))
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
             
             // 2. 卡片中部：主客球隊對決（VS 分隔）
+            // 🆕 [2026-06-24] 隊伍名稱中英並列：英文為主、中文小字輔助
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(match.homeTeam).font(.headline).bold().foregroundColor(.primary)
-                    Text(match.homeTeamCN).font(.caption2).foregroundColor(.secondary)
+                    Text(match.homeTeam)
+                        .font(.headline).bold()
+                        .foregroundColor(.primary)
+                    Text(match.homeTeamCN)
+                        .font(.caption)
+                        .foregroundColor(.secondary.opacity(0.85))
+                        .lineLimit(1)
                 }
                 
                 Spacer()
@@ -105,8 +113,13 @@ struct PredictionRowView: View {
                 Spacer()
                 
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(match.awayTeam).font(.headline).bold().foregroundColor(.primary)
-                    Text(match.awayTeamCN).font(.caption2).foregroundColor(.secondary)
+                    Text(match.awayTeam)
+                        .font(.headline).bold()
+                        .foregroundColor(.primary)
+                    Text(match.awayTeamCN)
+                        .font(.caption)
+                        .foregroundColor(.secondary.opacity(0.85))
+                        .lineLimit(1)
                 }
             }
             .padding(.vertical, 2)
@@ -143,7 +156,7 @@ struct PredictionRowView: View {
                 expandNPBPanel(npb)
             }
         }
-        .padding()
+        .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 20)
                 .fill(Color.cardBackground)
