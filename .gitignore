@@ -20,6 +20,10 @@ DerivedData/
 *.xcuserdata/
 Build/
 
+# CocoaPods (don't commit, regenerated via pod install)
+Pods/
+Podfile.lock
+
 # IDE
 .vscode/
 .idea/
