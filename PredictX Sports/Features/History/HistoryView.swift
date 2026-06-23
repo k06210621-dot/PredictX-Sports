@@ -174,9 +174,13 @@ struct HistoricalMatchCardView: View {
                         .font(.headline)
                         .bold()
                         .foregroundColor(.primary)
+                        .lineLimit(1)                          // 🆕 [2026-06-24] 防止英文換行斷句
+                        .minimumScaleFactor(0.7)              // 🆕 太長自動縮字
                     Text(match.homeTeamCN)
                         .font(.caption2)
                         .foregroundColor(.secondary)
+                        .lineLimit(1)                          // 🆕 防止中文換行斷句
+                        .minimumScaleFactor(0.8)
                 }
 
                 Spacer()
@@ -215,9 +219,13 @@ struct HistoricalMatchCardView: View {
                         .font(.headline)
                         .bold()
                         .foregroundColor(.primary)
+                        .lineLimit(1)                          // 🆕 [2026-06-24] 防止英文換行斷句
+                        .minimumScaleFactor(0.7)
                     Text(match.awayTeamCN)
                         .font(.caption2)
                         .foregroundColor(.secondary)
+                        .lineLimit(1)                          // 🆕 防止中文換行斷句
+                        .minimumScaleFactor(0.8)
                 }
             }
             
