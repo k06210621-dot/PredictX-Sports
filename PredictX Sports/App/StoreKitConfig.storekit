@@ -11,7 +11,7 @@
       "internalPriceID" : "predictx_basic",
       "localizations" : [
         {
-          "description" : "每日 120 鑽石，可永久累積。已解鎖分析永久可看。支援收藏功能。",
+          "description" : "每日 120 分析點數，可永久累積。已解鎖分析永久可看。支援收藏功能。",
           "displayName" : "Basic 月費",
           "locale" : "zh_TW"
         }
@@ -28,7 +28,7 @@
       "internalPriceID" : "predictx_standard",
       "localizations" : [
         {
-          "description" : "所有預測內容完全開放，不需消耗鑽石，無觀看限制。支援收藏功能。",
+          "description" : "所有預測內容完全開放，不需消耗分析點數，無觀看限制。支援收藏功能。",
           "displayName" : "Standard 月費",
           "locale" : "zh_TW"
         }
@@ -45,7 +45,7 @@
       "internalPriceID" : "predictx_premium",
       "localizations" : [
         {
-          "description" : "所有功能完全開放。可接收高信心推薦推播通知。支援收藏功能。",
+          "description" : "所有功能完全開放。可接收 AI 推論推薦推播通知。支援收藏功能。",
           "displayName" : "Premium 月費",
           "locale" : "zh_TW"
         }

@@ -356,7 +356,7 @@ private var sections: [DisclaimerSection] {
             paragraphs: [
                 ParagraphItem(text: "本平台提供以下付費服務與虛擬商品："),
                 ParagraphItem(bullet: "Premium 會員訂閱服務", icon: "crown.fill", color: .yellow),
-                ParagraphItem(bullet: "鑽石商城（虛擬點數）", icon: "bag.fill", color: .yellow),
+                ParagraphItem(bullet: "AI 額度儲值中心（虛擬點數）", icon: "bag.fill", color: .yellow),
                 ParagraphItem(bullet: "AI 分析使用額度", icon: "cpu.fill", color: .yellow),
                 ParagraphItem(bullet: "其他數位內容", icon: "square.grid.2x2.fill", color: .yellow),
                 ParagraphItem(text: "數位商品與虛擬點數一經購買、開通或使用後，除法律另有規定外，不得要求退款、轉讓或兌換現金。"),
