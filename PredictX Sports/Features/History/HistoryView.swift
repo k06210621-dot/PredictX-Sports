@@ -168,18 +168,19 @@ struct HistoricalMatchCardView: View {
                     .cornerRadius(16)
             }
             
+            // 🆕 [2026-06-24] 統一視覺風格與 PredictionRowView 一致：
+            // 中文用 .caption (12pt)、加 lineLimit(1)、secondary.opacity(0.85)
             HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(match.homeTeam)
-                        .font(.headline)
-                        .bold()
+                        .font(.headline).bold()
                         .foregroundColor(.primary)
-                        .lineLimit(1)                          // 🆕 [2026-06-24] 防止英文換行斷句
-                        .minimumScaleFactor(0.7)              // 🆕 太長自動縮字
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                     Text(match.homeTeamCN)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)                          // 🆕 防止中文換行斷句
+                        .font(.caption)
+                        .foregroundColor(.secondary.opacity(0.85))
+                        .lineLimit(1)
                         .minimumScaleFactor(0.8)
                 }
 
@@ -203,8 +204,8 @@ struct HistoricalMatchCardView: View {
                     } else {
                         // 沒有真實比分 → 誠實顯示資料狀態
                         Text("VS")
-                            .font(.title3)
-                            .fontWeight(.heavy)
+                            .font(.title2)
+                            .fontWeight(.black)
                             .foregroundColor(themeColor.opacity(0.4))
                         Text(statusDescription)
                             .font(.system(size: 9))
@@ -214,17 +215,16 @@ struct HistoricalMatchCardView: View {
 
                 Spacer()
 
-                VStack(alignment: .trailing, spacing: 4) {
+                VStack(alignment: .trailing, spacing: 2) {
                     Text(match.awayTeam)
-                        .font(.headline)
-                        .bold()
+                        .font(.headline).bold()
                         .foregroundColor(.primary)
-                        .lineLimit(1)                          // 🆕 [2026-06-24] 防止英文換行斷句
+                        .lineLimit(1)
                         .minimumScaleFactor(0.7)
                     Text(match.awayTeamCN)
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)                          // 🆕 防止中文換行斷句
+                        .font(.caption)
+                        .foregroundColor(.secondary.opacity(0.85))
+                        .lineLimit(1)
                         .minimumScaleFactor(0.8)
                 }
             }
