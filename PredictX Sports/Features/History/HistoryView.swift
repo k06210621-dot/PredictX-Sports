@@ -168,19 +168,19 @@ struct HistoricalMatchCardView: View {
                     .cornerRadius(16)
             }
             
-            // 🆕 [2026-06-24] 統一視覺風格與 PredictionRowView 一致：
-            // 中文用 .caption (12pt)、加 lineLimit(1)、secondary.opacity(0.85)
+            // 🆕 [2026-06-24] 還原為原始樣式（commit 9925ee7 之前），保留 lineLimit 防止斷句
             HStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(match.homeTeam)
-                        .font(.headline).bold()
+                        .font(.headline)
+                        .bold()
                         .foregroundColor(.primary)
-                        .lineLimit(1)
+                        .lineLimit(1)                  // 防止英文換行
                         .minimumScaleFactor(0.7)
                     Text(match.homeTeamCN)
-                        .font(.caption)
-                        .foregroundColor(.secondary.opacity(0.85))
-                        .lineLimit(1)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)                  // 防止中文換行
                         .minimumScaleFactor(0.8)
                 }
 
@@ -190,22 +190,18 @@ struct HistoricalMatchCardView: View {
                     // ✅ 永遠只顯示「真實比分」（homeScore + awayScore 兩者皆有才顯示）
                     // 不再用 aiTotalScorePredict 作為「最終比分」替代，避免誤導
                     if let homeScore = match.homeScore, let awayScore = match.awayScore {
-                        // 用 lineLimit(1) + minimumScaleFactor 避免大數字被擠壓變形
                         Text("\(homeScore) - \(awayScore)")
                             .font(.title2)
                             .fontWeight(.heavy)
                             .foregroundColor(themeColor)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.6)
-                            .frame(minWidth: 80)  // 防止 layout 擠壓
                         Text("最終比分")
                             .font(.system(size: 9))
                             .foregroundColor(Color(.tertiaryLabel))
                     } else {
                         // 沒有真實比分 → 誠實顯示資料狀態
                         Text("VS")
-                            .font(.title2)
-                            .fontWeight(.black)
+                            .font(.title3)
+                            .fontWeight(.heavy)
                             .foregroundColor(themeColor.opacity(0.4))
                         Text(statusDescription)
                             .font(.system(size: 9))
@@ -215,16 +211,17 @@ struct HistoricalMatchCardView: View {
 
                 Spacer()
 
-                VStack(alignment: .trailing, spacing: 2) {
+                VStack(alignment: .trailing, spacing: 4) {
                     Text(match.awayTeam)
-                        .font(.headline).bold()
+                        .font(.headline)
+                        .bold()
                         .foregroundColor(.primary)
-                        .lineLimit(1)
+                        .lineLimit(1)                  // 防止英文換行
                         .minimumScaleFactor(0.7)
                     Text(match.awayTeamCN)
-                        .font(.caption)
-                        .foregroundColor(.secondary.opacity(0.85))
-                        .lineLimit(1)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)                  // 防止中文換行
                         .minimumScaleFactor(0.8)
                 }
             }
