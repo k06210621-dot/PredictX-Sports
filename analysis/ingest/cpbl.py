@@ -119,9 +119,11 @@ class CPBLIngester(BaseIngester):
             away_score = int(away_score_raw) if (away_score_raw is not None and str(away_score_raw).lstrip('-').isdigit()) else None
 
             # 狀態: TheSportsDB 用 strStatus (FT=Finished, IN*=In Progress, NS=Not Started)
+            # ⚠️ strPostponed 標記不可靠（2026-06-23 實證：CPBL 3 場標 postponed 但官網照打）
+            # 修法：strPostponed=yes 僅在 strStatus 非 FT/IN 時才視為 POSTPONED
             status_raw = (e.get("strStatus") or "").upper()
             postponed = (e.get("strPostponed") or "no").lower() == "yes"
-            if postponed:
+            if postponed and status_raw not in ("FT", "IN", "IN_PROGRESS", "INPLAY"):
                 status = "POSTPONED"
             elif status_raw == "FT" and home_score is not None and away_score is not None:
                 status = "FINAL"
