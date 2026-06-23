@@ -118,38 +118,11 @@ struct ProfileView: View {
                     )
                     .disabled(true)
 
-                    // MARK: 🛠️ 開發者測試面板（僅測試用，幫助快速切換會員等級）
-                    #if DEBUG
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("🛠️ 開發者測試面板")
-                            .font(.caption.bold())
-                            .foregroundColor(.orange)
-                        HStack {
-                            ForEach([MembershipTier.free, .basic, .standard, .premium], id: \.self) { t in
-                                Button(t.rawValue) {
-                                    subscriptionManager.tier = t
-                                    subscriptionManager.diamonds = 999
-                                    subscriptionManager.diamondDailyCap = 9999
-                                    UserDefaults.standard.set(t.rawValue, forKey: "membership_tier")
-                                    UserDefaults.standard.set(999, forKey: "diamonds")
-                                    UserDefaults.standard.set(9999, forKey: "diamond_cap")
-                                }
-                                .font(.caption2)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(subscriptionManager.tier == t ? Color.blue : Color.gray.opacity(0.3))
-                                .foregroundColor(.white)
-                                .cornerRadius(16)
-                            }
-                        }
-                        Text("當前: \(subscriptionManager.tier.rawValue) | \(subscriptionManager.diamonds) 點")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding()
-                    .background(Color.orange.opacity(0.1))
-                    .cornerRadius(16)
-                    #endif
+                    // 🆕 [2026-06-23] 開發者測試面板已移除（明晚 Archive 上架前）
+                    // 原本用 #if DEBUG 守衛，但有 archive 設定錯誤時被編譯入 IPA 的風險
+                    // 從 git history 仍可找回：git log --all --oneline -- "PredictX Sports/Features/Profile/ProfileView.swift"
+                    // 開發測試可在 Xcode console 用：defaults write com.predictxsports.app membership_tier -string "Premium"
+
                 }
                 .padding()
             }
