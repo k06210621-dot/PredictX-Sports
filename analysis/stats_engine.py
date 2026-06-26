@@ -39,29 +39,41 @@ class StatsEngine:
             # 用 autocommit 模式，單筆查詢失敗不會卡住後續查詢
             self.conn.autocommit = True
 
-    def get_overall_hit_rates(self):
+    def get_overall_hit_rates(self, max_games=800):
         """
-        Calculate hit rate per league.
+        Calculate hit rate per league, limited to the most recent N games.
+        Default 800 games to keep the rate responsive to recent performance.
         """
         self._ensure_conn()
         query = """
+            WITH ranked AS (
+                SELECT
+                    t.league,
+                    (ga.analysis_data->'actual_result'->>'is_hit')::boolean as is_hit,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY t.league
+                        ORDER BY g.match_date DESC, g.game_id DESC
+                    ) as rn
+                FROM predictx.game_analysis ga
+                JOIN predictx.games g ON ga.game_id = g.game_id
+                JOIN predictx.teams t ON g.home_team_id = t.team_id
+                WHERE ga.analysis_data->'actual_result' IS NOT NULL
+            )
             SELECT
-                t.league,
+                league,
                 COUNT(*) as total_analyzed,
-                COUNT(*) FILTER (WHERE (ga.analysis_data->'actual_result'->>'is_hit')::boolean = true) as total_hits,
+                COUNT(*) FILTER (WHERE is_hit = true) as total_hits,
                 ROUND(
-                    (COUNT(*) FILTER (WHERE (ga.analysis_data->'actual_result'->>'is_hit')::boolean = true))::numeric /
+                    (COUNT(*) FILTER (WHERE is_hit = true))::numeric /
                     NULLIF(COUNT(*), 0), 3
                 ) as hit_rate
-            FROM predictx.game_analysis ga
-            JOIN predictx.games g ON ga.game_id = g.game_id
-            JOIN predictx.teams t ON g.home_team_id = t.team_id
-            WHERE ga.analysis_data->'actual_result' IS NOT NULL
-            GROUP BY t.league
+            FROM ranked
+            WHERE rn <= %s
+            GROUP BY league
         """
         cur = self.conn.cursor()
         try:
-            cur.execute(query)
+            cur.execute(query, (max_games,))
             results = cur.fetchall()
         except Exception:
             self.conn.rollback()
