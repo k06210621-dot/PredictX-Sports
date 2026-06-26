@@ -58,6 +58,7 @@ class StatsEngine:
                 JOIN predictx.games g ON ga.game_id = g.game_id
                 JOIN predictx.teams t ON g.home_team_id = t.team_id
                 WHERE ga.analysis_data->'actual_result' IS NOT NULL
+                  AND t.league != 'FIFA'
             )
             SELECT
                 league,
