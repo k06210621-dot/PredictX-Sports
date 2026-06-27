@@ -152,7 +152,9 @@ def save_analysis(conn, game_id, analysis_result):
                 # 用 thread 跑推播迴圈（完全獨立於 main thread 的 event loop）
                 import threading
                 import sys
-                print(f"  [PUSH] 觸發推播: game={game_id[:8]}... conf={confidence_val}", flush=True)
+                import logging
+                _logger = logging.getLogger("run_analysis")
+                _logger.info(f"  [PUSH] 觸發推播: game={game_id[:8]}... conf={confidence_val}")
                 def _push_worker():
                     try:
                         import asyncio as _aio
@@ -162,18 +164,18 @@ def save_analysis(conn, game_id, analysis_result):
                             confidence=confidence_val,
                             min_tier='premium',
                         ))
-                        print(f"  [PUSH] 結果: {result}", flush=True)
+                        _logger.info(f"  [PUSH] 結果: {result}")
                     except Exception as worker_err:
                         import traceback
-                        print(f"  ⚠ push worker error: {worker_err}", flush=True)
-                        print(f"  ⚠ traceback: {traceback.format_exc()}", flush=True)
+                        _logger.error(f"  ⚠ push worker error: {worker_err}")
+                        _logger.error(f"  ⚠ traceback: {traceback.format_exc()}")
 
                 t = threading.Thread(target=_push_worker, daemon=True)
                 t.start()
-                print(f"  [PUSH] thread started, is_alive={t.is_alive()}", flush=True)
+                _logger.info(f"  [PUSH] thread started, is_alive={t.is_alive()}")
         except Exception as push_err:
             # 推播失敗不影響分析結果（已 commit）
-            print(f"  ⚠ push trigger failed (non-fatal): {push_err}", flush=True)
+            _logger.error(f"  ⚠ push trigger failed (non-fatal): {push_err}")
 
         return True
     except Exception as e:
