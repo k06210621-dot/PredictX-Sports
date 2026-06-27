@@ -151,23 +151,29 @@ def save_analysis(conn, game_id, analysis_result):
 
                 # 用 thread 跑推播迴圈（完全獨立於 main thread 的 event loop）
                 import threading
+                import sys
+                print(f"  [PUSH] 觸發推播: game={game_id[:8]}... conf={confidence_val}", flush=True)
                 def _push_worker():
                     try:
                         import asyncio as _aio
                         from push_service import trigger_match_push
-                        _aio.run(trigger_match_push(
+                        result = _aio.run(trigger_match_push(
                             match_info=match_info,
                             confidence=confidence_val,
                             min_tier='premium',
                         ))
+                        print(f"  [PUSH] 結果: {result}", flush=True)
                     except Exception as worker_err:
-                        print(f"  ⚠ push worker error: {worker_err}")
+                        import traceback
+                        print(f"  ⚠ push worker error: {worker_err}", flush=True)
+                        print(f"  ⚠ traceback: {traceback.format_exc()}", flush=True)
 
                 t = threading.Thread(target=_push_worker, daemon=True)
                 t.start()
+                print(f"  [PUSH] thread started, is_alive={t.is_alive()}", flush=True)
         except Exception as push_err:
             # 推播失敗不影響分析結果（已 commit）
-            print(f"  ⚠ push trigger failed (non-fatal): {push_err}")
+            print(f"  ⚠ push trigger failed (non-fatal): {push_err}", flush=True)
 
         return True
     except Exception as e:
