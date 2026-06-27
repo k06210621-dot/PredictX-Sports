@@ -134,6 +134,41 @@ def save_analysis(conn, game_id, analysis_result):
             (game_id, json.dumps(analysis_result))
         )
         conn.commit()
+        cur.close()
+
+        # 🆕 [2026-06-27] 資料更新立即觸發推播（信心度 >= 8 → 所有 Premium + push_enabled 用戶）
+        # 用 threading 在背景觸發推播，不阻塞 commit 與 main 流程
+        try:
+            confidence = analysis_result.get('confidence')
+            if confidence is not None and float(confidence) >= 8:
+                match_info = {
+                    'game_id': game_id,
+                    'home_team': home_name or '主隊',
+                    'away_team': away_name or '客隊',
+                    'match_date': str(g_row.get('match_date')) if g_row else '',
+                }
+                confidence_val = float(confidence)
+
+                # 用 thread 跑推播迴圈（完全獨立於 main thread 的 event loop）
+                import threading
+                def _push_worker():
+                    try:
+                        import asyncio as _aio
+                        from push_service import trigger_match_push
+                        _aio.run(trigger_match_push(
+                            match_info=match_info,
+                            confidence=confidence_val,
+                            min_tier='premium',
+                        ))
+                    except Exception as worker_err:
+                        print(f"  ⚠ push worker error: {worker_err}")
+
+                t = threading.Thread(target=_push_worker, daemon=True)
+                t.start()
+        except Exception as push_err:
+            # 推播失敗不影響分析結果（已 commit）
+            print(f"  ⚠ push trigger failed (non-fatal): {push_err}")
+
         return True
     except Exception as e:
         print(f"  ❌ DB save error for {game_id}: {e}")

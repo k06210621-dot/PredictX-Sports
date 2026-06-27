@@ -149,6 +149,63 @@ def health():
     return jsonify(checks), 200 if overall_healthy else 503
 
 
+# 🆕 [2026-06-27] 推播通知相關 endpoint
+@app.route('/api/register_device', methods=['POST'])
+def register_device():
+    """註冊或更新 APNs device token（包含 tier 與 push_enabled 偏好）"""
+    try:
+        data = request.get_json()
+        token = data.get('token')
+        tier = data.get('tier', 'free')
+        push_enabled = data.get('push_enabled', False)
+
+        if not token or not isinstance(token, str):
+            return jsonify({"error": "Missing or invalid token"}), 400
+
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO predictx.device_tokens (device_token, tier, push_enabled, updated_at)
+            VALUES (%s, %s, %s, NOW())
+            ON CONFLICT (device_token) DO UPDATE
+            SET tier = EXCLUDED.tier,
+                push_enabled = EXCLUDED.push_enabled,
+                updated_at = NOW()
+        """, (token, tier, bool(push_enabled)))
+        conn.commit()
+        cur.close()
+        return jsonify({"status": "ok"}), 200
+    except Exception as e:
+        logger.error(f"register_device error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/update_push_preference', methods=['POST'])
+def update_push_preference():
+    """更新推播偏好設定（不變動 token）"""
+    try:
+        data = request.get_json()
+        token = data.get('token')
+        push_enabled = data.get('push_enabled', False)
+
+        if not token or not isinstance(token, str):
+            return jsonify({"error": "Missing or invalid token"}), 400
+
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE predictx.device_tokens
+            SET push_enabled = %s, updated_at = NOW()
+            WHERE device_token = %s
+        """, (bool(push_enabled), token))
+        conn.commit()
+        cur.close()
+        return jsonify({"status": "ok", "rows_updated": cur.rowcount}), 200
+    except Exception as e:
+        logger.error(f"update_push_preference error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/init_db', methods=['POST'])
 def init_db():
     try:

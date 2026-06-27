@@ -174,6 +174,53 @@ class APIService {
         return try JSONDecoder().decode([HitRateTrendModel].self, from: data)
     }
 
+    // MARK: - 🆕 推播通知（APNs device token 註冊）
+
+    /// 註冊或更新裝置的 APNs token 到後端（包含 tier 與 push_enabled 狀態）
+    func registerDevice(token: String, tier: String, pushEnabled: Bool) async throws {
+        guard let url = URL(string: "\(baseURL)/api/register_device") else {
+            throw URLError(.badURL)
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "token": token,
+            "tier": tier,
+            "push_enabled": pushEnabled
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+    }
+
+    /// 更新推播偏好設定（不變動 token）
+    func updatePushPreference(token: String, pushEnabled: Bool) async throws {
+        guard let url = URL(string: "\(baseURL)/api/update_push_preference") else {
+            throw URLError(.badURL)
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let body: [String: Any] = [
+            "token": token,
+            "push_enabled": pushEnabled
+        ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (_, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+    }
+
     // ⚠️ triggerSettlement() 已移除 (2026-06-24 死碼清理)
     // 此方法無任何呼叫者，settlement 是 Railway cron 自動跑的
     // 若未來需要手動觸發 settlement，可從 git history 找回（commit 524be08 之前）

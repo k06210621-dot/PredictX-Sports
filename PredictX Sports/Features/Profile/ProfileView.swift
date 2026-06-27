@@ -8,6 +8,7 @@ struct ProfileView: View {
     @EnvironmentObject var favoritesStore: FavoritesStore
     @EnvironmentObject var subscriptionManager: SubscriptionManager
     @EnvironmentObject var themeManager: ThemeManager
+    @StateObject private var pushManager = PushServiceManager.shared
     
     var body: some View {
         NavigationStack {
@@ -72,7 +73,12 @@ struct ProfileView: View {
                         )
                     }
                     
-                    // MARK: ⑦ 客服中心
+                    // MARK: ⑦ 推播通知開關（僅 Premium 用戶可見）
+                    if subscriptionManager.tier == .premium {
+                        PushNotificationToggleRow(pushManager: pushManager)
+                    }
+
+                    // MARK: ⑧ 客服中心
                     NavigationLink {
                         SupportCenterView()
                     } label: {
@@ -515,5 +521,52 @@ struct AdRewardView: View {
     private func rewardAndDismiss() {
         _ = subscriptionManager.watchAdForPoints()
         isPresented = false
+    }
+}
+
+// MARK: - 🆕 推播通知開關 Row（僅 Premium 用戶可見）
+struct PushNotificationToggleRow: View {
+    @ObservedObject var pushManager: PushServiceManager
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(pushManager.isPushEnabled ? Color.orange.opacity(0.15) : Color.gray.opacity(0.15))
+                    .frame(width: 36, height: 36)
+                Image(systemName: pushManager.isPushEnabled ? "bell.badge.fill" : "bell.slash")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(pushManager.isPushEnabled ? .orange : .secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("推播通知")
+                    .font(.body)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                Text(statusText)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: Binding(
+                get: { pushManager.isPushEnabled },
+                set: { newValue in
+                    Task { await pushManager.setPushEnabled(newValue) }
+                }
+            ))
+            .labelsHidden()
+            .tint(.orange)
+        }
+        .padding(.vertical, 8)
+    }
+
+    private var statusText: String {
+        if pushManager.isPushEnabled {
+            return "AI 信心度 ≥ 8 的賽事即時通知"
+        }
+        return "開啟後接收高信心度賽事推播"
     }
 }
