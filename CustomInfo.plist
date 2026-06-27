@@ -42,7 +42,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
-	<string>3</string>
+	<string>4</string>
 	<key>GADApplicationIdentifier</key>
 	<string>ca-app-pub-6186518924141006~8915583551</string>
 	<key>LSRequiresIPhoneOS</key>

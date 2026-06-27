@@ -17,6 +17,27 @@ struct HomeView: View {
     @State private var showUnlockToast: Bool = false
     @State private var unlockToastMessage: String = ""
     @State private var flashGameId: String? = nil
+    // 🆕 [推播點擊導航] 接收 AppDelegate 轉發的 pushNotificationTapped，
+    //   找到對應賽事後觸發 openAnalysis。需 state 才能在 onReceive closure 內 mutate。
+    @State private var pendingPushGameId: String? = nil
+
+    /// 🆕 處理推播點擊導航
+    /// 從 filteredPredictions + historicalMatches 找對應賽事，走 openAnalysis 權限閘門
+    private func handlePushNavigation(gameId: String?) {
+        guard let gameId = gameId else { return }
+        // 先在 filteredPredictions 找（顯示中的 upcoming），找不到再 fallback 到 historicalMatches
+        let match = store.filteredPredictions.first(where: { $0.id == gameId })
+            ?? store.historicalMatches.values.flatMap { $0 }.first(where: { $0.id == gameId })
+        if let match = match {
+            openAnalysis(for: match)
+            scrollToTopTrigger.toggle()
+        } else {
+            #if DEBUG
+            print("⚠️ [Push] 找不到對應賽事: \(gameId)，賽事可能尚未載入或已過期")
+            #endif
+        }
+        pendingPushGameId = nil
+    }
 
     /// 點擊賽事卡片的權限閘門
     private func openAnalysis(for match: Match) {
@@ -227,6 +248,16 @@ struct HomeView: View {
                     .environmentObject(subscriptionManager)
             }
             .onAppear { syncUnlockState() }
+            // 🆕 [推播點擊導航] 監聽 AppDelegate 發出的 pushNotificationTapped
+            //   收到後存到 pendingPushGameId，由 onChange 觸發 openAnalysis
+            .onReceive(NotificationCenter.default.publisher(for: .pushNotificationTapped)) { notification in
+                if let gameId = notification.userInfo?["game_id"] as? String {
+                    pendingPushGameId = gameId
+                }
+            }
+            .onChange(of: pendingPushGameId) { newGameId in
+                handlePushNavigation(gameId: newGameId)
+            }
             // 🆕 [A] 下拉更新：使用者可在首頁下拉刷新賽事資料
             .refreshable {
                 await store.refresh()
