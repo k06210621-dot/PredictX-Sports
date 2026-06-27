@@ -17,7 +17,8 @@ import os
 import json
 import logging
 from typing import List, Dict, Any
-from datetime import datetime
+from datetime import datetime, date
+from zoneinfo import ZoneInfo
 import requests
 from .base import BaseIngester
 
@@ -123,17 +124,33 @@ class CPBLIngester(BaseIngester):
             # 修法：strPostponed=yes 僅在 strStatus 非 FT/IN 時才視為 POSTPONED
             status_raw = (e.get("strStatus") or "").upper()
             postponed = (e.get("strPostponed") or "no").lower() == "yes"
+
+            # 日期
+            date_event = e.get("dateEvent") or target_date
+
+            # 🛡 未來日期防護（2026-06-27 實證：TheSportsDB 給 FT+0-0 但比賽在明天）
+            # 解法：未來日期的比賽即使 TheSportsDB 標 FT 也不寫入 FINAL + 清掉比分
+            date_is_future = False
+            try:
+                event_date = datetime.strptime(date_event, "%Y-%m-%d").date()
+                today_taipei = datetime.now(ZoneInfo("Asia/Taipei")).date()
+                date_is_future = event_date > today_taipei
+            except (ValueError, TypeError):
+                pass
+
             if postponed and status_raw not in ("FT", "IN", "IN_PROGRESS", "INPLAY"):
                 status = "POSTPONED"
-            elif status_raw == "FT" and home_score is not None and away_score is not None:
+            elif status_raw == "FT" and home_score is not None and away_score is not None and not date_is_future:
                 status = "FINAL"
             elif status_raw.startswith("IN"):
                 status = "LIVE"
             else:
                 status = "SCHEDULED"
 
-            # 日期
-            date_event = e.get("dateEvent") or target_date
+            # 未來日期的比賽，比分也不應寫入
+            if date_is_future:
+                home_score = None
+                away_score = None
 
             games.append({
                 "season": datetime.now().year,
