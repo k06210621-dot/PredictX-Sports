@@ -19,7 +19,7 @@ import time
 import base64
 import asyncio
 import logging
-import aiohttp
+import httpx
 import jwt
 from datetime import datetime
 from typing import List, Optional
@@ -154,27 +154,20 @@ async def send_push_notification(
                 payload[key] = value
 
     try:
-        # aiohttp 預設支援 HTTP/2（需要[h2]）→ 改用 ClientSession 顯式指定
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                url,
-                headers=headers,
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                if resp.status == 200:
-                    logger.info(f"[APNs] 推播成功 → {device_token[:16]}...")
-                    return True
-                else:
-                    error_text = await resp.text()
-                    # APNs 410 = token 失效（用戶移除 App 或關閉推播）→ 標記為無效
-                    # APNs 400 BadDeviceToken → 同上
-                    logger.warning(
-                        f"[APNs] 推播失敗 HTTP {resp.status}: {error_text} "
-                        f"(token={device_token[:16]}...)"
-                    )
-                    return False
-    except asyncio.TimeoutError:
+        # httpx 原生支援 HTTP/2（APNs 強制要求 HTTP/2）
+        async with httpx.AsyncClient(http2=True, timeout=10.0) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+            if resp.status_code == 200:
+                logger.info(f"[APNs] 推播成功 → {device_token[:16]}...")
+                return True
+            else:
+                error_text = resp.text
+                logger.warning(
+                    f"[APNs] 推播失敗 HTTP {resp.status_code}: {error_text} "
+                    f"(token={device_token[:16]}...)"
+                )
+                return False
+    except httpx.TimeoutException:
         logger.error(f"[APNs] 推播逾時 (token={device_token[:16]}...)")
         return False
     except Exception as e:
