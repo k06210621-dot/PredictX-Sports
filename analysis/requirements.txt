@@ -8,3 +8,7 @@ beautifulsoup4>=4.12
 lxml>=5.1
 pytz>=2023.3
 sentry-sdk[flask]>=1.40
+# 🆕 [2026-06-27] APNs push notification 推播依賴
+aiohttp>=3.9
+httpx[http2]>=0.27
+pyjwt[crypto]>=2.8
