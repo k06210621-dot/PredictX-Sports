@@ -95,6 +95,12 @@ class CPBLIngester(BaseIngester):
         except Exception as e:
             raise RuntimeError(f"CPBL API 連線失敗: {e}")
 
+        # 🆕 [2026-06-28] 跨日期退避（防止 TheSportsDB 限流 30 req/min）
+        # 30 req/min = 2 秒/req，這裡每次 fetch 後 sleep 0.5 秒作為緩衝
+        # base.py 的 run() 會呼叫多次 fetch_games（每次 1 日期），配合 INTER_LEAGUE_DELAY 雙重保險
+        import time as _time
+        _time.sleep(0.5)
+
         events = data.get("events", []) or []
         LOGGER.info(f"CPBL {target_date} API 回傳 {len(events)} 場賽事")
 

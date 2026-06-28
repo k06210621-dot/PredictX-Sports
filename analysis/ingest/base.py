@@ -96,7 +96,7 @@ class BaseIngester(ABC):
             r = resp.json()
             LOGGER.info(
                 f"[{self.league_code}] ✅ 上傳 {len(normalized)} 場 → "
-                f"inserted={r.get('inserted')}, skipped={r.get('skipped')}"
+                f"inserted={r.get('inserted', 0)}, updated={r.get('updated', 0)}, skipped={r.get('skipped', 0)}"
             )
             return True
         except Exception as e:

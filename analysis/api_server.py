@@ -475,6 +475,8 @@ def api_games():
                 g.away_team_score,
                 COALESCE(th.english_name, th.chinese_name) AS home_team,
                 COALESCE(ta.english_name, ta.chinese_name) AS away_team,
+                g.home_pitcher_name,
+                g.away_pitcher_name,
                 (ga.analysis_data->>'confidence')::numeric AS ai_confidence,
                 (ga.analysis_data->>'home_win_probability')::numeric AS ai_home_prob,
                 ga.analysis_data->>'predicted_score' AS ai_predicted_score,
@@ -611,6 +613,23 @@ def insert_games():
             status = g.get('status', 'SCHEDULED')
             home_score = g.get('home_team_score')
             away_score = g.get('away_team_score')
+            # 🆕 投手欄位（MLB ingester 從 statsapi.mlb.com hydrate=probablePitcher 抓）
+            # base.py 傳入的 home_pitcher 是 dict {"name": ..., "id": ...}，要取 name 欄位
+            home_pitcher_raw = g.get('home_pitcher')
+            away_pitcher_raw = g.get('away_pitcher')
+            home_pitcher_name = (
+                home_pitcher_raw.get('name') if isinstance(home_pitcher_raw, dict)
+                else home_pitcher_raw  # 若已是 string 直接用
+            ) if home_pitcher_raw else None
+            away_pitcher_name = (
+                away_pitcher_raw.get('name') if isinstance(away_pitcher_raw, dict)
+                else away_pitcher_raw
+            ) if away_pitcher_raw else None
+            # 過濾 TBD/空字串
+            if home_pitcher_name in ('', 'TBD', 'tbd'):
+                home_pitcher_name = None
+            if away_pitcher_name in ('', 'TBD', 'tbd'):
+                away_pitcher_name = None
 
             if not home_name or not away_name:
                 skipped += 1
@@ -650,13 +669,13 @@ def insert_games():
                 existing = cur.fetchone()
                 if not existing:
                     cur.execute(
-                        """INSERT INTO predictx.games (season, match_date, status, home_team_id, away_team_id, home_team_score, away_team_score)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                        (season, match_date, status, home_id, away_id, home_score, away_score)
+                        """INSERT INTO predictx.games (season, match_date, status, home_team_id, away_team_id, home_team_score, away_team_score, home_pitcher_name, away_pitcher_name)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                        (season, match_date, status, home_id, away_id, home_score, away_score, home_pitcher_name, away_pitcher_name)
                     )
                     inserted += 1
                 else:
-                    # 更新現有賽事的 status 和 score
+                    # 更新現有賽事的 status / score / pitcher
                     update_fields = []
                     update_vals = []
                     if status:
@@ -668,6 +687,13 @@ def insert_games():
                     if away_score is not None:
                         update_fields.append("away_team_score = %s")
                         update_vals.append(away_score)
+                    # 🆕 投手欄位：只在有值時更新（避免 MLB 開打前 TBD 蓋掉已設定的投手）
+                    if home_pitcher_name is not None:
+                        update_fields.append("home_pitcher_name = %s")
+                        update_vals.append(home_pitcher_name)
+                    if away_pitcher_name is not None:
+                        update_fields.append("away_pitcher_name = %s")
+                        update_vals.append(away_pitcher_name)
                     if update_fields:
                         update_vals.append(existing['game_id'])
                         cur.execute(

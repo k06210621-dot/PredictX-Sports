@@ -82,7 +82,13 @@ def main():
     start = time.time()
     results: dict = {}
 
-    for code in selected:
+    # 🆕 [2026-06-28] 跨聯盟間隔，防止 CPBL TheSportsDB 限流（30 req/min）
+    # MLB 用 statsapi、NPaB 用 npb.jp、NBA 用 ESPN 都無限流
+    # CPBL 用 TheSportsDB，免費版 30 req/min，會撞 429
+    # 解法：聯盟之間 sleep 2 秒，且 CPBL 跑在最後確保最受限的源最後請求
+    INTER_LEAGUE_DELAY = 2.0
+
+    for idx, code in enumerate(selected):
         cls, desc = LEAGUE_REGISTRY[code]
         LOGGER.info(f"\n[{code}] {desc}")
         ingester = cls()
@@ -98,6 +104,9 @@ def main():
                     ingester.close()
             except Exception:
                 pass
+        # 跨聯盟間隔（最後一個不需要）
+        if idx < len(selected) - 1:
+            time.sleep(INTER_LEAGUE_DELAY)
 
     elapsed = time.time() - start
     LOGGER.info("\n" + "=" * 60)
@@ -115,7 +124,7 @@ def main():
 
     backfill_results: dict = {}
     bf_start = time.time()
-    for code in selected:
+    for idx, code in enumerate(selected):
         cls, desc = LEAGUE_REGISTRY[code]
         LOGGER.info(f"\n[{code}] 昨日補抓 ({desc})")
         ingester = cls()
@@ -162,6 +171,9 @@ def main():
         else:
             backfill_results[code] = "PARTIAL_FAIL"
         LOGGER.info(f"  ↳ {code} 結果明細: {league_results}")
+        # 🆕 跨聯盟間隔（同 main 階段）
+        if idx < len(selected) - 1:
+            time.sleep(INTER_LEAGUE_DELAY)
 
     bf_elapsed = time.time() - bf_start
     LOGGER.info("\n" + "=" * 60)

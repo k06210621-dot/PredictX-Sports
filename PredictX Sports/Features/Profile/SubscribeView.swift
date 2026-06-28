@@ -230,13 +230,13 @@ struct SubscribeView: View {
                            standard: NSLocalizedString("feature.unlimited", comment: "無限"),
                            premium: NSLocalizedString("feature.unlimited", comment: "無限"))
                 Divider().background(Color(.separator))
-                FeatureRow(label: NSLocalizedString("feature.history", comment: "歷史賽事比分與分析對照"),
+                FeatureRow(label: NSLocalizedString("feature.history", comment: "歷史賽事比分與分析"),
                            free: "✓", basic: "✓", standard: "✓", premium: "✓")
                 Divider().background(Color(.separator))
                 FeatureRow(label: NSLocalizedString("feature.favorites", comment: "收藏賽事分析"),
                            free: "—", basic: "✓", standard: "✓", premium: "✓")
                 Divider().background(Color(.separator))
-                FeatureRow(label: NSLocalizedString("feature.watch_ads", comment: "觀看廣告 (每日上限三則)"),
+                FeatureRow(label: NSLocalizedString("feature.watch_ads", comment: "觀看廣告（上限三則）"),
                            free: "20 點", basic: "20 點", standard: "—", premium: "—")
                 Divider().background(Color(.separator))
                 FeatureRow(label: NSLocalizedString("feature.dashboard", comment: "模型驗證率儀表板"),
@@ -534,7 +534,7 @@ enum ProductTier: CaseIterable {
         switch self {
         case .basic: return "每日 120 分析點數（可累積・無上限）"
         case .standard: return "無限點數・含驗證率儀表板"
-        case .premium: return "無限 + 推播通知"
+        case .premium: return "無限點數+驗證率儀表板+重點觀察賽事推播通知"
         }
     }
 

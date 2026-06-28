@@ -39,6 +39,8 @@
 "feature.player_db" = "球員資料庫";
 "feature.favorites" = "收藏賽事分析";
 "feature.dashboard" = "模型驗證率儀表板";
+"feature.history" = "歷史賽事比分與分析";
+"feature.watch_ads" = "觀看廣告（上限三則）";
 "feature.push" = "推播通知";
 "feature.trial_expired" = "試用期過期後";
 "feature.auto_stop" = "自動停止";
