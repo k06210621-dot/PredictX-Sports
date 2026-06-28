@@ -46,13 +46,13 @@ struct HistoryView: View {
             .task {
                 await store.loadHistoryForLeague(selectedLeague)
             }
-            .onChange(of: selectedLeague) { oldValue, newLeague in
-                leagueFilter = .specific(newLeague)
+            .onChange(of: selectedLeague) { oldValue, newValue in
+                leagueFilter = .specific(newValue)
                 Task {
-                    await store.loadHistoryForLeague(newLeague)
+                    await store.loadHistoryForLeague(newValue)
                 }
             }
-            .onChange(of: leagueFilter) { _, newValue in
+            .onChange(of: leagueFilter) { oldValue, newValue in
                 if case .specific(let lg) = newValue, lg != selectedLeague {
                     selectedLeague = lg
                 }

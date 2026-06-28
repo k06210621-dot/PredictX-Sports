@@ -1,5 +1,7 @@
 import Foundation
 import SwiftUI
+import Combine
+import UserNotifications
 
 /// 推播通知管理器：包裝 APNs device token 註冊與偏好設定
 /// 與後端 /api/register_device + /api/update_push_preference 對接
@@ -123,4 +125,4 @@ final class PushServiceManager: ObservableObject {
 }
 
 // 因為 SwiftUI EnvironmentObject 需要這裡 import UNUserNotificationCenter
-import UserNotifications
+// import UserNotifications  // 已移至檔案頂部

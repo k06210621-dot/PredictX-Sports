@@ -213,6 +213,13 @@ struct MembershipCardView: View {
                     Text(subtitleText)
                         .font(.caption)
                         .foregroundColor(.white.opacity(0.8))
+                    
+                    // Free 試用期間顯示每日補滿說明
+                    if subscriptionManager.tier == .free && !subscriptionManager.trialExpired {
+                        Text("每日 AI 分析點數補滿 60 點")
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.7))
+                    }
                 }
                 
                 Spacer()

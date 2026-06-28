@@ -23,8 +23,16 @@ struct HomeView: View {
 
     /// 🆕 處理推播點擊導航
     /// 從 filteredPredictions + historicalMatches 找對應賽事，走 openAnalysis 權限閘門
-    private func handlePushNavigation(gameId: String?) {
+    /// 若 App 剛啟動賽事尚未載入，會等待 isLoading 變 false 再 retry（最多 5 次）
+    private func handlePushNavigation(gameId: String?, retryCount: Int = 0) {
         guard let gameId = gameId else { return }
+        // 等待 HomeStore 載入完成（最多 5 次 retry，每次延遲 0.5 秒）
+        if store.isLoading && store.filteredPredictions.isEmpty && retryCount < 5 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.handlePushNavigation(gameId: gameId, retryCount: retryCount + 1)
+            }
+            return
+        }
         // 先在 filteredPredictions 找（顯示中的 upcoming），找不到再 fallback 到 historicalMatches
         let match = store.filteredPredictions.first(where: { $0.id == gameId })
             ?? store.historicalMatches.values.flatMap { $0 }.first(where: { $0.id == gameId })
@@ -214,7 +222,7 @@ struct HomeView: View {
                             .padding(.vertical)
                         }
                     }
-                    .onChange(of: scrollToTopTrigger) { _, _ in
+                    .onChange(of: scrollToTopTrigger) { oldValue, newValue in
                         withAnimation(.smooth) {
                             proxy.scrollTo("scrollTop", anchor: .top)
                         }
@@ -255,8 +263,8 @@ struct HomeView: View {
                     pendingPushGameId = gameId
                 }
             }
-            .onChange(of: pendingPushGameId) { newGameId in
-                handlePushNavigation(gameId: newGameId)
+            .onChange(of: pendingPushGameId) { oldValue, newValue in
+                handlePushNavigation(gameId: newValue)
             }
             // 🆕 [A] 下拉更新：使用者可在首頁下拉刷新賽事資料
             .refreshable {
