@@ -11,6 +11,9 @@ struct HomeView: View {
     @State private var spendToastMessage: String = ""
     @State private var showConfirmAlert: Bool = false
     @State private var matchToConfirm: Match? = nil
+    // 🆕 [Bug Fix] 無 AI 分析內容的提示
+    @State private var showNoAnalysisAlert: Bool = false
+    @State private var noAnalysisAlertMessage: String = ""
     // 🆕 [B] 卡片點擊反饋：每張卡片短暫縮放效果
     @State private var tapScale: [String: Double] = [:]
     // 🆕 [D] 解鎖成功反饋：toast 訊息 + 閃光效果
@@ -49,6 +52,13 @@ struct HomeView: View {
 
     /// 點擊賽事卡片的權限閘門
     private func openAnalysis(for match: Match) {
+        // 🆕 [Bug Fix] 沒有 AI 分析內容的賽事，禁止使用點數開啟
+        guard match.hasAnalysis else {
+            noAnalysisAlertMessage = "比賽資訊不足\n尚未有 AI 分析內容"
+            showNoAnalysisAlert = true
+            return
+        }
+        
         if subscriptionManager.isUnlocked(match.id) {
             // 已解鎖：直接開啟
             selectedMatchForDetail = match
@@ -280,6 +290,12 @@ struct HomeView: View {
             } message: {
                 let remaining = subscriptionManager.diamonds
                 Text("點選同意後將扣除 20 點分析點數查看本場賽事 AI 詳情分析。\n\n目前剩餘：\(remaining) 點")
+            }
+            // 🆕 [Bug Fix] 無 AI 分析內容時的提示
+            .alert("無法開啟分析", isPresented: $showNoAnalysisAlert) {
+                Button("了解", role: .cancel) { }
+            } message: {
+                Text(noAnalysisAlertMessage)
             }
             .overlay(alignment: .bottom) {
                 if showSpendToast {

@@ -59,6 +59,12 @@ struct Match: Codable, Identifiable, Hashable {
         self.aiActualScore = model.aiActualScore
     }
 
+    /// 是否已有 AI 分析內容
+    /// 條件：aiConfidence 或 aiWinRateHome 有值，且 game_analysis 資料存在
+    var hasAnalysis: Bool {
+        return aiConfidence != nil || aiWinRateHome != nil
+    }
+
     /// 清洗 AI 預測比分，僅保留「整數-整數」格式（例如 "5-4"）。
     /// 不合規的污染字串（中英隊名、空格格式）一律回傳 nil，避免誤顯示。
     /// 注意：純數字-數字格式中允許全形「－」（U+FF0D）轉為半形「-」。
