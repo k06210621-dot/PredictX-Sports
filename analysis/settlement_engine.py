@@ -141,16 +141,28 @@ class SettlementEngine:
             confidence = float(analysis_data.get('confidence', 5))
             predicted_winner = 'home' if confidence >= 5 else 'draw'
 
-        is_hit = (actual_winner == predicted_winner)
-
-        analysis_data['actual_result'] = {
-            "is_hit": is_hit,
-            "actual_winner": actual_winner,
-            "predicted_winner": predicted_winner,
-            "home_prob_norm": round(home_prob_norm, 4),
-            "actual_score": f"{int(actual_home_score)}-{int(actual_away_score)}",
-            "settled_at": datetime.now().isoformat()
-        }
+        if actual_winner == 'draw':
+            # 平手不計入驗證率（is_hit = None），避免污染命中率
+            is_hit = None
+            analysis_data['actual_result'] = {
+                "is_hit": None,
+                "actual_winner": 'draw',
+                "predicted_winner": predicted_winner,
+                "home_prob_norm": round(home_prob_norm, 4),
+                "actual_score": f"{int(actual_home_score)}-{int(actual_away_score)}",
+                "reason": "draw（平手，不予計算）",
+                "settled_at": datetime.now().isoformat()
+            }
+        else:
+            is_hit = (actual_winner == predicted_winner)
+            analysis_data['actual_result'] = {
+                "is_hit": is_hit,
+                "actual_winner": actual_winner,
+                "predicted_winner": predicted_winner,
+                "home_prob_norm": round(home_prob_norm, 4),
+                "actual_score": f"{int(actual_home_score)}-{int(actual_away_score)}",
+                "settled_at": datetime.now().isoformat()
+            }
 
         update_query = """
             UPDATE predictx.game_analysis
