@@ -417,27 +417,30 @@ private var sections: [DisclaimerSection] {
                     title: "9. 隱私權政策",
                     color: .mint,
                     paragraphs: [
-                        ParagraphItem(text: "PredictX Sports 重視您的隱私權。本政策說明我們如何收集、使用及保護您的個人資料。"),
+                        ParagraphItem(text: "PredictX Sports 重視您的隱私權。本節摘要說明我們如何收集、使用及保護您的資料。完整政策請參閱下方連結。"),
                         ParagraphItem(text: "我們收集的資料類型："),
-                        ParagraphItem(bullet: "裝置資訊：iOS 版本、裝置型號（用於相容性分析）", icon: "iphone", color: .mint),
-                        ParagraphItem(bullet: "使用數據：功能使用次數、分析查詢記錄（用於服務優化）", icon: "chart.bar.fill", color: .mint),
-                        ParagraphItem(bullet: "購買記錄：Apple 提供的交易收據（用於驗證訂閱狀態）", icon: "receipt.fill", color: .mint),
+                        ParagraphItem(bullet: "APNs 推播識別碼：您開啟推播時系統產生的 device token（用於發送高信心度賽事推播）", icon: "applelogo", color: .mint),
+                        ParagraphItem(bullet: "訂閱資訊：透過 Apple StoreKit 處理的訂閱等級（Free / Basic / Standard / Premium）", icon: "creditcard.fill", color: .mint),
+                        ParagraphItem(bullet: "推論觀看歷史：您查看過的 AI 推論結果（用於個人化驗證率統計）", icon: "chart.line.uptrend.xyaxis", color: .mint),
+                        ParagraphItem(bullet: "廣告識別碼 (IDFA)：僅在您同意時用於 Google AdMob 個人化廣告", icon: "rectangle.advertised", color: .mint),
                         ParagraphItem(text: "我們不會收集的資料："),
-                        ParagraphItem(bullet: "個人身分識別資訊（姓名、地址、身分證字號）", icon: "person.slash.fill", color: .green),
+                        ParagraphItem(bullet: "個人身分識別資訊（email、姓名、Apple ID 個資）", icon: "person.slash.fill", color: .green),
                         ParagraphItem(bullet: "地理位置資訊", icon: "location.slash.fill", color: .green),
                         ParagraphItem(bullet: "聯絡人、照片或裝置儲存內容", icon: "lock.shield.fill", color: .green),
-                        ParagraphItem(text: "資料儲存與安全："),
-                        ParagraphItem(bullet: "收藏資料僅儲存於本機（UserDefaults），不會上傳至伺服器", icon: "internaldrive.fill", color: .blue),
-                        ParagraphItem(bullet: "訂閱資訊透過 Apple 安全交易系統處理，本平台不會儲存您的付款資料", icon: "lock.fill", color: .blue),
-                        ParagraphItem(bullet: "分析結果暫存於本地資料庫，僅用於服務效能提升", icon: "cylinder.fill", color: .blue),
-                        ParagraphItem(text: "第三方服務：本平台使用 Apple StoreKit 處理訂閱交易。Apple 的隱私權政策適用於所有透過 App Store 進行的交易。"),
-                        ParagraphItem(text: "資料刪除：您可以隨時透過「設定」>「清除本地資料」刪除所有本機儲存的資料。如欲要求刪除伺服器記錄，請聯繫客服。"),
-                        ParagraphItem(text: "本隱私權政策可能不時更新。重大變更時，我們將透過 App 更新通知您。"),
-                        ParagraphItem(button: "查看完整隱私權政策（外部連結）", action: {
-                            if let url = URL(string: "https://predictx-sports.notion.site/Privacy-Policy") {
-                                UIApplication.shared.open(url)
-                            }
-                        })
+                        ParagraphItem(bullet: "iOS 版本、機型等裝置資訊", icon: "iphone.slash", color: .green),
+                        ParagraphItem(text: "本地儲存（僅存於您裝置）："),
+                        ParagraphItem(bullet: "收藏的隊伍、深色模式偏好、解鎖的賽事（儲存於 iOS UserDefaults）", icon: "internaldrive.fill", color: .blue),
+                        ParagraphItem(text: "資料保留期限："),
+                        ParagraphItem(bullet: "APNs 推播 token：保留至您解除安裝 App 或手動關閉推播", icon: "clock.fill", color: .blue),
+                        ParagraphItem(bullet: "推論觀看歷史：保留 90 天後自動刪除", icon: "calendar.badge.clock", color: .blue),
+                        ParagraphItem(bullet: "本地偏好設定：隨時可透過解除安裝 App 清除", icon: "trash.fill", color: .blue),
+                        ParagraphItem(text: "第三方服務："),
+                        ParagraphItem(bullet: "Apple StoreKit：處理訂閱付款", icon: "applelogo", color: .gray),
+                        ParagraphItem(bullet: "Google AdMob：顯示廣告（含 Google User Messaging Platform 處理同意聲明）", icon: "g.circle.fill", color: .gray),
+                        ParagraphItem(bullet: "雲端後端 API：提供賽事資料與 AI 推論", icon: "cloud.fill", color: .gray),
+                        ParagraphItem(text: "您的權利：您可隨時透過 iOS 設定 → Apple ID → 訂閱管理訂閱，或透過 iOS 設定 → 隱私權 → 追蹤關閉個人化廣告。如需查詢、修改或刪除您的資料，請聯繫客服。"),
+                        ParagraphItem(link: "查看完整隱私權政策（外部連結）", url: "https://k06210621-dot.github.io/privacy/"),
+                        ParagraphItem(link: "查看完整使用條款（Apple 標準 EULA）", url: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")
                     ]
                 ),
         
