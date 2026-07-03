@@ -39,10 +39,10 @@ class StatsEngine:
             # 用 autocommit 模式，單筆查詢失敗不會卡住後續查詢
             self.conn.autocommit = True
 
-    def get_overall_hit_rates(self, max_games=800):
+    def get_overall_hit_rates(self, max_games=100):
         """
         Calculate hit rate per league, limited to the most recent N games.
-        Default 800 games to keep the rate responsive to recent performance.
+        Default 100 games to keep the rate responsive to recent performance.
         """
         self._ensure_conn()
         query = """
