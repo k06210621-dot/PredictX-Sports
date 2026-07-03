@@ -329,6 +329,7 @@ struct SettlementDetailSheet: View {
         switch league {
         case "MLB": return "⚾"
         case "NBA": return "🏀"
+        case "WNBA": return "🏀"
         case "NPB": return "🇯🇵"
         case "CPBL": return "🇹🇼"
         default: return "🏟"

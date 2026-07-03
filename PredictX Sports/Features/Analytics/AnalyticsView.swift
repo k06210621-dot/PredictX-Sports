@@ -55,6 +55,9 @@ struct AnalyticsView: View {
             }
             .background(SportsDarkBackground())
             .navigationTitle("AI 模型驗證中心")
+            .refreshable {
+                await store.loadRealAnalyticsData()
+            }
         }
     }
 }
@@ -168,6 +171,10 @@ struct OverallAccuracyCard: View {
                     .foregroundColor(.secondary)
                     .padding(.bottom, 6)
             }
+
+            Text("抓取數據：各聯盟最近 100 場的加權平均（上限 500 場）")
+                .font(.system(size: 10))
+                .foregroundColor(Color(.tertiaryLabel))
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -300,6 +307,7 @@ struct FormIndicator: View {
         switch league {
         case "MLB":  return "⚾"
         case "NBA":  return "🏀"
+        case "WNBA": return "🏀"
         case "NPB":  return "🇯🇵"
         case "CPBL": return "🇹🇼"
         default:     return ""
