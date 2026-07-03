@@ -2095,9 +2095,14 @@ Park Factor: {pf:.2f} ({park_interp})
         home_predicted = round(((home_avg_f or 3) + (away_avg_a or 3)) / 2)
         away_predicted = round(((away_avg_f or 3) + (home_avg_a or 3)) / 2)
 
-        # 確保範圍合理（棒球 1-12）
-        home_predicted = max(1, min(12, home_predicted))
-        away_predicted = max(1, min(12, away_predicted))
+        # 🆕 [fix] 依聯盟決定單隊得分範圍（WNBA 70-110、NBA 95-135、棒球 1-12）
+        score_ranges = {
+            "MLB": (1, 12), "NPB": (1, 12), "CPBL": (1, 12),
+            "NBA": (95, 135), "WNBA": (70, 110),
+        }
+        lo, hi = score_ranges.get(league.upper() if league else "", (1, 12))
+        home_predicted = max(lo, min(hi, home_predicted))
+        away_predicted = max(lo, min(hi, away_predicted))
 
         # 🆕 [fix] 建立分析性句子（避免 fallback 摘要過短）
         # 1. 主隊實力描述
