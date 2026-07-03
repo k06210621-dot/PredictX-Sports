@@ -722,20 +722,13 @@ class AnalysisEngine:
             except Exception as e:
                 print(f"  ⚠ NPB data fetch error: {e}")
 
-        # 8.5 WNBA 球員資料（從 predictx.players / player_teams）
-        if league and league.upper() == 'WNBA':
+        # 8.5 球員資料注入（適用所有有球員資料的聯盟：MLB/NBA/WNBA/CPBL）
+        if league and league.upper() in ('MLB', 'NBA', 'WNBA', 'CPBL'):
             try:
                 home_team_id = game['home_team_id']
                 away_team_id = game['away_team_id']
 
-                # 抓兩隊全部 active 球員（按位置排序：G/F/C）
                 self.cur.execute("""
-                    SELECT p.player_id, p.player_name, p.position, p.jersey_number, pt.team_id
-                    FROM predictx.players p
-                    JOIN predictx.player_teams pt ON p.player_id = pt.player_id
-                    WHERE pt.team_id IN (%s, %s) AND pt.is_active = true
-                    ORDER BY pt.team_id, p.position
-                """ if False else """
                     SELECT p.player_id, p.player_name, p.position, p.jersey_number, pt.team_id
                     FROM predictx.players p
                     JOIN predictx.player_teams pt ON p.player_id = pt.player_id
@@ -746,13 +739,13 @@ class AnalysisEngine:
                 if rows:
                     home_players = [dict(r) for r in rows if str(r['team_id']) == str(home_team_id)]
                     away_players = [dict(r) for r in rows if str(r['team_id']) == str(away_team_id)]
-                    features['wnba_roster'] = {
+                    features['roster'] = {
                         'home': home_players,
                         'away': away_players,
                     }
-                    print(f"  🏀 WNBA roster: home={len(home_players)}, away={len(away_players)}")
+                    print(f"  👥 {league} roster: home={len(home_players)}, away={len(away_players)}")
             except Exception as e:
-                print(f"  ⚠ WNBA roster fetch error: {e}")
+                print(f"  ⚠ {league} roster fetch error: {e}")
         
         # 9. CPBL 球員資料（從 stats.cpbl.com.tw）
         if league and league.upper() == 'CPBL':
@@ -1295,10 +1288,10 @@ Park Factor: {pf:.2f} ({park_interp})
 
             cpbl_analysis_guide = "\n===== " + cpbl_spec + "\n\n請根據以上 CPBL 特性，結合提供的數據進行分析。\n"
 
-        # WNBA 球員資料（注入主客隊名單，協助 AI 摘要中提及球員能力近況）
-        wnbaplayerssection = ""
-        if league and league.upper() == 'WNBA' and features.get('wnba_roster'):
-            roster = features['wnba_roster']
+        # 球員名單注入（適用 MLB/NBA/WNBA/CPBL，通用化）
+        rostersection = ""
+        if league and league.upper() in ('MLB', 'NBA', 'WNBA', 'CPBL') and features.get('roster'):
+            roster = features['roster']
             h_players = roster.get('home', [])
             a_players = roster.get('away', [])
 
@@ -1313,18 +1306,17 @@ Park Factor: {pf:.2f} ({park_interp})
                     return "  (名單待補)"
                 return "\n".join(lines)
 
-            wnbaplayerssection = (
-                "\n===== WNBA 球員名單（用於 AI 摘要提及主力近況）=====\n"
+            # 棒球 vs 籃球用不同位置說明
+            if league.upper() in ('WNBA', 'NBA'):
+                pos_hint = "（位置 F=前鋒, G=後衛, C=中鋒）"
+            else:
+                pos_hint = "（投手位置: SP=先發, RP=後援, CL=終結者）"
+
+            rostersection = (
+                f"\n===== {league} 球員名單（用於 AI 摘要提及主力近況）=====\n"
                 f"主隊 {home_team} 名單（{len(h_players)}人）:\n{_fmt_roster(h_players)}\n"
                 f"客隊 {away_team} 名單（{len(a_players)}人）:\n{_fmt_roster(a_players)}\n"
-                "（球員位置 F=前鋒, G=後衛, C=中鋒；以上為球隊 active 名單）\n"
-            )
-            wnbaplayerssection += (
-                "\n===== WNBA 分析指引 =====\n"
-                "- 在 summary 中可酌情提及雙方主力球員的能力近況（位置/角色），但不要捏造場均數據。\n"
-                "- 如無明確球員近期表現資料，請以「球隊戰力/近期戰績」為主要論述依據。\n"
-                "- WNBA 比賽節奏快，場均得分約 80 分，與 NBA 不同。\n"
-                "- 球員位置以 F(前鋒) / G(後衛) / C(中鋒) 區分，明星球員通常為對戰 X 因子。\n"
+                f"{pos_hint}\n"
             )
 
         # FIFA Over/Under 2.5 指令
@@ -1454,7 +1446,7 @@ Park Factor: {pf:.2f} ({park_interp})
 {cpbl_analysis_guide}
 {home_advantage_note}
 {fifa_rankings_section}
-{wnbaplayerssection}
+{rostersection}
 
 ═══════════════════════════════════════
 🎯 主場優勢與聯盟特性
