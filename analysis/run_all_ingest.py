@@ -36,9 +36,10 @@ from ingest.mlb import MLBIngester
 from ingest.npb import NPBIngester
 from ingest.cpbl import CPBLIngester
 from ingest.nba import NBAIngester
+from ingest.wnba import WNBAIngester
 
 # 哪些聯盟需要「美東 -1 天」時區換算（資料存美東日期，/api/games 顯示 +1）
-US_DATE_LEAGUES = {"MLB", "NBA"}
+US_DATE_LEAGUES = {"MLB", "NBA", "WNBA"}
 
 logging.basicConfig(
     level=logging.INFO,
@@ -53,6 +54,7 @@ LEAGUE_REGISTRY = {
     "NPB":  (NPBIngester, "NPB 開打前 6hr ingest (台北 17:00)"),
     "CPBL": (CPBLIngester, "CPBL 開打前 6hr ingest (台北 10:00)"),
     "NBA":  (NBAIngester, "NBA 開打前 6hr ingest (台北 14:00)"),
+    "WNBA": (WNBAIngester, "WNBA 開打前 6hr ingest (台北 14:00)"),
 }
 
 

@@ -22,6 +22,7 @@ DIMS_MAP = {
     "NPB": ["球隊整體戰力", "打線火力", "先發投手", "牛棚表現", "主客場因素", "近期狀態"],
     "CPBL": ["球隊整體戰力", "打線火力", "先發投手", "牛棚表現", "主客場因素", "近期狀態"],
     "NBA": ["團隊整體戰力", "進攻效率", "防守強度", "籃板能力", "關鍵球處理", "近期狀態"],
+    "WNBA": ["團隊整體戰力", "進攻效率", "防守強度", "籃板能力", "關鍵球處理", "近期狀態"],
     "FIFA": ["整體戰術實力", "前場進攻", "中場掌控", "後防穩定", "門將表現", "近期狀態"],
 }
 DEFAULT_DIMS = ["整體戰力", "進攻能力", "防守能力", "戰術執行", "環境因素", "近期狀態"]
@@ -83,7 +84,7 @@ def compute_team_radar_scores(features, side='home'):
             home_away = clamp(float(venue_wr) * 10)
         recent = clamp(recent_winrate * 10)
         return [team_strength, offense, pitcher_score, bullpen, home_away, recent]
-    elif league == 'NBA':
+    elif league in ('NBA', 'WNBA'):
         team_strength = clamp(win_pct * 10) if win_pct and win_pct > 0 else clamp(rank_to_score(rank))
         offense = clamp((avg_for - 100) * 0.2 + 5)
         defense = clamp(10 - max(0, opp_avg_for - 110) * 0.2)
@@ -147,8 +148,8 @@ def build_features_from_game(conn, game_id):
 
     # 預設值: 從現有 analysis_data 內的 summary 推測平均分數
     # 為簡化,使用聯盟平均作為 fallback
-    avg_for_map = {'MLB': 4.5, 'NPB': 4.3, 'CPBL': 4.7, 'NBA': 110, 'FIFA': 1.4}
-    avg_against_map = {'MLB': 4.5, 'NPB': 4.3, 'CPBL': 4.7, 'NBA': 110, 'FIFA': 1.4}
+    avg_for_map = {'MLB': 4.5, 'NPB': 4.3, 'CPBL': 4.7, 'NBA': 110, 'WNBA': 82, 'FIFA': 1.4}
+    avg_against_map = {'MLB': 4.5, 'NPB': 4.3, 'CPBL': 4.7, 'NBA': 110, 'WNBA': 82, 'FIFA': 1.4}
 
     features['home_standings'] = home_st
     features['away_standings'] = away_st
@@ -210,7 +211,7 @@ def main():
             dims = DIMS_MAP.get(league, DEFAULT_DIMS)
 
             # 用平均基準值 (無法完整重建 features,使用保守預設)
-            avg_for = {'MLB': 4.5, 'NPB': 4.3, 'CPBL': 4.7, 'NBA': 110, 'FIFA': 1.4}.get(league, 4.5)
+            avg_for = {'MLB': 4.5, 'NPB': 4.3, 'CPBL': 4.7, 'NBA': 110, 'WNBA': 82, 'FIFA': 1.4}.get(league, 4.5)
             avg_against = avg_for
 
             mock_features = {

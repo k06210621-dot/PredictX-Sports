@@ -157,7 +157,8 @@ class AnalysisEngine:
             # 近期狀態
             recent = clamp(recent_winrate * 10)
             values = [team_strength, offense, pitcher_score, bullpen, home_away, recent]
-        elif league == 'NBA':
+        elif league in ('NBA', 'WNBA'):
+            # 🏀 籃球六維邏輯（NBA + WNBA 共用）
             team_strength = clamp(win_pct * 10) if win_pct and win_pct > 0 else clamp(rank_to_score(rank))
             offense = clamp((avg_for - 100) * 0.2 + 5)
             defense = clamp(10 - max(0, opp_avg_for - 110) * 0.2)
@@ -206,6 +207,7 @@ class AnalysisEngine:
         score_ranges = {
             "MLB": (2, 9),    # 棒球單隊常見 2-9 分
             "NBA": (95, 135), # 籃球單隊常見 95-135 分
+            "WNBA": (70, 110), # WNBA 單隊常見 70-110 分（場均低於 NBA）
             "NPB": (2, 9),
             "CPBL": (2, 9),
         }
@@ -651,6 +653,7 @@ class AnalysisEngine:
                 self.conn.rollback()
         
         # 6. 對 NBA 賽事：上網抓取即時進階數據
+        #    WNBA 暫不抓進階數據（nba_data_fetcher 專為 NBA API 設計，WNBA 用 ESPN 統計替代）
         if league and league.upper() == 'NBA':
             try:
                 from nba_data_fetcher import NBADataFetcher
@@ -667,7 +670,7 @@ class AnalysisEngine:
             except Exception as e:
                 print(f"  ⚠ NBA data fetch error: {e}")
         
-        # 7. 整合天氣資料（MLB 與 NBA）
+        # 7. 整合天氣資料（MLB 與 NBA，WNBA 室內為主不抓）
         if league and league.upper() in ('MLB', 'NBA'):
             try:
                 from weather_fetcher import WeatherFetcher
@@ -1167,6 +1170,7 @@ Park Factor: {pf:.2f} ({park_interp})
             "NPB": ["球隊整體戰力", "打線火力", "先發投手", "牛棚表現", "主客場因素", "近期狀態"],
             "CPBL": ["球隊整體戰力", "打線火力", "先發投手", "牛棚表現", "主客場因素", "近期狀態"],
             "NBA": ["團隊整體戰力", "進攻效率", "防守強度", "籃板能力", "關鍵球處理", "近期狀態"],
+            "WNBA": ["團隊整體戰力", "進攻效率", "防守強度", "籃板能力", "關鍵球處理", "近期狀態"],
             "FIFA": ["整體戰術實力", "前場進攻", "中場掌控", "後防穩定", "門將表現", "近期狀態"]
         }
         
@@ -1829,6 +1833,7 @@ Park Factor: {pf:.2f} ({park_interp})
                     lg = (features.get('league') or '').upper()
                     home_advantage_map = {
                         'NBA': 0.58,   # NBA 主場勝率約 60%
+                        'WNBA': 0.58,  # WNBA 主場勝率與 NBA 接近
                         'CPBL': 0.55,  # CPBL 主場勝率約 55-60%
                         'MLB': 0.54,   # MLB 主場勝率約 53-54%
                         'NPB': 0.54,   # NPB 主場勝率約 53%
@@ -2022,6 +2027,7 @@ Park Factor: {pf:.2f} ({park_interp})
                         "NPB": ["球隊整體戰力", "打線火力", "先發投手", "牛棚表現", "主客場因素", "近期狀態"],
                         "CPBL": ["球隊整體戰力", "打線火力", "先發投手", "牛棚表現", "主客場因素", "近期狀態"],
                         "NBA": ["團隊整體戰力", "進攻效率", "防守強度", "籃板能力", "關鍵球處理", "近期狀態"],
+                        "WNBA": ["團隊整體戰力", "進攻效率", "防守強度", "籃板能力", "關鍵球處理", "近期狀態"],
                         "FIFA": ["整體戰術實力", "前場進攻", "中場掌控", "後防穩定", "門將表現", "近期狀態"],
                     }
                     dims = dims_map.get(league_lc, ["整體戰力", "進攻能力", "防守能力", "戰術執行", "環境因素", "近期狀態"])
@@ -2064,6 +2070,7 @@ Park Factor: {pf:.2f} ({park_interp})
         leauge_dims_map = {
             "MLB": ["球隊整體戰力", "打線火力", "先發投手", "牛棚表現", "主客場因素", "近期狀態"],
             "NBA": ["團隊整體戰力", "進攻效率", "防守強度", "籃板能力", "關鍵球處理", "近期狀態"],
+            "WNBA": ["團隊整體戰力", "進攻效率", "防守強度", "籃板能力", "關鍵球處理", "近期狀態"],
             "FIFA": ["整體戰術實力", "前場進攻", "中場掌控", "後防穩定", "門將表現", "近期狀態"],
         }
         dims = leauge_dims_map.get(

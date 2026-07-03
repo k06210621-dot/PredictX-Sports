@@ -467,7 +467,7 @@ def api_games():
             SELECT
                 g.game_id,
                 CASE
-                    WHEN UPPER(%s) IN ('MLB', 'NBA') THEN g.match_date + 1
+                    WHEN UPPER(%s) IN ('MLB', 'NBA', 'WNBA') THEN g.match_date + 1
                     ELSE g.match_date
                 END AS match_date,
                 COALESCE(g.status, gs.status) AS status,
