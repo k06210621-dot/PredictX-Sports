@@ -231,8 +231,11 @@ class AnalysisEngine:
             original_score = (mid, mid)
         h_score, a_score = original_score
 
-        # 偵測矛盾：favorite 的比分是否 <= underdog
-        contradiction = (home_favorite and h_score <= a_score) or (not home_favorite and a_score <= h_score)
+        # 偵測矛盾：favorite 的比分是否 <= underdog（包含平手）
+        # 棒球/籃球都沒有平手（棒球延長賽分勝負、籃球 OT 分勝負）
+        # 因此 h_score == a_score 也視為矛盾，需修正為「favorite 勝 1 分以上」
+        is_tie = (h_score == a_score)
+        contradiction = (home_favorite and h_score <= a_score) or (not home_favorite and a_score <= h_score) or is_tie
 
         if not contradiction:
             # 無矛盾，直接回傳（即使 prob_diff 很小）
