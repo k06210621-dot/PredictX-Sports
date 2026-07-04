@@ -50,7 +50,7 @@ else:
 
 # 備援 LLM 配置（當主要 LLM 失敗時使用）— 改為 NVIDIA integrate API + minimax-m3
 FALLBACK_LLM_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
-FALLBACK_LLM_MODEL = "minimax-m3"
+FALLBACK_LLM_MODEL = "minimaxai/minimax-m3"
 FALLBACK_LLM_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 
 # 可透過環境變數 PREDICTX_MODEL 切換模型
