@@ -120,7 +120,7 @@ struct ProfileView: View {
                         icon: "info.circle.fill",
                         iconColor: .gray,
                         title: "APP 版本資訊",
-                        subtitle: "v1.0.0 (Build 1)"
+                        subtitle: "v1.1.0"
                     )
                     .disabled(true)
 
@@ -402,6 +402,7 @@ struct AdRewardCardView: View {
             // 進入畫面時安全地跨日重置（不在 view body 中修改狀態）
             subscriptionManager.resetAdCountIfNewDay()
         }
+        // 廣告播放
         .sheet(isPresented: $showAdSheet) {
             AdRewardView(subscriptionManager: subscriptionManager, isPresented: $showAdSheet)
         }

@@ -68,6 +68,7 @@ struct HistoryFilterBar: View {
         case .npb: return "NPB"
         case .cpbl: return "CPBL"
         case .nba: return "NBA"
+        case .wnba: return "WNBA"
         }
     }
 
@@ -77,6 +78,7 @@ struct HistoryFilterBar: View {
         case .npb: return "⚾️"
         case .cpbl: return "⚾️"
         case .nba: return "🏀"
+        case .wnba: return "🏀"
         }
     }
 }

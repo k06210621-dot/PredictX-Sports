@@ -89,7 +89,24 @@ struct TeamNameMap {
         "Fubon Guardians": "富邦悍將",
         "Rakuten Monkeys": "樂天桃猿",
         "Wei Chuan Dragons": "味全龍",
-        "TSG Hawks": "台鋼雄鷹"
+        "TSG Hawks": "台鋼雄鷹",
+
+        // ===== WNBA (15 隊) =====
+        "Atlanta Dream": "亞特蘭大夢想",
+        "Chicago Sky": "芝加哥天空",
+        "Connecticut Sun": "康乃狄克太陽",
+        "Dallas Wings": "達拉斯飛翼",
+        "Golden State Valkyries": "金洲女武神",
+        "Indiana Fever": "印第安納狂熱",
+        "Las Vegas Aces": "拉斯維加斯王牌",
+        "Los Angeles Sparks": "洛杉磯火花",
+        "Minnesota Lynx": "明尼蘇達山貓",
+        "New York Liberty": "紐約自由人",
+        "Phoenix Mercury": "鳳凰城水星",
+        "Portland Fire": "波特蘭火焰",
+        "Seattle Storm": "西雅圖風暴",
+        "Toronto Tempo": "多倫多節奏",
+        "Washington Mystics": "華盛頓神秘人"
     ]
     
     static func getChineseName(for englishName: String) -> String {

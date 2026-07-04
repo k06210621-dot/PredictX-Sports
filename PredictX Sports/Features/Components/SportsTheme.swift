@@ -31,6 +31,7 @@ enum LeagueTheme {
         switch league {
         case .mlb:  return Color(red: 0.12, green: 0.35, blue: 0.75)
         case .nba:  return Color(red: 0.85, green: 0.40, blue: 0.05)
+        case .wnba: return Color(red: 0.75, green: 0.20, blue: 0.50)
         case .npb:  return Color(red: 0.85, green: 0.65, blue: 0.13)
         case .cpbl: return Color(red: 0.15, green: 0.65, blue: 0.25)
 

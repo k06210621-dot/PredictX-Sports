@@ -30,7 +30,7 @@ struct SupportCenterView: View {
             MailComposerView(
                 to: supportEmail,
                 subject: "PredictX Sports 問題回報",
-                body: "\n\n---\nApp 版本：1.0.0\niOS 版本：\(UIDevice.current.systemVersion)"
+                body: "\n\n---\n（請在訊息中描述您遇到的問題，並留下您的聯絡方式以便回覆）\n\n本 App 不會主動收集您的裝置資訊與個人資料，僅會收到您主動輸入的內容。\n詳見隱私政策：https://k06210621-dot.github.io/privacy/"
             )
         }
         .alert("無法寄送郵件", isPresented: $showMailAlert) {
@@ -89,7 +89,7 @@ struct FAQSection: View {
                     Text("賽事前 24 小時即會載入排程。通常每 日更新兩次，實際頻率依各聯賽 API 而定。")
                 }
                 FAQItem(question: "支援哪些聯賽？") {
-                    Text("目前支援：MLB（美國職棒）、NPB（日本職棒）、CPBL（中華職棒）、NBA（美國職籃）四大聯賽。更多聯賽將陸續新增。")
+                    Text("目前支援：MLB（美國職棒）、NPB（日本職棒）、CPBL（中華職棒）、NBA（美國職籃）、WNBA（美國女籃）五大聯賽。更多聯賽將陸續新增。")
                 }
                 FAQItem(question: "為什麼某些比賽沒有 AI 分析？") {
                     Text("原因可能為：① 比賽尚未進入可分析的時間窗口（通常賽前 24 小時內）② 該場資料不足（例如新成立的隊伍尚無歷史數據）③ 該聯賽 API 暫時無法取得所需數據。")

@@ -6,6 +6,7 @@ enum LeagueType: String, Codable, CaseIterable, Identifiable {
     case npb = "NPB"
     case cpbl = "CPBL"
     case nba = "NBA"
+    case wnba = "WNBA"
 
     var id: String { self.rawValue }
 
@@ -15,6 +16,7 @@ enum LeagueType: String, Codable, CaseIterable, Identifiable {
         case .npb: return "日本職棒"
         case .cpbl: return "中華職棒"
         case .nba: return "NBA 籃球"
+        case .wnba: return "WNBA 籃球"
         }
     }
 
@@ -24,12 +26,13 @@ enum LeagueType: String, Codable, CaseIterable, Identifiable {
         case .npb: return "日職"
         case .cpbl: return "中職"
         case .nba: return "籃球"
+        case .wnba: return "女籃"
         }
     }
 
     var isActive: Bool {
         switch self {
-        case .mlb, .npb, .cpbl, .nba: return true
+        case .mlb, .npb, .cpbl, .nba, .wnba: return true
         }
     }
 

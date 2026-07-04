@@ -6,8 +6,8 @@ struct LeagueBadgeWall: View {
 
     // 上排：棒球聯賽
     private let topRow: [LeagueType] = [.mlb, .npb, .cpbl]
-    // 下排：其他聯賽
-    private let bottomRow: [LeagueType] = [.nba]
+    // 下排：籃球聯賽
+    private let bottomRow: [LeagueType] = [.nba, .wnba]
 
     var body: some View {
         VStack(spacing: 8) {
@@ -131,6 +131,8 @@ struct LeagueBadgeView: View {
             Image(systemName: "baseball.fill")
         case .nba:
             Image(systemName: "basketball.fill")
+        case .wnba:
+            Image(systemName: "basketball")
         }
     }
 
@@ -140,6 +142,7 @@ struct LeagueBadgeView: View {
         case .npb:  return Color(red: 0.8, green: 0.55, blue: 0.08)
         case .cpbl: return Color(red: 0.85, green: 0.15, blue: 0.08)
         case .nba:  return Color(red: 0.85, green: 0.4, blue: 0.05)
+        case .wnba: return Color(red: 0.75, green: 0.2, blue: 0.5)
         }
     }
 }
@@ -147,7 +150,7 @@ struct LeagueBadgeView: View {
 extension LeagueType {
     var hasPulse: Bool {
         switch self {
-        case .cpbl, .nba: return true
+        case .cpbl, .nba, .wnba: return true
         case .mlb, .npb: return false
         }
     }

@@ -127,6 +127,7 @@ struct HistoricalMatchCardView: View {
         case .mlb: return "MLB 棒球"
         case .npb: return "NPB 日職"
         case .cpbl: return "CPBL 中職"
+        case .wnba: return "WNBA 籃球"
         }
     }
 
