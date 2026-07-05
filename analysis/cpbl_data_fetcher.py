@@ -49,6 +49,10 @@ class CPBLDataFetcher:
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
             "Accept-Language": "zh-TW,zh;q=0.9",
         })
+        # Railway Python SSL 環境無法驗證 cpbl.com.tw 憑證，全域關閉驗證
+        self.session.verify = False
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         self.fetched_sources = []
         self._init_session()
 
@@ -277,7 +281,7 @@ class CPBLDataFetcher:
             # 1. 重新取得首頁以獲取最新的 __RequestVerificationToken
             # 使用 requests + verify=False 繞過 Railway SSL 限制
             print(f"  [CPBL SP] Fetching cpbl.com.tw homepage for token...", flush=True)
-            home_resp = self.session.get("https://www.cpbl.com.tw/", timeout=10, verify=False)
+            home_resp = self.session.get("https://www.cpbl.com.tw/", timeout=10)
             if home_resp.status_code != 200:
                 print(f"  [CPBL SP] Homepage returned HTTP {home_resp.status_code}", flush=True)
                 return None
