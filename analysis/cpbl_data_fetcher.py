@@ -233,6 +233,98 @@ class CPBLDataFetcher:
             "sources": list(set(self.fetched_sources))
         }
 
+    def get_today_starting_pitchers(self, match_date=None):
+        """
+        從 CPBL 官網 API 取得當日比賽的先發投手名單
+
+        Args:
+            match_date: datetime.date 或 "yyyy/MM/dd" 格式字串（預設為今天台北時間）
+
+        Returns:
+            dict: { "home_team_en": {"name": "投手名", "acnt": "..."},
+                    "away_team_en": {"name": "投手名", "acnt": "..."} }
+            若無資料或失敗回傳 None
+        """
+        from datetime import date
+
+        if match_date is None:
+            match_date = date.today()
+        if hasattr(match_date, 'strftime'):
+            date_str = match_date.strftime('%Y/%m/%d')
+        else:
+            date_str = str(match_date)
+
+        try:
+            # 1. 重新取得首頁以獲取最新的 __RequestVerificationToken
+            home_resp = self.session.get("https://www.cpbl.com.tw/", timeout=10)
+            if home_resp.status_code != 200:
+                return None
+
+            token_match = re.search(
+                r'__RequestVerificationToken"\s*type="hidden"\s*value="([^"]+)"',
+                home_resp.text
+            )
+            if not token_match:
+                return None
+            token = token_match.group(1)
+
+            # 2. 呼叫 API 取得當日賽程 + 先發投手
+            resp = self.session.post(
+                "https://www.cpbl.com.tw/home/getdetaillist",
+                data={
+                    "GameDate": date_str,
+                    "KindCode": "A",
+                    "GameSno": "",
+                    "__RequestVerificationToken": token,
+                },
+                timeout=15,
+            )
+            if resp.status_code != 200:
+                return None
+
+            result = resp.json()
+            if not result.get('Success'):
+                return None
+
+            games_raw = result.get('GameADetailJson')
+            if not games_raw:
+                return None
+            games = json.loads(games_raw)
+            if not games:
+                return None
+
+            self.fetched_sources.append("cpbl.com.tw")
+
+            # 3. 解析每場比賽的先發投手
+            starters = {}
+            for g in games:
+                home_cn = g.get('HomeTeamName', '')
+                away_cn = g.get('VisitingTeamName', '')
+                home_en = TEAM_MAP.get(home_cn, home_cn)
+                away_en = TEAM_MAP.get(away_cn, away_cn)
+
+                home_pitcher = g.get('HomeFirstMover', '')
+                away_pitcher = g.get('VisitingFirstMover', '')
+                home_acnt = g.get('HomeFirstAcnt', '')
+                away_acnt = g.get('VisitingFirstAcnt', '')
+
+                if home_pitcher:
+                    starters[home_en] = {
+                        'name': home_pitcher,
+                        'acnt': home_acnt,
+                    }
+                if away_pitcher:
+                    starters[away_en] = {
+                        'name': away_pitcher,
+                        'acnt': away_acnt,
+                    }
+
+            return starters if starters else None
+
+        except Exception as e:
+            print(f"  ⚠ CPBL starting pitcher fetch error: {e}")
+            return None
+
     def close(self):
         self.cur.close()
         self.conn.close()

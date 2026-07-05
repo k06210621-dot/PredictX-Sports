@@ -769,7 +769,34 @@ class AnalysisEngine:
                         print(f"  🏆 CPBL pitchers: {home_name} {len(hp)} pitchers, {away_name} {len(ap)} pitchers")
                 except Exception as e:
                     print(f"  ⚠ CPBL pitcher fetch error: {e}")
-                
+
+                # CPBL 今日先發投手（從 cpbl.com.tw 官網 API）
+                try:
+                    match_date = game.get('match_date')
+                    cpbl_starters = fetcher.get_today_starting_pitchers(match_date)
+                    if cpbl_starters:
+                        features['cpbl_starting_pitchers'] = cpbl_starters
+                        h_sp = cpbl_starters.get(home_name, {})
+                        a_sp = cpbl_starters.get(away_name, {})
+                        h_name = h_sp.get('name', 'TBD') if h_sp else 'TBD'
+                        a_name = a_sp.get('name', 'TBD') if a_sp else 'TBD'
+                        print(f"  🏆 CPBL starting pitchers: {home_name}={h_name}, {away_name}={a_name}")
+
+                        # 寫回 games 表，讓 API 端點 /api/games 回傳先發投手名稱
+                        try:
+                            self.cur.execute(
+                                """UPDATE predictx.games
+                                   SET home_pitcher_name = %s,
+                                       away_pitcher_name = %s
+                                   WHERE game_id = %s""",
+                                (h_name, a_name, game_id)
+                            )
+                            self.conn.commit()
+                        except Exception as db_err:
+                            print(f"  ⚠ CPBL pitcher DB write error: {db_err}")
+                except Exception as e:
+                    print(f"  ⚠ CPBL starting pitcher fetch error: {e}")
+
                 fetcher.close()
             except Exception as e:
                 print(f"  ⚠ CPBL data fetch error: {e}")
@@ -1285,6 +1312,17 @@ Park Factor: {pf:.2f} ({park_interp})
                         line = "\n  #%d %s: ERA=%.2f, WHIP=%.3f, K/9=%.1f, BB/9=%.1f, %dW-%dL, %.1f局" % (
                             i, p['name'], p['era'], p['whip'], p['k_per_9'], p['bb_per_9'], p['wins'], p['losses'], p['ip'])
                         cpbl_spec += line
+
+            # CPBL 今日先發投手（從 cpbl.com.tw 官網 API）
+            cpbl_starters = features.get('cpbl_starting_pitchers', {})
+            if cpbl_starters:
+                h_sp = cpbl_starters.get(home_team, {})
+                a_sp = cpbl_starters.get(away_team, {})
+                h_name = h_sp.get('name', 'TBD') if h_sp else 'TBD'
+                a_name = a_sp.get('name', 'TBD') if a_sp else 'TBD'
+                cpbl_spec += f"\n\n===== 今日先發投手（來源：cpbl.com.tw）====="
+                cpbl_spec += f"\n主隊 {home_team} 先發：{h_name}"
+                cpbl_spec += f"\n客隊 {away_team} 先發：{a_name}"
 
             cpbl_analysis_guide = "\n===== " + cpbl_spec + "\n\n請根據以上 CPBL 特性，結合提供的數據進行分析。\n"
 
