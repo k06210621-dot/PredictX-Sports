@@ -271,8 +271,10 @@ class CPBLDataFetcher:
 
         try:
             # 1. 重新取得首頁以獲取最新的 __RequestVerificationToken
+            print(f"  [CPBL SP] Fetching cpbl.com.tw homepage for token...", flush=True)
             home_resp = self.session.get("https://www.cpbl.com.tw/", timeout=10)
             if home_resp.status_code != 200:
+                print(f"  [CPBL SP] Homepage returned HTTP {home_resp.status_code}", flush=True)
                 return None
 
             token_match = re.search(
@@ -280,8 +282,10 @@ class CPBLDataFetcher:
                 home_resp.text
             )
             if not token_match:
+                print(f"  [CPBL SP] Token not found in homepage HTML", flush=True)
                 return None
             token = token_match.group(1)
+            print(f"  [CPBL SP] Token found, calling API for date={date_str}", flush=True)
 
             # 2. 呼叫 API 取得當日賽程 + 先發投手
             resp = self.session.post(
@@ -295,20 +299,24 @@ class CPBLDataFetcher:
                 timeout=15,
             )
             if resp.status_code != 200:
+                print(f"  [CPBL SP] API returned HTTP {resp.status_code}", flush=True)
                 return None
 
             result = resp.json()
             if not result.get('Success'):
+                print(f"  [CPBL SP] API returned Success=False", flush=True)
                 return None
 
             games_raw = result.get('GameADetailJson')
             if not games_raw:
+                print(f"  [CPBL SP] No GameADetailJson in response", flush=True)
                 return None
             games = json.loads(games_raw)
             if not games:
+                print(f"  [CPBL SP] Empty games array", flush=True)
                 return None
 
-            self.fetched_sources.append("cpbl.com.tw")
+            print(f"  [CPBL SP] Got {len(games)} games from API", flush=True)
 
             # 3. 解析每場比賽的先發投手
             starters = {}
