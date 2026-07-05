@@ -255,6 +255,7 @@ class CPBLDataFetcher:
     def get_today_starting_pitchers(self, match_date=None):
         """
         從 CPBL 官網 API 取得當日比賽的先發投手名單
+        使用 subprocess + curl 繞過 Railway 新加坡 IP 封鎖
 
         Args:
             match_date: datetime.date 或 "yyyy/MM/dd" 格式字串（預設為今天台北時間）
@@ -264,6 +265,7 @@ class CPBLDataFetcher:
                     "away_team_en": {"name": "投手名", "acnt": "..."} }
             若無資料或失敗回傳 None
         """
+        import subprocess
         from datetime import date
 
         if match_date is None:
@@ -271,20 +273,25 @@ class CPBLDataFetcher:
         if hasattr(match_date, 'strftime'):
             date_str = match_date.strftime('%Y/%m/%d')
         else:
-            # 字串格式如 "2026-07-05" → 轉為 "2026/07/05"
             date_str = str(match_date).replace('-', '/')
 
         try:
-            # 1. 重新取得首頁以獲取最新的 __RequestVerificationToken
-            print(f"  [CPBL SP] Fetching cpbl.com.tw homepage for token...", flush=True)
-            home_resp = self.session.get("https://www.cpbl.com.tw/", timeout=10)
-            if home_resp.status_code != 200:
-                print(f"  [CPBL SP] Homepage returned HTTP {home_resp.status_code}", flush=True)
+            # 1. 用 curl 取得首頁以獲取 __RequestVerificationToken
+            print(f"  [CPBL SP] Fetching cpbl.com.tw homepage for token (curl)...", flush=True)
+            curl_home = subprocess.run(
+                ["curl", "-s", "--connect-timeout", "10", "--max-time", "15",
+                 "-H", "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                 "-H", "Accept-Language: zh-TW,zh;q=0.9",
+                 "https://www.cpbl.com.tw/"],
+                capture_output=True, text=True, timeout=20
+            )
+            if curl_home.returncode != 0 or not curl_home.stdout:
+                print(f"  [CPBL SP] curl homepage failed (rc={curl_home.returncode})", flush=True)
                 return None
 
             token_match = re.search(
                 r'__RequestVerificationToken"\s*type="hidden"\s*value="([^"]+)"',
-                home_resp.text
+                curl_home.stdout
             )
             if not token_match:
                 print(f"  [CPBL SP] Token not found in homepage HTML", flush=True)
@@ -292,22 +299,23 @@ class CPBLDataFetcher:
             token = token_match.group(1)
             print(f"  [CPBL SP] Token found, calling API for date={date_str}", flush=True)
 
-            # 2. 呼叫 API 取得當日賽程 + 先發投手
-            resp = self.session.post(
-                "https://www.cpbl.com.tw/home/getdetaillist",
-                data={
-                    "GameDate": date_str,
-                    "KindCode": "A",
-                    "GameSno": "",
-                    "__RequestVerificationToken": token,
-                },
-                timeout=15,
+            # 2. 用 curl POST 呼叫 API
+            curl_api = subprocess.run(
+                ["curl", "-s", "--connect-timeout", "10", "--max-time", "15",
+                 "-H", "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                 "-H", "Accept-Language: zh-TW,zh;q=0.9",
+                 "-d", f"GameDate={date_str}",
+                 "-d", "KindCode=A",
+                 "-d", "GameSno=",
+                 "-d", f"__RequestVerificationToken={token}",
+                 "https://www.cpbl.com.tw/home/getdetaillist"],
+                capture_output=True, text=True, timeout=20
             )
-            if resp.status_code != 200:
-                print(f"  [CPBL SP] API returned HTTP {resp.status_code}", flush=True)
+            if curl_api.returncode != 0 or not curl_api.stdout:
+                print(f"  [CPBL SP] curl API failed (rc={curl_api.returncode})", flush=True)
                 return None
 
-            result = resp.json()
+            result = json.loads(curl_api.stdout)
             if not result.get('Success'):
                 print(f"  [CPBL SP] API returned Success=False", flush=True)
                 return None
