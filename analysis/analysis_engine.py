@@ -778,17 +778,18 @@ class AnalysisEngine:
             try:
                 from cpbl_data_fetcher import CPBLDataFetcher
                 fetcher2 = CPBLDataFetcher()
-                home_name = game['home_team_en']
-                away_name = game['away_team_en']
+                # 重新從 game dict 取得隊名（主 try 區塊可能已失敗）
+                sp_home_name = game.get('home_team_en', '')
+                sp_away_name = game.get('away_team_en', '')
                 match_date = game.get('match_date')
                 cpbl_starters = fetcher2.get_today_starting_pitchers(match_date)
                 if cpbl_starters:
                     features['cpbl_starting_pitchers'] = cpbl_starters
-                    h_sp = cpbl_starters.get(home_name, {})
-                    a_sp = cpbl_starters.get(away_name, {})
+                    h_sp = cpbl_starters.get(sp_home_name, {})
+                    a_sp = cpbl_starters.get(sp_away_name, {})
                     h_name = h_sp.get('name', 'TBD') if h_sp else 'TBD'
                     a_name = a_sp.get('name', 'TBD') if a_sp else 'TBD'
-                    print(f"  🏆 CPBL starting pitchers: {home_name}={h_name}, {away_name}={a_name}")
+                    print(f"  🏆 CPBL starting pitchers: {sp_home_name}={h_name}, {sp_away_name}={a_name}")
 
                     # 寫回 games 表，讓 API 端點 /api/games 回傳先發投手名稱
                     try:
