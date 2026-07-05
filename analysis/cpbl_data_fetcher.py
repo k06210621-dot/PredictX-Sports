@@ -266,7 +266,8 @@ class CPBLDataFetcher:
         if hasattr(match_date, 'strftime'):
             date_str = match_date.strftime('%Y/%m/%d')
         else:
-            date_str = str(match_date)
+            # 字串格式如 "2026-07-05" → 轉為 "2026/07/05"
+            date_str = str(match_date).replace('-', '/')
 
         try:
             # 1. 重新取得首頁以獲取最新的 __RequestVerificationToken
