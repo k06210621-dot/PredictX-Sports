@@ -3,6 +3,7 @@ PredictX Sports — CPBL DataFetcher 強化版
 從 cpbl.com.tw 爬取打擊排行榜 + 戰績 + 投打數據
 """
 import requests
+import os
 import re
 import json
 import psycopg2
@@ -25,9 +26,19 @@ TEAM_MAP = {
 }
 
 class CPBLDataFetcher:
-    def __init__(self):
-        self.conn = psycopg2.connect(**DB_CONFIG)
-        self.cur = self.conn.cursor(cursor_factory=RealDictCursor)
+    def __init__(self, conn=None):
+        if conn:
+            self.conn = conn
+            self.cur = conn.cursor(cursor_factory=RealDictCursor)
+        else:
+            database_url = os.getenv('DATABASE_URL')
+            if database_url:
+                if database_url.startswith('postgres://'):
+                    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+                self.conn = psycopg2.connect(database_url, cursor_factory=RealDictCursor)
+            else:
+                self.conn = psycopg2.connect(**DB_CONFIG)
+            self.cur = self.conn.cursor(cursor_factory=RealDictCursor)
         self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
