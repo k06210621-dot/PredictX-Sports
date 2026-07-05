@@ -48,7 +48,10 @@ class CPBLDataFetcher:
         self._init_session()
 
     def _init_session(self):
-        self.session.get("https://www.cpbl.com.tw/", timeout=10)
+        try:
+            self.session.get("https://www.cpbl.com.tw/", timeout=10)
+        except Exception:
+            pass
 
     def get_players_from_rankings(self):
         resp = self.session.get("https://stats.cpbl.com.tw/rankings", timeout=15)
