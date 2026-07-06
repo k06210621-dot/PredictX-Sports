@@ -672,6 +672,25 @@ class AnalysisEngine:
                 fetcher.close()
             except Exception as e:
                 print(f"  ⚠ NBA data fetch error: {e}")
+
+        # 6.5 對 WNBA 賽事：從 basketball-reference.com 抓取進階數據
+        if league and league.upper() == 'WNBA':
+            try:
+                from wnba_data_fetcher import WNBADataFetcher
+                fetcher = WNBADataFetcher(conn=self.conn)
+                home_name = game['home_team_en']
+                away_name = game['away_team_en']
+                wnba_data = fetcher.fetch_and_store_game_data(game_id, home_name, away_name)
+                if wnba_data:
+                    features['wnba_advanced'] = wnba_data
+                    for _ in wnba_data.get('sources', []):
+                        self.log_source("official_api")
+                    h = wnba_data['team_stats']['home']
+                    a = wnba_data['team_stats']['away']
+                    print(f"  📡 WNBA data: {home_name} OffRtg={h['off_rtg']}/DefRtg={h['def_rtg']}/NRtg={h['net_rtg']}, {away_name} OffRtg={a['off_rtg']}/DefRtg={a['def_rtg']}/NRtg={a['net_rtg']}")
+                fetcher.close()
+            except Exception as e:
+                print(f"  ⚠ WNBA data fetch error: {e}")
         
         # 7. 整合天氣資料（MLB 與 NBA，WNBA 室內為主不抓）
         if league and league.upper() in ('MLB', 'NBA'):
@@ -1126,6 +1145,26 @@ class AnalysisEngine:
    Pace: {a['pace']:.1f}, EFG%: {a['efg_pct']:.3f}, TS%: {a['ts_pct']:.3f}, 勝率: {a['win_pct']:.3f}"""
         else:
             nba_advanced_section = ""
+
+        # WNBA 進階數據（從 basketball-reference.com 爬取）
+        wnba_advanced = features.get('wnba_advanced', {})
+        if wnba_advanced:
+            h = wnba_advanced['team_stats']['home']
+            a = wnba_advanced['team_stats']['away']
+            wnba_advanced_section = f"""===== WNBA 進階數據（來源：basketball-reference.com）=====
+主隊 {home_team}:
+  場均得分: {h['pts_per_g']:.1f}, 進攻效率(OffRtg): {h['off_rtg']:.1f}, 防守效率(DefRtg): {h['def_rtg']:.1f}
+  淨效率(NRtg): {h['net_rtg']:+.1f}, Pace: {h['pace']:.1f}, MOV: {h['mov']:+.1f}
+  TS%: {h['ts_pct']:.3f}, eFG%: {h['efg_pct']:.3f}, TOV%: {h['tov_pct']:.1f}%
+  戰績: {h['wins']}W-{h['losses']}L, SOS: {h['sos']:+.2f}, SRS: {h['srs']:+.2f}
+
+客隊 {away_team}:
+  場均得分: {a['pts_per_g']:.1f}, 進攻效率(OffRtg): {a['off_rtg']:.1f}, 防守效率(DefRtg): {a['def_rtg']:.1f}
+  淨效率(NRtg): {a['net_rtg']:+.1f}, Pace: {a['pace']:.1f}, MOV: {a['mov']:+.1f}
+  TS%: {a['ts_pct']:.3f}, eFG%: {a['efg_pct']:.3f}, TOV%: {a['tov_pct']:.1f}%
+  戰績: {a['wins']}W-{a['losses']}L, SOS: {a['sos']:+.2f}, SRS: {a['srs']:+.2f}"""
+        else:
+            wnba_advanced_section = ""
         
         # 天氣資料
         weather_data = features.get('weather', {})
@@ -1485,6 +1524,7 @@ Park Factor: {pf:.2f} ({park_interp})
 {tdb_section}
 {mlb_advanced_section}
 {nba_advanced_section}
+{wnba_advanced_section}
 {npb_section}
 {weather_section}
 {cpbl_analysis_guide}
