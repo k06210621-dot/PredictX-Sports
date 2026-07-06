@@ -168,4 +168,31 @@ class CPBLIngester(BaseIngester):
                 "away_team_score": away_score,
             })
 
+        # 🆕 補先發投手（從 cpbl.com.tw API）
+        self._enrich_pitchers(games, target_date)
+
         return games
+
+    def _enrich_pitchers(self, games: List[Dict[str, Any]], target_date: str):
+        """從 cpbl.com.tw API 取得當日先發投手並補入 games"""
+        try:
+            from cpbl_data_fetcher import CPBLDataFetcher
+            fetcher = CPBLDataFetcher()
+            # target_date 是 "YYYY-MM-DD"，需轉為 "YYYY/MM/DD"
+            date_str = target_date.replace('-', '/')
+            starters = fetcher.get_today_starting_pitchers(date_str)
+            if starters:
+                enriched = 0
+                for g in games:
+                    home = g.get('home_team')
+                    away = g.get('away_team')
+                    if home in starters:
+                        g['home_pitcher'] = starters[home]
+                        enriched += 1
+                    if away in starters:
+                        g['away_pitcher'] = starters[away]
+                LOGGER.info(f"CPBL {target_date} 補入先發投手: {enriched} 筆")
+            else:
+                LOGGER.info(f"CPBL {target_date} 無先發投手資料（可能尚未公布）")
+        except Exception as e:
+            LOGGER.warning(f"CPBL pitcher enrichment failed: {e}")

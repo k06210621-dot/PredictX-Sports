@@ -5,6 +5,7 @@ PredictX Sports — NPB DataFetcher
 import requests
 import re
 import json
+import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from bs4 import BeautifulSoup
@@ -104,9 +105,24 @@ NPB_TEAM_HOME_PARK = {
 }
 
 class NPBDataFetcher:
-    def __init__(self):
-        self.conn = psycopg2.connect(**DB_CONFIG)
-        self.cur = self.conn.cursor(cursor_factory=RealDictCursor)
+    def __init__(self, conn=None):
+        self.conn = None
+        self.cur = None
+        if conn:
+            self.conn = conn
+            self.cur = conn.cursor(cursor_factory=RealDictCursor)
+        else:
+            try:
+                database_url = os.getenv('DATABASE_URL')
+                if database_url:
+                    if database_url.startswith('postgres://'):
+                        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+                    self.conn = psycopg2.connect(database_url, cursor_factory=RealDictCursor)
+                else:
+                    self.conn = psycopg2.connect(**DB_CONFIG)
+                self.cur = self.conn.cursor(cursor_factory=RealDictCursor)
+            except Exception:
+                pass  # DB 連線失敗不影響 HTTP-based 方法（如 get_today_starters）
         self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",

@@ -147,7 +147,34 @@ class NPBIngester(BaseIngester):
                 f"NPB {target_date} 太平洋聯盟球隊出現: {sorted(pacific_present)}"
             )
 
+        # 🆕 補先發投手（從 lottonavi.com 爬取）
+        self._enrich_pitchers(games, target_date)
+
         return games
+
+    def _enrich_pitchers(self, games: List[Dict[str, Any]], target_date: str):
+        """從 lottonavi.com 爬取 NPB 當日先發投手並補入 games"""
+        try:
+            from npb_data_fetcher import NPBDataFetcher
+            fetcher = NPBDataFetcher()
+            starters = fetcher.get_today_starters()
+            if starters:
+                enriched = 0
+                for g in games:
+                    home = g.get('home_team')
+                    away = g.get('away_team')
+                    # lottonavi 的 key 格式: "home_team_vs_away_team"
+                    key = f"{home}_vs_{away}"
+                    if key in starters:
+                        sp = starters[key]
+                        g['home_pitcher'] = sp.get('home_pitcher')
+                        g['away_pitcher'] = sp.get('away_pitcher')
+                        enriched += 1
+                LOGGER.info(f"NPB {target_date} 補入先發投手: {enriched} 筆")
+            else:
+                LOGGER.info(f"NPB {target_date} 無先發投手資料（可能尚未公布）")
+        except Exception as e:
+            LOGGER.warning(f"NPB pitcher enrichment failed: {e}")
 
     def _parse_game_row(self, row, dt: datetime):
         """解析單場比賽 <tr> → dict"""
