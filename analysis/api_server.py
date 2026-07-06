@@ -1737,12 +1737,18 @@ def import_cpbl_roster():
 
         created_players = 0
         linked_teams = 0
+        debug_samples = []
+
         for stats_type, kind in [('pitching', 'P'), ('batting', 'IF/OF')]:
-            for p in fetch_sportify(stats_type):
+            sportify_data = fetch_sportify(stats_type)
+            print(f"  [DEBUG] sportify {stats_type}: {len(sportify_data)} players", flush=True)
+            for p in sportify_data:
                 player_name = p.get('player_name', '').strip()
                 team_cn = p.get('team_name', '')
                 team_en = next((en for cn, en in TEAM_CN_MAP.items() if cn in team_cn), team_cn)
                 if not player_name or not team_en or team_en not in team_name_to_id:
+                    if len(debug_samples) < 3:
+                        debug_samples.append(f"SKIP: {player_name} ({team_cn}→{team_en})")
                     continue
                 team_id = team_name_to_id[team_en]
 
@@ -1758,7 +1764,10 @@ def import_cpbl_roster():
                         """, (player_id, player_name, kind))
                         existing_players[player_name] = player_id
                         created_players += 1
-                    except Exception:
+                        if created_players <= 3:
+                            debug_samples.append(f"CREATED: {player_name} ({team_en})")
+                    except Exception as e:
+                        print(f"  [DEBUG] INSERT error: {e}", flush=True)
                         conn.rollback()
                         cur = conn.cursor(cursor_factory=RealDictCursor)
                         continue
@@ -1783,6 +1792,7 @@ def import_cpbl_roster():
             "created_players": created_players,
             "linked_team_relations": linked_teams,
             "total_existing_players": len(existing_players),
+            "debug_samples": debug_samples,
         }), 200
     except Exception as e:
         import traceback
