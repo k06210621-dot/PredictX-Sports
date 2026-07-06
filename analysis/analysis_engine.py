@@ -1151,18 +1151,20 @@ class AnalysisEngine:
         if wnba_advanced:
             h = wnba_advanced['team_stats']['home']
             a = wnba_advanced['team_stats']['away']
-            wnba_advanced_section = f"""===== WNBA 進階數據（來源：basketball-reference.com）=====
+            wnba_advanced_section = f"""===== WNBA 進階數據（來源：espn.com）=====
 主隊 {home_team}:
-  場均得分: {h['pts_per_g']:.1f}, 進攻效率(OffRtg): {h['off_rtg']:.1f}, 防守效率(DefRtg): {h['def_rtg']:.1f}
-  淨效率(NRtg): {h['net_rtg']:+.1f}, Pace: {h['pace']:.1f}, MOV: {h['mov']:+.1f}
-  TS%: {h['ts_pct']:.3f}, eFG%: {h['efg_pct']:.3f}, TOV%: {h['tov_pct']:.1f}%
-  戰績: {h['wins']}W-{h['losses']}L, SOS: {h['sos']:+.2f}, SRS: {h['srs']:+.2f}
+  戰績: {h['wins']}W-{h['losses']}L, 勝率: {h['win_pct']:.1%}, 種子: {h.get('playoff_seed','?')}
+  場均得分: {h['pts_per_g']:.1f}, 場均失分: {h['opp_pts_per_g']:.1f}, 淨勝分: {h['differential']:+.1f}
+  主場戰績: {h.get('home_record','?')} ({h.get('home_win_pct', 0):.1%})
+  客場戰績: {h.get('road_record','?')} ({h.get('road_win_pct', 0):.1%})
+  連勝/敗: {h.get('streak','?')}
 
 客隊 {away_team}:
-  場均得分: {a['pts_per_g']:.1f}, 進攻效率(OffRtg): {a['off_rtg']:.1f}, 防守效率(DefRtg): {a['def_rtg']:.1f}
-  淨效率(NRtg): {a['net_rtg']:+.1f}, Pace: {a['pace']:.1f}, MOV: {a['mov']:+.1f}
-  TS%: {a['ts_pct']:.3f}, eFG%: {a['efg_pct']:.3f}, TOV%: {a['tov_pct']:.1f}%
-  戰績: {a['wins']}W-{a['losses']}L, SOS: {a['sos']:+.2f}, SRS: {a['srs']:+.2f}"""
+  戰績: {a['wins']}W-{a['losses']}L, 勝率: {a['win_pct']:.1%}, 種子: {a.get('playoff_seed','?')}
+  場均得分: {a['pts_per_g']:.1f}, 場均失分: {a['opp_pts_per_g']:.1f}, 淨勝分: {a['differential']:+.1f}
+  主場戰績: {a.get('home_record','?')} ({a.get('home_win_pct', 0):.1%})
+  客場戰績: {a.get('road_record','?')} ({a.get('road_win_pct', 0):.1%})
+  連勝/敗: {a.get('streak','?')}"""
         else:
             wnba_advanced_section = ""
         

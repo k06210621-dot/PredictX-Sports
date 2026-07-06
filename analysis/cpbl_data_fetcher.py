@@ -310,7 +310,38 @@ class CPBLDataFetcher:
             )
             if resp.status_code != 200:
                 print(f"  [CPBL SP] API returned HTTP {resp.status_code}", flush=True)
-                return None
+                # 印出部分 body 方便 Railway 診斷
+                body_preview = (resp.text or '')[:200].replace('\n', ' ')
+                print(f"  [CPBL SP] Body preview: {body_preview}", flush=True)
+                # Retry 一次：重新拿 token 再試
+                if resp.status_code == 404:
+                    print(f"  [CPBL SP] Retrying with fresh token...", flush=True)
+                    home2 = self.session.get("https://www.cpbl.com.tw/", timeout=10)
+                    token_match2 = re.search(
+                        r'__RequestVerificationToken"\s*type="hidden"\s*value="([^"]+)"',
+                        home2.text
+                    )
+                    if token_match2:
+                        resp = self.session.post(
+                            "https://www.cpbl.com.tw/home/getdetaillist",
+                            data={
+                                "GameDate": date_str,
+                                "KindCode": "A",
+                                "GameSno": "",
+                                "__RequestVerificationToken": token_match2.group(1),
+                            },
+                            timeout=15,
+                            verify=False,
+                            headers={"Referer": "https://www.cpbl.com.tw/"},
+                        )
+                        if resp.status_code != 200:
+                            print(f"  [CPBL SP] Retry still HTTP {resp.status_code}", flush=True)
+                            return None
+                        print(f"  [CPBL SP] Retry succeeded with HTTP {resp.status_code}", flush=True)
+                    else:
+                        return None
+                else:
+                    return None
 
             result = resp.json()
             if not result.get('Success'):
