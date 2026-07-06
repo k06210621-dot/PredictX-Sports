@@ -1254,17 +1254,101 @@ Park Factor: {pf:.2f} ({park_interp})
                         f"{w}W-{l}L, {ip}局"
                     )
                 return "\n".join(result_lines)
-            
+
             h_start = fmt_starters(npb_starters.get("home", []))
             a_start = fmt_starters(npb_starters.get("away", []))
             npb_section += f"""
-            
+
 ===== NPB 先發投手輪值（來源：baseball-data.com）=====
 主隊 {home_team} 輪值投手：
 {h_start}
 
 客隊 {away_team} 輪值投手：
 {a_start}"""
+
+        # 🆕 [2026-07-06] NPB 當日 SP 個人 stats（從 predictx.player_season_stats）
+        # 這是 lottonavi 抓出「指定先發投手」後，從 DB 撈這位投手的當季 ERA/SO/BB
+        # 比 npb_starters 輪值更精準 — 因為 lottonavi 知道「今天誰先發」
+        if league and league.upper() == 'NPB' and (game.get('home_pitcher_name') or game.get('away_pitcher_name')):
+            try:
+                # 取主客 SP 名字（中文/日文）
+                sp_names = [game.get('home_pitcher_name'), game.get('away_pitcher_name')]
+                sp_names = [n for n in sp_names if n and n != '尚未公布']
+                if sp_names:
+                    # 用 LIKE 模糊搜尋（DB 內是 "Family, Given" 格式）
+                    placeholders = ','.join(['%s'] * len(sp_names))
+                    # 嘗試多種比對方式
+                    self.cur.execute(f"""
+                        SELECT p.player_name, pss.kind, pss.era, pss.w, pss.l, pss.sv, pss.hld, pss.cg, pss.sho, pss.ip,
+                               pss.p_h, pss.p_r, pss.p_er, pss.p_hr, pss.p_bb, pss.p_hbp, pss.p_so,
+                               pss.avg, pss.obp, pss.slg, pss.g, pss.pa, pss.ab, pss.b_r, pss.b_h,
+                               pss.tb, pss.rbi, pss.sb, pss.b_hr, pss.b_bb, pss.b_hbp, pss.b_so
+                        FROM predictx.player_season_stats pss
+                        JOIN predictx.players p ON pss.player_id = p.player_id
+                        WHERE pss.season = 2026
+                          AND pss.source = 'npb_players_json'
+                          AND (
+                            {' OR '.join(['p.player_name ILIKE %s' for _ in sp_names])}
+                          )
+                    """, [f'%{n}%' for n in sp_names])
+                    sp_rows = self.cur.fetchall() or []
+                    if sp_rows:
+                        sp_section_lines = []
+                        for r in sp_rows:
+                            if isinstance(r, dict):
+                                pname = r.get('player_name')
+                                kind = r.get('kind')
+                                if kind == 'pitcher':
+                                    era = r.get('era', 0)
+                                    w = r.get('w', 0) or 0
+                                    l = r.get('l', 0) or 0
+                                    sv = r.get('sv', 0) or 0
+                                    hld = r.get('hld', 0) or 0
+                                    cg = r.get('cg', 0) or 0
+                                    sho = r.get('sho', 0) or 0
+                                    ip = r.get('ip', 0) or 0
+                                    p_so = r.get('p_so', 0) or 0
+                                    p_bb = r.get('p_bb', 0) or 0
+                                    p_hr = r.get('p_hr', 0) or 0
+                                    p_h = r.get('p_h', 0) or 0
+                                    p_er = r.get('p_er', 0) or 0
+                                    k9 = (p_so * 9 / ip) if ip else 0
+                                    bb9 = (p_bb * 9 / ip) if ip else 0
+                                    whip = ((p_h + p_bb) / ip) if ip else 0
+                                    sp_section_lines.append(
+                                        f"  投手 {pname}: ERA={era:.2f}, {w}勝-{l}敗-{sv}SV-{hld}HLD, "
+                                        f"IP={ip}, SO={p_so}, BB={p_bb}, HR={p_hr}, "
+                                        f"K/9={k9:.1f}, BB/9={bb9:.1f}, WHIP={whip:.2f}"
+                                    )
+                                else:
+                                    avg = r.get('avg', 0) or 0
+                                    obp = r.get('obp', 0) or 0
+                                    slg = r.get('slg', 0) or 0
+                                    b_hr = r.get('b_hr', 0) or 0
+                                    b_rbi = r.get('rbi', 0) or 0
+                                    b_so = r.get('b_so', 0) or 0
+                                    sp_section_lines.append(
+                                        f"  打者 {pname}: AVG={avg:.3f}, OBP={obp:.3f}, SLG={slg:.3f}, "
+                                        f"HR={b_hr}, RBI={b_rbi}, SO={b_so}"
+                                    )
+                            else:
+                                # tuple fallback
+                                pname = r[0]
+                                kind = r[1]
+                                if kind == 'pitcher':
+                                    sp_section_lines.append(
+                                        f"  投手 {pname}: ERA={r[2]}, {r[3]}W-{r[4]}L, IP={r[10]}"
+                                    )
+                                else:
+                                    sp_section_lines.append(
+                                        f"  打者 {pname}: AVG={r[19]}, HR={r[27]}"
+                                    )
+                        if sp_section_lines:
+                            npb_section += "\n\n===== NPB 球員個人數據（來源：npb.jp 官方）=====\n" + "\n".join(sp_section_lines)
+                            self.log_source("official_api")
+                            print(f"  📊 NPB SP stats: {len(sp_section_lines)} players from DB")
+            except Exception as e:
+                print(f"  ⚠ NPB player stats fetch error: {e}")
         def format_standings(s):
             if not s:
                 return "無排名數據"
