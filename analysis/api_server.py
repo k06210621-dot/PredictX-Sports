@@ -907,6 +907,28 @@ def get_player_detail(player_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/admin/import_npb_players', methods=['POST'])
+def import_npb_players():
+    """一次性端點：匯入 npb_players.json 到 predictx.players"""
+    body = request.get_json(silent=True) or {}
+    if body.get('secret') != os.getenv('ADMIN_SECRET', 'predictx-admin-2026'):
+        return jsonify({"error": "unauthorized"}), 403
+    try:
+        import subprocess, os
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        result = subprocess.run(
+            [sys.executable, os.path.join(script_dir, 'import_npb_players.py')],
+            capture_output=True, text=True, timeout=60
+        )
+        return jsonify({
+            "exit_code": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }), 200 if result.returncode == 0 else 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     port = int(os.getenv('PORT', 8081))
     app.run(host="0.0.0.0", port=port, debug=False)
