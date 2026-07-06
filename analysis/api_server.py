@@ -934,7 +934,18 @@ def import_npb_players():
             SELECT english_name, team_id FROM predictx.teams
             WHERE league = 'NPB' AND english_name NOT LIKE '%Deprecated%'
         """)
-        team_name_to_id = {row[0]: row[1] for row in cur.fetchall()}
+        rows = cur.fetchall()
+        # RealDictCursor 用 column name 取值（backward-compat with tuple fallback）
+        team_name_to_id = {}
+        for row in rows:
+            try:
+                name = row['english_name'] if isinstance(row, dict) else row[0]
+                tid = row['team_id'] if isinstance(row, dict) else row[1]
+            except (KeyError, IndexError, TypeError):
+                # fallback: try positional
+                name = row[0]
+                tid = row[1]
+            team_name_to_id[name] = tid
 
         # 檢查是否已匯入
         cur.execute("""
