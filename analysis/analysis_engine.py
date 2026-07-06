@@ -741,8 +741,8 @@ class AnalysisEngine:
             except Exception as e:
                 print(f"  ⚠ NPB data fetch error: {e}")
 
-        # 8.5 球員資料注入（適用所有有球員資料的聯盟：MLB/NBA/WNBA/CPBL）
-        if league and league.upper() in ('MLB', 'NBA', 'WNBA', 'CPBL'):
+        # 8.5 球員資料注入（適用所有有球員資料的聯盟：MLB/NBA/WNBA/CPBL/NPB）
+        if league and league.upper() in ('MLB', 'NBA', 'WNBA', 'CPBL', 'NPB'):
             try:
                 home_team_id = game['home_team_id']
                 away_team_id = game['away_team_id']
@@ -1373,7 +1373,7 @@ Park Factor: {pf:.2f} ({park_interp})
 
         # 球員名單注入（適用 MLB/NBA/WNBA/CPBL，通用化）
         rostersection = ""
-        if league and league.upper() in ('MLB', 'NBA', 'WNBA', 'CPBL') and features.get('roster'):
+        if league and league.upper() in ('MLB', 'NBA', 'WNBA', 'CPBL', 'NPB') and features.get('roster'):
             roster = features['roster']
             h_players = roster.get('home', [])
             a_players = roster.get('away', [])
