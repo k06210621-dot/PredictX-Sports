@@ -1670,6 +1670,125 @@ def import_cpbl_player_stats():
         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
+@app.route('/api/admin/import_cpbl_roster', methods=['POST'])
+def import_cpbl_roster():
+    """一次性 endpoint：從 sportify.tw 爬 CPBL 投手+打者名單並建立 DB 球員 + 自動串連 stats"""
+    body = request.get_json(silent=True) or {}
+    if body.get('secret') != os.getenv('ADMIN_SECRET', 'predictx-admin-2026'):
+        return jsonify({"error": "unauthorized"}), 403
+    try:
+        import subprocess, re, json as _json, uuid as _uuid
+
+        TEAM_CN_MAP = {
+            "中信兄弟": "CTBC Brothers",
+            "統一獅": "Uni-President 7-ELEVEn Lions",
+            "富邦悍將": "Fubon Guardians",
+            "味全龍": "Wei Chuan Dragons",
+            "台鋼雄鷹": "TSG Hawks",
+            "樂天桃猿": "Rakuten Monkeys",
+        }
+
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        # 1. 取得 CPBL team UUIDs
+        cur.execute("""
+            SELECT english_name, team_id::text FROM predictx.teams
+            WHERE league = 'CPBL' AND english_name NOT LIKE '%Deprecated%'
+        """)
+        team_name_to_id = {}
+        for row in cur.fetchall():
+            if isinstance(row, dict):
+                team_name_to_id[row['english_name']] = row['team_id']
+            else:
+                team_name_to_id[row[0]] = row[1]
+
+        # 2. 取得現有 CPBL 球員
+        cur.execute("""
+            SELECT p.player_id::text, p.player_name
+            FROM predictx.players p
+            JOIN predictx.player_teams pt ON p.player_id = pt.player_id
+            JOIN predictx.teams t ON pt.team_id = t.team_id
+            WHERE t.league = 'CPBL' AND pt.is_active = true
+        """)
+        existing_players = {}
+        for row in cur.fetchall():
+            if isinstance(row, dict):
+                existing_players[row['player_name']] = row['player_id']
+            else:
+                existing_players[row[1]] = row[0]
+
+        # 3. 抓 sportify.tw 投手/打者
+        def fetch_sportify(stats_type):
+            url = f"https://sportify.tw/zh-TW/stats/{stats_type}?season=2026&type=1&min=10&sort=avg&order=desc"
+            try:
+                r = subprocess.run(["curl", "-s", "--connect-timeout", "10", url],
+                                    capture_output=True, text=True, timeout=30)
+                if r.returncode != 0 or not r.stdout:
+                    return []
+                m = re.search(r'__RESOLVED_RESOURCES\[3\]\s*=\s*"(.+?)";', r.stdout)
+                if not m:
+                    return []
+                decoded = _json.loads('"' + m.group(1) + '"')
+                data = _json.loads(decoded)
+                return data.get('Ok', {}).get('data', []) if isinstance(data, dict) else []
+            except Exception as e:
+                return []
+
+        created_players = 0
+        linked_teams = 0
+        for stats_type, kind in [('pitching', 'P'), ('batting', 'IF/OF')]:
+            for p in fetch_sportify(stats_type):
+                player_name = p.get('player_name', '').strip()
+                team_cn = p.get('team_name', '')
+                team_en = next((en for cn, en in TEAM_CN_MAP.items() if cn in team_cn), team_cn)
+                if not player_name or not team_en or team_en not in team_name_to_id:
+                    continue
+                team_id = team_name_to_id[team_en]
+
+                # 找或建 player
+                if player_name in existing_players:
+                    player_id = existing_players[player_name]
+                else:
+                    player_id = str(_uuid.uuid4())
+                    try:
+                        cur.execute("""
+                            INSERT INTO predictx.players (player_id, player_name, position)
+                            VALUES (%s, %s, %s)
+                        """, (player_id, player_name, kind))
+                        existing_players[player_name] = player_id
+                        created_players += 1
+                    except Exception:
+                        conn.rollback()
+                        cur = conn.cursor(cursor_factory=RealDictCursor)
+                        continue
+
+                # 串連 team
+                try:
+                    cur.execute("""
+                        INSERT INTO predictx.player_teams (id, player_id, team_id, is_active)
+                        VALUES (%s, %s, %s, true)
+                        ON CONFLICT DO NOTHING
+                    """, (str(_uuid.uuid4()), player_id, team_id))
+                    if cur.rowcount > 0:
+                        linked_teams += 1
+                except Exception:
+                    conn.rollback()
+                    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        conn.commit()
+        cur.close()
+        return jsonify({
+            "status": "ok",
+            "created_players": created_players,
+            "linked_team_relations": linked_teams,
+            "total_existing_players": len(existing_players),
+        }), 200
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
 if __name__ == "__main__":
     port = int(os.getenv('PORT', 8081))
     app.run(host="0.0.0.0", port=port, debug=False)
