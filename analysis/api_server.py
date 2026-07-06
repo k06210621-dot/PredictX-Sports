@@ -1252,6 +1252,10 @@ def import_npb_player_stats():
                 existing_players[row['player_name']] = dict(row)
             else:
                 existing_players[row[1]] = {'player_id': row[0], 'player_name': row[1], 'team_id': row[3]}
+        print(f"  [DEBUG] existing_players count: {len(existing_players)}", flush=True)
+        if existing_players:
+            sample = list(existing_players.items())[:3]
+            print(f"  [DEBUG] sample: {sample}", flush=True)
 
         # 讀取 npb_players.json
         script_dir = _os.path.dirname(_os.path.abspath(__file__))
