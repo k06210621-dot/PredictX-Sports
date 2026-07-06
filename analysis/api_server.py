@@ -1283,12 +1283,29 @@ def import_npb_player_stats():
                 skipped += 1
                 continue
 
-            # 找 DB 內對應球員
+            # 找 DB 內對應球員（DB 格式 "Given Family" vs JSON "Family, Given"）
             db_player = existing_players.get(name_en)
             if not db_player:
-                # 嘗試模糊比對（去掉逗號/空白）
+                # 嘗試 1：把 "Family, Given" 反轉成 "Given Family"
+                if ',' in name_en:
+                    parts = name_en.split(',', 1)
+                    reversed_name = f"{parts[1].strip()} {parts[0].strip()}"
+                    db_player = existing_players.get(reversed_name)
+            if not db_player:
+                # 嘗試 2：忽略逗號/空白
+                if ',' in name_en:
+                    parts = name_en.split(',', 1)
+                    reversed_name = f"{parts[1].strip()} {parts[0].strip()}"
+                    target = reversed_name.lower().replace(',', '').replace(' ', '')
+                    for db_name, db_info in existing_players.items():
+                        if db_name.lower().replace(',', '').replace(' ', '') == target:
+                            db_player = db_info
+                            break
+            if not db_player:
+                # 嘗試 3：直接忽略比對
+                target = name_en.lower().replace(',', '').replace(' ', '')
                 for db_name, db_info in existing_players.items():
-                    if db_name.lower().replace(',', '').replace(' ', '') == name_en.lower().replace(',', '').replace(' ', ''):
+                    if db_name.lower().replace(',', '').replace(' ', '') == target:
                         db_player = db_info
                         break
 
