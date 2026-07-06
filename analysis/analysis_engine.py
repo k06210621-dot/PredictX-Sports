@@ -1450,7 +1450,75 @@ Park Factor: {pf:.2f} ({park_interp})
                             i, p['name'], p['era'], p['whip'], p['k_per_9'], p['bb_per_9'], p['wins'], p['losses'], p['ip'])
                         cpbl_spec += line
 
-            # CPBL 今日先發投手（從 cpbl.com.tw 官網 API）
+            # 🆕 [2026-07-06] CPBL 當日 SP 個人 stats（從 predictx.player_season_stats）
+            if (game.get('home_pitcher_name') or game.get('away_pitcher_name')):
+                cpbl_sp_names = [game.get('home_pitcher_name'), game.get('away_pitcher_name')]
+                cpbl_sp_names = [n for n in cpbl_sp_names if n and n != '尚未公布' and n != 'TBD']
+                if cpbl_sp_names:
+                    try:
+                        self.cur.execute(f"""
+                            SELECT p.player_name, pss.kind, pss.era, pss.w, pss.l, pss.sv, pss.hld, pss.ip,
+                                   pss.p_h, pss.p_r, pss.p_er, pss.p_hr, pss.p_bb, pss.p_hbp, pss.p_so,
+                                   pss.avg, pss.obp, pss.slg, pss.g, pss.pa, pss.ab, pss.b_r, pss.b_h,
+                                   pss.tb, pss.rbi, pss.sb, pss.b_hr, pss.b_bb, pss.b_hbp, pss.b_so,
+                                   t.english_name
+                            FROM predictx.player_season_stats pss
+                            JOIN predictx.players p ON pss.player_id = p.player_id
+                            JOIN predictx.player_teams pt ON p.player_id = pt.player_id
+                            JOIN predictx.teams t ON pt.team_id = t.team_id
+                            WHERE pss.season = 2026
+                              AND pss.source = 'sportify_tw'
+                              AND t.league = 'CPBL'
+                              AND pt.is_active = true
+                              AND (
+                                {' OR '.join(['p.player_name ILIKE %s' for _ in cpbl_sp_names])}
+                              )
+                        """, [f'%{n}%' for n in cpbl_sp_names])
+                        sp_rows = self.cur.fetchall() or []
+                        if sp_rows:
+                            sp_lines = []
+                            for r in sp_rows:
+                                if isinstance(r, dict):
+                                    pname = r.get('player_name')
+                                    team = r.get('english_name', '')
+                                    kind = r.get('kind')
+                                    if kind == 'pitcher':
+                                        era = r.get('era', 0) or 0
+                                        w = r.get('w', 0) or 0
+                                        l = r.get('l', 0) or 0
+                                        sv = r.get('sv', 0) or 0
+                                        hld = r.get('hld', 0) or 0
+                                        ip = r.get('ip', 0) or 0
+                                        p_so = r.get('p_so', 0) or 0
+                                        p_bb = r.get('p_bb', 0) or 0
+                                        p_hr = r.get('p_hr', 0) or 0
+                                        p_h = r.get('p_h', 0) or 0
+                                        k9 = (p_so * 9 / ip) if ip else 0
+                                        bb9 = (p_bb * 9 / ip) if ip else 0
+                                        whip = ((p_h + p_bb) / ip) if ip else 0
+                                        sp_lines.append(
+                                            f"  投手 {pname} ({team}): ERA={era:.2f}, {w}勝-{l}敗-{sv}SV-{hld}HLD, "
+                                            f"IP={ip}, SO={p_so}, BB={p_bb}, HR={p_hr}, "
+                                            f"K/9={k9:.1f}, BB/9={bb9:.1f}, WHIP={whip:.2f}"
+                                        )
+                                    else:
+                                        avg = r.get('avg', 0) or 0
+                                        obp = r.get('obp', 0) or 0
+                                        slg = r.get('slg', 0) or 0
+                                        b_hr = r.get('b_hr', 0) or 0
+                                        b_rbi = r.get('rbi', 0) or 0
+                                        sp_lines.append(
+                                            f"  打者 {pname} ({team}): AVG={avg:.3f}, OBP={obp:.3f}, SLG={slg:.3f}, "
+                                            f"HR={b_hr}, RBI={b_rbi}"
+                                        )
+                            if sp_lines:
+                                cpbl_spec += "\n\n===== CPBL 球員個人數據（來源：sportify.tw）=====\n" + "\n".join(sp_lines)
+                                self.log_source("official_api")
+                                print(f"  📊 CPBL SP stats: {len(sp_lines)} players from DB")
+                    except Exception as e:
+                        print(f"  ⚠ CPBL player stats fetch error: {e}")
+
+                        # CPBL 今日先發投手（從 cpbl.com.tw 官網 API）
             cpbl_starters = features.get('cpbl_starting_pitchers', {})
             if cpbl_starters:
                 h_sp = cpbl_starters.get(home_team, {})
