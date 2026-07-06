@@ -1424,6 +1424,252 @@ def import_npb_player_stats():
         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
+@app.route('/api/admin/import_cpbl_player_stats', methods=['POST'])
+def import_cpbl_player_stats():
+    """一次性 endpoint：從 sportify.tw 爬 CPBL 投手+打者 stats 寫入 player_season_stats"""
+    body = request.get_json(silent=True) or {}
+    if body.get('secret') != os.getenv('ADMIN_SECRET', 'predictx-admin-2026'):
+        return jsonify({"error": "unauthorized"}), 403
+    try:
+        import subprocess, re, json as _json
+
+        # 隊名對照
+        TEAM_CN_MAP = {
+            "中信兄弟": "CTBC Brothers",
+            "統一獅": "Uni-President 7-ELEVEn Lions",
+            "富邦悍將": "Fubon Guardians",
+            "味全龍": "Wei Chuan Dragons",
+            "台鋼雄鷹": "TSG Hawks",
+            "樂天桃猿": "Rakuten Monkeys",
+        }
+
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        # 取得現有 CPBL 球員
+        cur.execute("""
+            SELECT p.player_id::text, p.player_name, p.position, pt.team_id::text, t.english_name
+            FROM predictx.players p
+            JOIN predictx.player_teams pt ON p.player_id = pt.player_id
+            JOIN predictx.teams t ON pt.team_id = t.team_id
+            WHERE t.league = 'CPBL' AND pt.is_active = true
+        """)
+        existing_players = {}
+        for row in cur.fetchall():
+            if isinstance(row, dict):
+                existing_players[(row['player_name'], row['english_name'])] = dict(row)
+            else:
+                existing_players[(row[1], row[4])] = {'player_id': row[0], 'player_name': row[1], 'team_id': row[3]}
+
+        # 用 curl 抓 sportify.tw 投手/打者 stats
+        def fetch_sportify_stats(stats_type, min_n=10):
+            """stats_type: 'pitching' or 'batting'"""
+            url = f"https://sportify.tw/zh-TW/stats/{stats_type}?season=2026&type=1&min={min_n}&sort=avg&order=desc"
+            try:
+                result = subprocess.run(
+                    ["curl", "-s", "--connect-timeout", "10", url],
+                    capture_output=True, text=True, timeout=30
+                )
+                if result.returncode != 0 or not result.stdout:
+                    return []
+                m = re.search(r'__RESOLVED_RESOURCES\[3\]\s*=\s*"(.+?)";', result.stdout)
+                if not m:
+                    return []
+                raw = m.group(1)
+                decoded = _json.loads('"' + raw + '"')
+                data = _json.loads(decoded)
+                return data.get('Ok', {}).get('data', []) if isinstance(data, dict) else []
+            except Exception as e:
+                print(f"  ⚠ sportify {stats_type} fetch error: {e}", flush=True)
+                return []
+
+        inserted = 0
+        skipped = 0
+        unmatched = []
+
+        # 投手
+        for p in fetch_sportify_stats('pitching'):
+            player_name = p.get('player_name', '').strip()
+            team_cn = p.get('team_name', '')
+            team_en = next((en for cn, en in TEAM_CN_MAP.items() if cn in team_cn), team_cn)
+
+            if not player_name or not team_en:
+                skipped += 1
+                continue
+
+            # 找 DB 內球員（DB 用「Family, Given」格式）
+            db_player = None
+            for (name, db_team), info in existing_players.items():
+                if db_team != team_en:
+                    continue
+                # 嘗試多種比對
+                if name == player_name:
+                    db_player = info
+                    break
+                # 去掉空白/小寫
+                if name.lower().replace(' ', '') == player_name.lower().replace(' ', ''):
+                    db_player = info
+                    break
+                # 包含關係
+                if player_name in name or name in player_name:
+                    db_player = info
+                    break
+
+            if not db_player:
+                unmatched.append(f"{player_name} ({team_en})")
+                continue
+
+            # 投手 stats
+            ip_str = p.get('ip', '0')
+            ip = 0
+            if '.' in str(ip_str):
+                parts = str(ip_str).split('.')
+                try:
+                    ip = int(parts[0]) + int(parts[1]) / 3 if len(parts) > 1 and parts[1] else int(parts[0])
+                except ValueError:
+                    ip = 0
+            else:
+                try:
+                    ip = float(ip_str)
+                except (ValueError, TypeError):
+                    ip = 0
+
+            def _f(k, default=0.0):
+                v = p.get(k, default)
+                if v in (None, ''):
+                    return default
+                try:
+                    return float(v)
+                except (TypeError, ValueError):
+                    return default
+
+            def _i(k, default=0):
+                v = p.get(k, default)
+                if v in (None, ''):
+                    return default
+                try:
+                    return int(float(v))
+                except (TypeError, ValueError):
+                    return default
+
+            try:
+                cur.execute("""
+                    INSERT INTO predictx.player_season_stats
+                        (player_id, league, season, kind,
+                         era, w, l, p_h, p_r, p_er, p_hr, p_bb, p_so, ip,
+                         source)
+                    VALUES (%s, %s, %s, 'pitcher',
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            'sportify_tw')
+                    ON CONFLICT (player_id, season, source) DO UPDATE SET
+                        era = EXCLUDED.era,
+                        w = EXCLUDED.w, l = EXCLUDED.l,
+                        p_h = EXCLUDED.p_h, p_r = EXCLUDED.p_r, p_er = EXCLUDED.p_er,
+                        p_hr = EXCLUDED.p_hr, p_bb = EXCLUDED.p_bb, p_so = EXCLUDED.p_so,
+                        ip = EXCLUDED.ip,
+                        kind = 'pitcher',
+                        fetched_at = NOW()
+                """, (
+                    db_player['player_id'], 'CPBL', 2026,
+                    _f('era'), _i('wins', _i('w')), _i('losses', _i('l')),
+                    _i('hits', _i('h')), _i('runs', _i('r')), _i('er'),
+                    _i('home_runs', _i('hr')), _i('bb'), _i('strikeouts', _i('so')),
+                    round(ip, 1),
+                ))
+                inserted += 1
+            except Exception as e:
+                print(f"  ⚠ Insert pitcher {player_name}: {e}", flush=True)
+                conn.rollback()
+                cur = conn.cursor(cursor_factory=RealDictCursor)
+                skipped += 1
+
+        # 打者
+        for p in fetch_sportify_stats('batting'):
+            player_name = p.get('player_name', '').strip()
+            team_cn = p.get('team_name', '')
+            team_en = next((en for cn, en in TEAM_CN_MAP.items() if cn in team_cn), team_cn)
+
+            if not player_name or not team_en:
+                skipped += 1
+                continue
+
+            db_player = None
+            for (name, db_team), info in existing_players.items():
+                if db_team != team_en:
+                    continue
+                if name == player_name or \
+                   name.lower().replace(' ', '') == player_name.lower().replace(' ', '') or \
+                   player_name in name or name in player_name:
+                    db_player = info
+                    break
+
+            if not db_player:
+                unmatched.append(f"打者 {player_name} ({team_en})")
+                continue
+
+            def _f(k, default=0.0):
+                v = p.get(k, default)
+                if v in (None, ''):
+                    return default
+                try:
+                    return float(v)
+                except (TypeError, ValueError):
+                    return default
+
+            def _i(k, default=0):
+                v = p.get(k, default)
+                if v in (None, ''):
+                    return default
+                try:
+                    return int(float(v))
+                except (TypeError, ValueError):
+                    return default
+
+            try:
+                cur.execute("""
+                    INSERT INTO predictx.player_season_stats
+                        (player_id, league, season, kind,
+                         avg, obp, slg, pa, ab, b_r, b_h, tb, rbi, sb, b_hr, b_bb, b_so,
+                         source)
+                    VALUES (%s, %s, %s, 'batter',
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            'sportify_tw')
+                    ON CONFLICT (player_id, season, source) DO UPDATE SET
+                        avg = EXCLUDED.avg, obp = EXCLUDED.obp, slg = EXCLUDED.slg,
+                        pa = EXCLUDED.pa, ab = EXCLUDED.ab, b_r = EXCLUDED.b_r, b_h = EXCLUDED.b_h,
+                        tb = EXCLUDED.tb, rbi = EXCLUDED.rbi, sb = EXCLUDED.sb,
+                        b_hr = EXCLUDED.b_hr, b_bb = EXCLUDED.b_bb, b_so = EXCLUDED.b_so,
+                        kind = 'batter',
+                        fetched_at = NOW()
+                """, (
+                    db_player['player_id'], 'CPBL', 2026,
+                    _f('avg'), _f('obp'), _f('slg'),
+                    _i('pa'), _i('ab'), _i('r'), _i('hits', _i('h')),
+                    _i('tb', _i('hits', _i('h')) + _i('2b', 0) + 2*_i('3b', 0) + 4*_i('home_runs', _i('hr'))),
+                    _i('rbi'), _i('sb', 0),
+                    _i('home_runs', _i('hr')), _i('bb'), _i('so', 0),
+                ))
+                inserted += 1
+            except Exception as e:
+                print(f"  ⚠ Insert batter {player_name}: {e}", flush=True)
+                conn.rollback()
+                cur = conn.cursor(cursor_factory=RealDictCursor)
+                skipped += 1
+
+        conn.commit()
+        cur.close()
+        return jsonify({
+            "status": "ok",
+            "inserted": inserted,
+            "skipped": skipped,
+            "unmatched_sample": unmatched[:30],
+            "total_unmatched": len(unmatched),
+        }), 200
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
 if __name__ == "__main__":
     port = int(os.getenv('PORT', 8081))
     app.run(host="0.0.0.0", port=port, debug=False)
