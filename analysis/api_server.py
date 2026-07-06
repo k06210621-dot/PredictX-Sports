@@ -927,7 +927,7 @@ def import_npb_players():
         }
 
         conn = get_db()
-        cur = conn.cursor()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
 
         # 取得 NPB team UUIDs
         cur.execute("""
