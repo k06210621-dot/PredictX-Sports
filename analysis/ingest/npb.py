@@ -157,7 +157,9 @@ class NPBIngester(BaseIngester):
         try:
             from npb_data_fetcher import NPBDataFetcher
             fetcher = NPBDataFetcher()
-            starters = fetcher.get_today_starters()
+            # target_date: "YYYY-MM-DD" → "YYYYMMDD"
+            date_str = target_date.replace('-', '')
+            starters = fetcher.get_today_starters(date_str)
             if starters:
                 enriched = 0
                 for g in games:

@@ -328,9 +328,16 @@ class NPBDataFetcher:
         row = self.cur.fetchone()
         return row['team_id'] if row else None
 
-    def get_today_starters(self):
-        """從 lottonavi.com 爬取 NPB 當日先發投手名單"""
-        url = "https://www.lottonavi.com/matches/npb/"
+    def get_today_starters(self, match_date=None):
+        """從 lottonavi.com 爬取 NPB 當日先發投手名單
+        
+        Args:
+            match_date: "YYYYMMDD" 格式字串（預設為今天）
+        """
+        if match_date is None:
+            from datetime import date
+            match_date = date.today().strftime('%Y%m%d')
+        url = f"https://www.lottonavi.com/matches/npb/{match_date}"
         try:
             resp = self.session.get(url, timeout=15)
             if resp.status_code != 200:
