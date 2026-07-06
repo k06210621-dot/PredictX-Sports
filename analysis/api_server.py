@@ -914,19 +914,88 @@ def import_npb_players():
     if body.get('secret') != os.getenv('ADMIN_SECRET', 'predictx-admin-2026'):
         return jsonify({"error": "unauthorized"}), 403
     try:
-        import subprocess, os
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        result = subprocess.run(
-            [sys.executable, os.path.join(script_dir, 'import_npb_players.py')],
-            capture_output=True, text=True, timeout=60
-        )
-        return jsonify({
-            "exit_code": result.returncode,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-        }), 200 if result.returncode == 0 else 500
+        import json as _json
+        import uuid as _uuid
+        import os as _os
+
+        # team_code → DB team_id
+        TEAM_CODE_TO_DB = {
+            'G': 'Yomiuri Giants', 'T': 'Hanshin Tigers', 'D': 'Chunichi Dragons',
+            'YB': 'Yokohama DeNA BayStars', 'C': 'Hiroshima Toyo Carp', 'S': 'Tokyo Yakult Swallows',
+            'H': 'Fukuoka SoftBank Hawks', 'L': 'Saitama Seibu Lions', 'M': 'Chiba Lotte Marines',
+            'E': 'Tohoku Rakuten Golden Eagles', 'B': 'ORIX Buffaloes', 'F': 'Hokkaido Nippon-Ham Fighters',
+        }
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        # 取得 NPB team UUIDs
+        cur.execute("""
+            SELECT english_name, team_id FROM predictx.teams
+            WHERE league = 'NPB' AND english_name NOT LIKE '%Deprecated%'
+        """)
+        team_name_to_id = {row[0]: row[1] for row in cur.fetchall()}
+
+        # 檢查是否已匯入
+        cur.execute("""
+            SELECT COUNT(*) FROM predictx.players p
+            JOIN predictx.player_teams pt ON p.player_id = pt.player_id
+            JOIN predictx.teams t ON pt.team_id = t.team_id
+            WHERE t.league = 'NPB' AND pt.is_active = true
+        """)
+        existing_row = cur.fetchone()
+        existing = existing_row[0] if existing_row else 0
+        if existing > 0:
+            cur.close()
+            return jsonify({"status": "skipped", "reason": f"Already {existing} NPB players in DB"}), 200
+
+        # 讀取 npb_players.json
+        script_dir = _os.path.dirname(_os.path.abspath(__file__))
+        json_path = _os.path.join(script_dir, 'npb_players.json')
+        with open(json_path) as f:
+            players = _json.load(f)
+
+        inserted = 0
+        skipped = 0
+        for p in players:
+            team_code = p.get('team_code')
+            if not team_code:
+                skipped += 1
+                continue
+            team_name = TEAM_CODE_TO_DB.get(team_code)
+            if not team_name:
+                skipped += 1
+                continue
+            team_id = team_name_to_id.get(team_name)
+            if not team_id:
+                skipped += 1
+                continue
+
+            name_en = p.get('name_en', 'Unknown')
+            kind = p.get('kind', 'batter')
+            position = 'P' if kind == 'pitcher' else 'IF/OF'
+            player_id = str(_uuid.uuid4())
+
+            try:
+                cur.execute("""
+                    INSERT INTO predictx.players (player_id, player_name, position)
+                    VALUES (%s, %s, %s)
+                """, (player_id, name_en, position))
+                cur.execute("""
+                    INSERT INTO predictx.player_teams (id, player_id, team_id, is_active)
+                    VALUES (%s, %s, %s, true)
+                """, (str(_uuid.uuid4()), player_id, team_id))
+                inserted += 1
+            except Exception:
+                conn.rollback()
+                skipped += 1
+
+        conn.commit()
+        cur.close()
+        return jsonify({"status": "ok", "inserted": inserted, "skipped": skipped, "total_json": len(players)}), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
 if __name__ == "__main__":
