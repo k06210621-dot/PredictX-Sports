@@ -165,12 +165,19 @@ class NPBIngester(BaseIngester):
                 for g in games:
                     home = g.get('home_team')
                     away = g.get('away_team')
-                    # lottonavi 的 key 格式: "home_team_vs_away_team"
-                    key = f"{home}_vs_{away}"
-                    if key in starters:
-                        sp = starters[key]
+                    # lottonavi 和 npb.jp 主客隊順序可能相反，雙向比對
+                    key1 = f"{home}_vs_{away}"
+                    key2 = f"{away}_vs_{home}"
+                    sp = starters.get(key1)
+                    if sp:
                         g['home_pitcher'] = sp.get('home_pitcher')
                         g['away_pitcher'] = sp.get('away_pitcher')
+                        enriched += 1
+                    elif key2 in starters:
+                        sp = starters[key2]
+                        # 主客隊相反，投手也要對調
+                        g['home_pitcher'] = sp.get('away_pitcher')
+                        g['away_pitcher'] = sp.get('home_pitcher')
                         enriched += 1
                 LOGGER.info(f"NPB {target_date} 補入先發投手: {enriched} 筆")
             else:
