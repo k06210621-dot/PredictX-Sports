@@ -1140,6 +1140,251 @@ def check_settlement():
         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
+@app.route('/api/admin/migrate_player_stats', methods=['POST'])
+def migrate_player_stats():
+    """一次性 migration：建 predictx.player_season_stats 表存 NPB 球員個人 stats"""
+    body = request.get_json(silent=True) or {}
+    if body.get('secret') != os.getenv('ADMIN_SECRET', 'predictx-admin-2026'):
+        return jsonify({"error": "unauthorized"}), 403
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        results = []
+        # 建表（IF NOT EXISTS）
+        sql = """
+        CREATE TABLE IF NOT EXISTS predictx.player_season_stats (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            player_id UUID NOT NULL REFERENCES predictx.players(player_id) ON DELETE CASCADE,
+            league VARCHAR(10) NOT NULL,
+            season INTEGER NOT NULL,
+            kind VARCHAR(20) NOT NULL,
+            -- 投手 stats
+            era NUMERIC(5,2),
+            w INTEGER, l INTEGER, sv INTEGER, hld INTEGER, cg INTEGER, sho INTEGER,
+            ip NUMERIC(6,2),
+            h INTEGER, r INTEGER, er INTEGER,
+            hr INTEGER, bb INTEGER, hbp INTEGER, so INTEGER,
+            -- 打者 stats
+            avg NUMERIC(5,3), obp NUMERIC(5,3), slg NUMERIC(5,3),
+            g INTEGER, pa INTEGER, ab INTEGER,
+            r INTEGER, h INTEGER,
+            tb INTEGER, rbi INTEGER, sb INTEGER,
+            hr INTEGER, bb INTEGER, hbp INTEGER, so INTEGER,
+            -- 通用
+            source VARCHAR(50),
+            fetched_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE(player_id, season, source)
+        )
+        """
+        try:
+            cur.execute(sql)
+            results.append({"step": "create_table_player_season_stats", "status": "ok"})
+        except Exception as e:
+            conn.rollback()
+            cur = conn.cursor()
+            results.append({"step": "create_table_player_season_stats", "status": "error", "error": str(e)[:200]})
+
+        # 建 index 加速查詢
+        for sql, desc in [
+            ("CREATE INDEX IF NOT EXISTS idx_pss_player_id ON predictx.player_season_stats (player_id)", "idx_pss_player_id"),
+            ("CREATE INDEX IF NOT EXISTS idx_pss_league_season ON predictx.player_season_stats (league, season)", "idx_pss_league_season"),
+        ]:
+            try:
+                cur.execute(sql)
+                results.append({"step": desc, "status": "ok"})
+            except Exception as e:
+                conn.rollback()
+                cur = conn.cursor()
+                results.append({"step": desc, "status": "skipped", "error": str(e)[:200]})
+
+        conn.commit()
+        cur.close()
+        return jsonify({"status": "migration_applied", "results": results}), 200
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+@app.route('/api/admin/import_npb_player_stats', methods=['POST'])
+def import_npb_player_stats():
+    """一次性 endpoint：從 npb_players.json 匯入 118 名 NPB 球員的個人 stats"""
+    body = request.get_json(silent=True) or {}
+    if body.get('secret') != os.getenv('ADMIN_SECRET', 'predictx-admin-2026'):
+        return jsonify({"error": "unauthorized"}), 403
+    try:
+        import json as _json
+        import os as _os
+
+        # 隊名對照
+        TEAM_CODE_TO_DB = {
+            'G': 'Yomiuri Giants', 'T': 'Hanshin Tigers', 'D': 'Chunichi Dragons',
+            'YB': 'Yokohama DeNA BayStars', 'C': 'Hiroshima Toyo Carp', 'S': 'Tokyo Yakult Swallows',
+            'H': 'Fukuoka SoftBank Hawks', 'L': 'Saitama Seibu Lions', 'M': 'Chiba Lotte Marines',
+            'E': 'Tohoku Rakuten Golden Eagles', 'B': 'ORIX Buffaloes', 'F': 'Hokkaido Nippon-Ham Fighters',
+        }
+
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        # 取得 NPB team UUIDs
+        cur.execute("""
+            SELECT english_name, team_id FROM predictx.teams
+            WHERE league = 'NPB' AND english_name NOT LIKE '%Deprecated%'
+        """)
+        team_name_to_id = {row[0]: row[1] for row in cur.fetchall()}
+
+        # 取得現有 NPB 球員 (player_id, name, team_id)
+        cur.execute("""
+            SELECT p.player_id::text, p.player_name, p.position, pt.team_id::text
+            FROM predictx.players p
+            JOIN predictx.player_teams pt ON p.player_id = pt.player_id
+            JOIN predictx.teams t ON pt.team_id = t.team_id
+            WHERE t.league = 'NPB' AND pt.is_active = true
+        """)
+        existing_players = {r['player_name']: r for r in cur.fetchall()}
+
+        # 讀取 npb_players.json
+        script_dir = _os.path.dirname(_os.path.abspath(__file__))
+        json_path = _os.path.join(script_dir, 'npb_players.json')
+        with open(json_path) as f:
+            players = _json.load(f)
+
+        inserted = 0
+        skipped = 0
+        unmatched = []
+        league_map = {'central': 'NPB-CL', 'pacific': 'NPB-PL'}
+
+        for p in players:
+            team_code = p.get('team_code')
+            if not team_code:
+                skipped += 1
+                continue
+            team_name = TEAM_CODE_TO_DB.get(team_code)
+            if not team_name:
+                skipped += 1
+                continue
+            team_id = team_name_to_id.get(team_name)
+            if not team_id:
+                skipped += 1
+                continue
+
+            name_en = p.get('name_en', '').strip()
+            if not name_en:
+                skipped += 1
+                continue
+
+            # 找 DB 內對應球員
+            db_player = existing_players.get(name_en)
+            if not db_player:
+                # 嘗試模糊比對（去掉逗號/空白）
+                for db_name, db_info in existing_players.items():
+                    if db_name.lower().replace(',', '').replace(' ', '') == name_en.lower().replace(',', '').replace(' ', ''):
+                        db_player = db_info
+                        break
+
+            if not db_player:
+                unmatched.append(name_en)
+                continue
+
+            player_id = db_player['player_id']
+            kind = p.get('kind', 'batter')
+            league = league_map.get(p.get('league', ''), 'NPB')
+
+            def _f(name, default=None):
+                v = p.get(name, default)
+                if v is None or v == '':
+                    return default
+                try:
+                    return float(v)
+                except (TypeError, ValueError):
+                    return default
+
+            def _i(name, default=None):
+                v = p.get(name, default)
+                if v is None or v == '':
+                    return default
+                try:
+                    return int(v)
+                except (TypeError, ValueError):
+                    return default
+
+            # 投手 stats
+            era = _f('era') if kind == 'pitcher' else None
+            w = _i('w') if kind == 'pitcher' else None
+            l = _i('l') if kind == 'pitcher' else None
+            sv = _i('sv') if kind == 'pitcher' else None
+            hld = _i('hld') if kind == 'pitcher' else None
+            cg = _i('cg') if kind == 'pitcher' else None
+            sho = _i('sho') if kind == 'pitcher' else None
+            ip = _f('ip') if kind == 'pitcher' else None
+            # 打者 stats
+            avg = _f('avg') if kind == 'batter' else None
+            obp = _f('obp') if kind == 'batter' else None
+            slg = _f('slg') if kind == 'batter' else None
+            pa = _i('pa') if kind == 'batter' else None
+            ab = _i('ab') if kind == 'batter' else None
+            tb = _i('tb') if kind == 'batter' else None
+            rbi = _i('rbi') if kind == 'batter' else None
+            sb = _i('sb') if kind == 'batter' else None
+            # 通用 stats
+            games = _i('g')
+            h = _i('h')
+            r = _i('r')
+            hr = _i('hr')
+            bb = _i('bb')
+            hbp = _i('hb') or _i('hbp')  # 打者用 hbp，投手用 hp
+            so = _i('so')
+            er = _i('er') if kind == 'pitcher' else None
+
+            try:
+                cur.execute("""
+                    INSERT INTO predictx.player_season_stats
+                        (player_id, league, season, kind,
+                         era, w, l, sv, hld, cg, sho, ip, h, r, er, hr, bb, hbp, so,
+                         avg, obp, slg, g, pa, ab, tb, rbi, sb,
+                         source)
+                    VALUES (%s, %s, %s, %s,
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            'npb_players_json')
+                    ON CONFLICT (player_id, season, source) DO UPDATE SET
+                        era = EXCLUDED.era,
+                        w = EXCLUDED.w, l = EXCLUDED.l, sv = EXCLUDED.sv, hld = EXCLUDED.hld,
+                        cg = EXCLUDED.cg, sho = EXCLUDED.sho, ip = EXCLUDED.ip,
+                        h = EXCLUDED.h, r = EXCLUDED.r, er = EXCLUDED.er,
+                        hr = EXCLUDED.hr, bb = EXCLUDED.bb, hbp = EXCLUDED.hbp, so = EXCLUDED.so,
+                        avg = EXCLUDED.avg, obp = EXCLUDED.obp, slg = EXCLUDED.slg,
+                        g = EXCLUDED.g, pa = EXCLUDED.pa, ab = EXCLUDED.ab,
+                        tb = EXCLUDED.tb, rbi = EXCLUDED.rbi, sb = EXCLUDED.sb,
+                        kind = EXCLUDED.kind,
+                        fetched_at = NOW()
+                """, (
+                    player_id, league, 2026, kind,
+                    era, w, l, sv, hld, cg, sho, ip, h, r, er, hr, bb, hbp, so,
+                    avg, obp, slg, games, pa, ab, tb, rbi, sb,
+                ))
+                inserted += 1
+            except Exception as e:
+                print(f"  ⚠ Insert error for {name_en}: {e}", flush=True)
+                conn.rollback()
+                cur = conn.cursor(cursor_factory=RealDictCursor)
+                skipped += 1
+
+        conn.commit()
+        cur.close()
+        return jsonify({
+            "status": "ok",
+            "inserted": inserted,
+            "skipped": skipped,
+            "unmatched": unmatched[:30],  # 只回前 30
+            "total_unmatched": len(unmatched),
+            "total_json": len(players),
+        }), 200
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
 if __name__ == "__main__":
     port = int(os.getenv('PORT', 8081))
     app.run(host="0.0.0.0", port=port, debug=False)
