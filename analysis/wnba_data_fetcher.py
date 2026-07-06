@@ -27,16 +27,16 @@ ESPN_TEAM_ID = {
     "Connecticut Sun": 18,
     "Dallas Wings": 3,
     "Golden State Valkyries": 129689,
-    "Indiana Fever": 11,
-    "Las Vegas Aces": 14,
-    "Los Angeles Sparks": 16,
-    "Minnesota Lynx": 9,
-    "New York Liberty": 10,
-    "Phoenix Mercury": 21,
-    "Seattle Storm": 23,
-    "Washington Mystics": 27,
-    "Toronto Tempo": None,  # 尚未加入 ESPN
-    "Portland Fire": None,
+    "Indiana Fever": 5,
+    "Las Vegas Aces": 17,        # ESPN ID 17（不是 14，14 是 Seattle Storm）
+    "Los Angeles Sparks": 6,
+    "Minnesota Lynx": 8,
+    "New York Liberty": 9,       # ESPN ID 9（不是 10，10 是 Phoenix Mercury）
+    "Phoenix Mercury": 11,
+    "Seattle Storm": 14,
+    "Washington Mystics": 16,
+    "Portland Fire": 132052,     # 2026 新隊
+    "Toronto Tempo": 131935,     # 2026 新隊
 }
 
 
@@ -150,6 +150,7 @@ class WNBADataFetcher:
                 else:
                     net_rtg = 0.0
 
+                # 預先放進 stats_map（進階數據在 _fetch_team_advanced_stats 補上）
                 stats_map[team_name] = {
                     'g': games_played,
                     'wins': wins,
@@ -166,19 +167,119 @@ class WNBADataFetcher:
                     'streak': streak,
                     'playoff_seed': playoff_seed,
                     # 為相容性提供 ESPN 沒有的欄位
-                    'off_rtg': ppg,  # 近似
-                    'def_rtg': opp_ppg,  # 近似
-                    'pace': 0.0,  # ESPN standings 沒提供
+                    'off_rtg': ppg,  # 近似，待 team stats 補上
+                    'def_rtg': opp_ppg,  # 近似，待 team stats 補上
+                    'pace': 0.0,  # ESPN team stats 才有
                     'mov': differential / games_played if games_played else 0.0,
                     'ts_pct': 0.0,
                     'efg_pct': 0.0,
                     'tov_pct': 0.0,
+                    'fg_pct': 0.0,
+                    'three_pt_pct': 0.0,
+                    'ft_pct': 0.0,
+                    'ast_to_tov': 0.0,
+                    'oreb_per_g': 0.0,
+                    'dreb_per_g': 0.0,
+                    'stl_per_g': 0.0,
+                    'blk_per_g': 0.0,
                     'sos': 0.0,
                     'srs': 0.0,
                 }
 
+        # 第二輪：抓每隊的 team-level 進階 stats（FG%、3P%、TS% 等）
+        self._enrich_with_team_stats(stats_map, season)
+
         self._stats_cache = stats_map
         return stats_map
+
+    def _enrich_with_team_stats(self, stats_map, season=2026):
+        """從 ESPN team-level statistics endpoint 抓進階指標
+
+        為何這個步驟重要：
+        - standings 只給 W-L / PPG / differential（基本）
+        - team statistics 給 FG%、3P%、FT%、AST/TO、OREB、DREB、STL、BLK、eFG%、TS%
+        - LLM 有了 TS% / eFG% 才能區分「打進攻戰的隊 vs 打防守戰的隊」
+        """
+        base_url = "https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/teams/{}/statistics"
+        for team_name, espn_id in ESPN_TEAM_ID.items():
+            if not espn_id or team_name not in stats_map:
+                continue
+            try:
+                resp = self.session.get(base_url.format(espn_id), params={"season": season}, timeout=15)
+                if resp.status_code != 200:
+                    continue
+                data = resp.json()
+                results = data.get('results', {})
+                if 'stats' not in results:
+                    continue
+                # 把所有 categories 的 stats 攤平成 dict
+                flat_stats = {}
+                for cat in results.get('stats', {}).get('categories', []):
+                    for st in cat.get('stats', []):
+                        name = st.get('name', '')
+                        val = st.get('value', st.get('displayValue'))
+                        flat_stats[name] = val
+
+                def _f(name, default=0.0):
+                    v = flat_stats.get(name, default)
+                    if v in (None, '-', ''):
+                        return default
+                    try:
+                        return float(v)
+                    except (TypeError, ValueError):
+                        return default
+
+                # 從 ESPN team stats 拿到真實的進階數據
+                # 附註：ESPN 的 value 已是百分比小數（e.g. 0.423）但有時是 423 需判斷
+                fg_pct_raw = _f('fieldGoalPct')
+                fg_pct = fg_pct_raw if fg_pct_raw <= 1.0 else fg_pct_raw / 100.0
+
+                three_pt_raw = _f('threePointPct')
+                three_pt = three_pt_raw if three_pt_raw <= 1.0 else three_pt_raw / 100.0
+
+                ft_raw = _f('freeThrowPct')
+                ft_pct = ft_raw if ft_raw <= 1.0 else ft_raw / 100.0
+
+                # ESPN's shootingEfficiency ≈ eFG%, scoringEfficiency ≈ TS% / 2
+                # shootingEfficiency 0.49 → eFG% 0.49 (近似)
+                efg = _f('shootingEfficiency')  # 0.49 ≈ eFG%
+                # scoringEfficiency 1.210 → TS% = 1.210 * 100 = 121? 這是 raw 計算
+                # 實測：1.21 對應 TS% ≈ 0.580 → 除以 ~2.08
+                scoring_eff = _f('scoringEfficiency')  # 1.21
+                ts_pct = scoring_eff * 100 / 208 if scoring_eff else 0.0  # 0.580
+
+                ast_to_tov = _f('assistTurnoverRatio')
+                oreb = _f('avgOffensiveRebounds')
+                dreb = _f('avgDefensiveRebounds')
+                stl = _f('avgSteals')
+                blk = _f('avgBlocks')
+                tov = _f('avgTurnovers')
+
+                # TOV% (近似：TOV / (FGA + 0.44*FTA + TOV))
+                fga = _f('avgFieldGoalsAttempted', 0)
+                fta = _f('avgFreeThrowsAttempted', 0)
+                if fga > 0 and tov > 0:
+                    tov_pct = tov / (fga + 0.44 * fta + tov)
+                else:
+                    tov_pct = 0.0
+
+                # 更新 stats_map
+                stats_map[team_name].update({
+                    'fg_pct': fg_pct,
+                    'three_pt_pct': three_pt,
+                    'ft_pct': ft_pct,
+                    'ts_pct': ts_pct,
+                    'efg_pct': efg,
+                    'tov_pct': tov_pct,
+                    'ast_to_tov': ast_to_tov,
+                    'oreb_per_g': oreb,
+                    'dreb_per_g': dreb,
+                    'stl_per_g': stl,
+                    'blk_per_g': blk,
+                })
+            except Exception as e:
+                print(f"  ⚠ WNBA team stats for {team_name} (id={espn_id}) failed: {e}", flush=True)
+                continue
 
     def _match_team(self, local_name):
         """比對本地隊名與 ESPN 隊名"""

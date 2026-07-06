@@ -1158,13 +1158,19 @@ class AnalysisEngine:
   主場戰績: {h.get('home_record','?')} ({h.get('home_win_pct', 0):.1%})
   客場戰績: {h.get('road_record','?')} ({h.get('road_win_pct', 0):.1%})
   連勝/敗: {h.get('streak','?')}
+  投籃: FG%={h.get('fg_pct', 0):.1%}, 3P%={h.get('three_pt_pct', 0):.1%}, FT%={h.get('ft_pct', 0):.1%}
+  進階: TS%={h.get('ts_pct', 0):.1%}, eFG%={h.get('efg_pct', 0):.1%}, TOV%={h.get('tov_pct', 0):.1%}
+  團隊: AST/TO={h.get('ast_to_tov', 0):.2f}, OREB={h.get('oreb_per_g', 0):.1f}, DREB={h.get('dreb_per_g', 0):.1f}, STL={h.get('stl_per_g', 0):.1f}, BLK={h.get('blk_per_g', 0):.1f}
 
 客隊 {away_team}:
   戰績: {a['wins']}W-{a['losses']}L, 勝率: {a['win_pct']:.1%}, 種子: {a.get('playoff_seed','?')}
   場均得分: {a['pts_per_g']:.1f}, 場均失分: {a['opp_pts_per_g']:.1f}, 淨勝分: {a['differential']:+.1f}
   主場戰績: {a.get('home_record','?')} ({a.get('home_win_pct', 0):.1%})
   客場戰績: {a.get('road_record','?')} ({a.get('road_win_pct', 0):.1%})
-  連勝/敗: {a.get('streak','?')}"""
+  連勝/敗: {a.get('streak','?')}
+  投籃: FG%={a.get('fg_pct', 0):.1%}, 3P%={a.get('three_pt_pct', 0):.1%}, FT%={a.get('ft_pct', 0):.1%}
+  進階: TS%={a.get('ts_pct', 0):.1%}, eFG%={a.get('efg_pct', 0):.1%}, TOV%={a.get('tov_pct', 0):.1%}
+  團隊: AST/TO={a.get('ast_to_tov', 0):.2f}, OREB={a.get('oreb_per_g', 0):.1f}, DREB={a.get('dreb_per_g', 0):.1f}, STL={a.get('stl_per_g', 0):.1f}, BLK={a.get('blk_per_g', 0):.1f}"""
         else:
             wnba_advanced_section = ""
         
