@@ -40,7 +40,13 @@ def get_db_connection():
 
 
 def get_pending_games(conn, target_dates: list):
-    """取得指定日期範圍內尚未分析（或分析過期）的 scheduled 賽事"""
+    """取得指定日期範圍內尚未分析（或分析過期 / 投手資料更新）的 scheduled 賽事
+
+    觸發重跑的條件（任一）：
+    1. 還沒分析過
+    2. 分析過期超過 12 小時
+    3. 主客場任一邊的先發投手從 NULL/「尚未公布」變成有值（投手補抓成功）
+    """
     cur = conn.cursor(cursor_factory=RealDictCursor)
     placeholders = ','.join(['%s'] * len(target_dates))
     query = f"""
@@ -49,7 +55,17 @@ def get_pending_games(conn, target_dates: list):
         LEFT JOIN predictx.game_analysis ga ON g.game_id = ga.game_id
         WHERE g.status ILIKE 'scheduled'
           AND g.match_date::date IN ({placeholders})
-          AND (ga.analysis_id IS NULL OR ga.updated_at < NOW() - INTERVAL '12 hours')
+          AND (
+            ga.analysis_id IS NULL
+            OR ga.updated_at < NOW() - INTERVAL '12 hours'
+            -- 重抓投手：若 game.pitcher_updated_at > ga.last_analyzed_pitcher_update（且現在投手有值）
+            OR (
+              g.pitcher_updated_at IS NOT NULL
+              AND (ga.last_analyzed_pitcher_update IS NULL
+                   OR g.pitcher_updated_at > ga.last_analyzed_pitcher_update)
+              AND (g.home_pitcher_name IS NOT NULL OR g.away_pitcher_name IS NOT NULL)
+            )
+          )
         ORDER BY g.match_date
     """
     cur.execute(query, target_dates)
@@ -124,14 +140,24 @@ def save_analysis(conn, game_id, analysis_result):
             cur = conn.cursor()
 
         # 主要寫入（原本功能）
+        # 同步記錄「分析時的 pitcher 狀態時間」— 用 game 的 pitcher_updated_at（若有）
+        # 目的：get_pending_games 可判斷「投手資料已更新但尚未重分析」
         cur.execute(
-            """INSERT INTO predictx.game_analysis (game_id, analysis_data, updated_at)
-               VALUES (%s, %s, CURRENT_TIMESTAMP)
+            "SELECT pitcher_updated_at FROM predictx.games WHERE game_id = %s::uuid",
+            (game_id,)
+        )
+        p_row = cur.fetchone()
+        current_pitcher_update = p_row['pitcher_updated_at'] if p_row else None
+
+        cur.execute(
+            """INSERT INTO predictx.game_analysis (game_id, analysis_data, updated_at, last_analyzed_pitcher_update)
+               VALUES (%s, %s, CURRENT_TIMESTAMP, %s)
                ON CONFLICT (game_id)
                DO UPDATE SET
                    analysis_data = EXCLUDED.analysis_data,
-                   updated_at = CURRENT_TIMESTAMP""",
-            (game_id, json.dumps(analysis_result))
+                   updated_at = CURRENT_TIMESTAMP,
+                   last_analyzed_pitcher_update = EXCLUDED.last_analyzed_pitcher_update""",
+            (game_id, json.dumps(analysis_result), current_pitcher_update)
         )
         conn.commit()
         cur.close()
@@ -152,9 +178,7 @@ def save_analysis(conn, game_id, analysis_result):
                 # 用 thread 跑推播迴圈（完全獨立於 main thread 的 event loop）
                 import threading
                 import sys
-                import logging
-                _logger = logging.getLogger("run_analysis")
-                _logger.info(f"  [PUSH] 觸發推播: game={game_id[:8]}... conf={confidence_val}")
+                print(f"  [PUSH] 觸發推播: game={game_id[:8]}... conf={confidence_val}", flush=True)
                 def _push_worker():
                     try:
                         import asyncio as _aio
@@ -164,20 +188,21 @@ def save_analysis(conn, game_id, analysis_result):
                             confidence=confidence_val,
                             min_tier='premium',
                         ))
-                        _logger.info(f"  [PUSH] 結果: {result}")
+                        print(f"  [PUSH] 結果: {result}", flush=True)
                     except Exception as worker_err:
                         import traceback
-                        _logger.error(f"  ⚠ push worker error: {worker_err}")
-                        _logger.error(f"  ⚠ traceback: {traceback.format_exc()}")
+                        print(f"  ⚠ push worker error: {worker_err}", flush=True)
+                        print(f"  ⚠ traceback: {traceback.format_exc()}", flush=True)
 
-                t = threading.Thread(target=_push_worker, daemon=True)
+                t = threading.Thread(target=_push_worker, daemon=False)
                 t.start()
-                _logger.info(f"  [PUSH] thread started, is_alive={t.is_alive()}")
+                print(f"  [PUSH] thread started, is_alive={t.is_alive()}", flush=True)
+                return True, t  # 回傳 thread 讓 main() 可以 join
         except Exception as push_err:
             # 推播失敗不影響分析結果（已 commit）
-            _logger.error(f"  ⚠ push trigger failed (non-fatal): {push_err}")
+            print(f"  ⚠ push trigger failed (non-fatal): {push_err}", flush=True)
 
-        return True
+        return True, None
     except Exception as e:
         print(f"  ❌ DB save error for {game_id}: {e}")
         conn.rollback()
@@ -214,19 +239,33 @@ def main():
     if pending:
         engine = AnalysisEngine()
         success = 0
+        push_threads = []  # 收集推播 threads
         for idx, game in enumerate(pending):
             game_id = game['game_id']
             try:
                 result = engine.analyze_game(game_id)
-                if result and save_analysis(conn, game_id, result):
-                    print(f"  [{idx+1}/{len(pending)}] ✓ {game_id[:8]}...")
-                    success += 1
+                if result:
+                    saved, push_thread = save_analysis(conn, game_id, result)
+                    if saved:
+                        print(f"  [{idx+1}/{len(pending)}] ✓ {game_id[:8]}...")
+                        success += 1
+                        if push_thread:
+                            push_threads.append(push_thread)
+                    else:
+                        print(f"  [{idx+1}/{len(pending)}] ✗ {game_id[:8]}... no result")
                 else:
                     print(f"  [{idx+1}/{len(pending)}] ✗ {game_id[:8]}... no result")
             except Exception as e:
                 print(f"  [{idx+1}/{len(pending)}] ✗ {game_id[:8]}... Error: {e}")
         engine.close()
         print(f"📊 Analysis: {success}/{len(pending)} games analyzed")
+
+        # 等待所有推播 threads 完成（最多等 30 秒）
+        if push_threads:
+            print(f"  [PUSH] 等待 {len(push_threads)} 個推播 thread 完成...", flush=True)
+            for t in push_threads:
+                t.join(timeout=30)
+            print(f"  [PUSH] 所有推播 thread 已完成", flush=True)
     else:
         print("📊 No pending games to analyze")
 

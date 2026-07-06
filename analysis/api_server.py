@@ -669,9 +669,9 @@ def insert_games():
                 existing = cur.fetchone()
                 if not existing:
                     cur.execute(
-                        """INSERT INTO predictx.games (season, match_date, status, home_team_id, away_team_id, home_team_score, away_team_score, home_pitcher_name, away_pitcher_name)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                        (season, match_date, status, home_id, away_id, home_score, away_score, home_pitcher_name, away_pitcher_name)
+                        """INSERT INTO predictx.games (season, match_date, status, home_team_id, away_team_id, home_team_score, away_team_score, home_pitcher_name, away_pitcher_name, pitcher_updated_at)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, CASE WHEN %s IS NOT NULL OR %s IS NOT NULL THEN CURRENT_TIMESTAMP ELSE NULL END)""",
+                        (season, match_date, status, home_id, away_id, home_score, away_score, home_pitcher_name, away_pitcher_name, home_pitcher_name, away_pitcher_name)
                     )
                     inserted += 1
                 else:
@@ -688,12 +688,17 @@ def insert_games():
                         update_fields.append("away_team_score = %s")
                         update_vals.append(away_score)
                     # 🆕 投手欄位：只在有值時更新（避免 MLB 開打前 TBD 蓋掉已設定的投手）
+                    # 投手有變化時同步更新 pitcher_updated_at
                     if home_pitcher_name is not None:
                         update_fields.append("home_pitcher_name = %s")
                         update_vals.append(home_pitcher_name)
+                        update_fields.append("pitcher_updated_at = CURRENT_TIMESTAMP")
                     if away_pitcher_name is not None:
                         update_fields.append("away_pitcher_name = %s")
                         update_vals.append(away_pitcher_name)
+                        # 只在 home 沒更新時設一次（避免重複）
+                        if not any("pitcher_updated_at" in f for f in update_fields[:-1]):
+                            update_fields.append("pitcher_updated_at = CURRENT_TIMESTAMP")
                     if update_fields:
                         update_vals.append(existing['game_id'])
                         cur.execute(
@@ -1053,6 +1058,48 @@ def db_player_stats():
             "by_league": [dict(r) for r in by_league],
             "samples": samples,
         }), 200
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
+@app.route('/api/admin/migrate_pitcher_tracking', methods=['POST'])
+def migrate_pitcher_tracking():
+    """一次性 migration：加 pitcher_updated_at 與 last_analyzed_pitcher_update 欄位"""
+    body = request.get_json(silent=True) or {}
+    if body.get('secret') != os.getenv('ADMIN_SECRET', 'predictx-admin-2026'):
+        return jsonify({"error": "unauthorized"}), 403
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        results = []
+        # 加欄位（IF NOT EXISTS — PostgreSQL 9.6+）
+        for sql, desc in [
+            ("ALTER TABLE predictx.games ADD COLUMN IF NOT EXISTS pitcher_updated_at TIMESTAMPTZ",
+             "games.pitcher_updated_at"),
+            ("ALTER TABLE predictx.game_analysis ADD COLUMN IF NOT EXISTS last_analyzed_pitcher_update TIMESTAMPTZ",
+             "game_analysis.last_analyzed_pitcher_update"),
+        ]:
+            try:
+                cur.execute(sql)
+                results.append({"step": desc, "status": "ok"})
+            except Exception as e:
+                conn.rollback()
+                cur = conn.cursor()
+                results.append({"step": desc, "status": "error", "error": str(e)[:200]})
+
+        # 建立 index 加速 get_pending_games
+        try:
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_games_pitcher_updated_at ON predictx.games (pitcher_updated_at)")
+            results.append({"step": "idx_games_pitcher_updated_at", "status": "ok"})
+        except Exception as e:
+            conn.rollback()
+            cur = conn.cursor()
+            results.append({"step": "idx_games_pitcher_updated_at", "status": "skipped", "error": str(e)[:200]})
+
+        conn.commit()
+        cur.close()
+        return jsonify({"status": "migration_applied", "results": results}), 200
     except Exception as e:
         import traceback
         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
