@@ -2,6 +2,7 @@
 PredictX Sports — NBA DataFetcher
 使用 nba_api (stats.nba.com) 免費 API 取得即時進階數據
 """
+import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
@@ -11,9 +12,27 @@ DB_CONFIG = {
 }
 
 class NBADataFetcher:
-    def __init__(self):
-        self.conn = psycopg2.connect(**DB_CONFIG)
-        self.cur = self.conn.cursor(cursor_factory=RealDictCursor)
+    def __init__(self, conn=None):
+        """若 conn=None，自己建 DB 連線；若 conn 外部傳入，使用外部 conn（close() 不會關閉）"""
+        self.conn = None
+        self.cur = None
+        self._conn_external = False
+        if conn:
+            self.conn = conn
+            self.cur = conn.cursor(cursor_factory=RealDictCursor)
+            self._conn_external = True
+        else:
+            try:
+                database_url = os.getenv('DATABASE_URL')
+                if database_url:
+                    if database_url.startswith('postgres://'):
+                        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+                    self.conn = psycopg2.connect(database_url, cursor_factory=RealDictCursor)
+                else:
+                    self.conn = psycopg2.connect(**DB_CONFIG)
+                self.cur = self.conn.cursor(cursor_factory=RealDictCursor)
+            except Exception:
+                pass
         self.fetched_sources = []
 
     def get_local_team_id(self, team_name):
@@ -149,5 +168,20 @@ class NBADataFetcher:
         self.conn.commit()
 
     def close(self):
-        self.cur.close()
-        self.conn.close()
+        """關閉 fetcher 持有的資源。
+
+        若 conn 是外部傳入（共用），不關閉 conn（conn 由 pool 管理），
+        只關閉 fetcher 內部的 cursor 以免污染呼叫端的 cursor。
+        """
+        self._conn_external = getattr(self, '_conn_external', False)
+        if not self._conn_external:
+            try:
+                if self.cur:
+                    self.cur.close()
+            except Exception:
+                pass
+            try:
+                if self.conn:
+                    self.conn.close()
+            except Exception:
+                pass
