@@ -955,7 +955,13 @@ def import_npb_players():
             WHERE t.league = 'NPB' AND pt.is_active = true
         """)
         existing_row = cur.fetchone()
-        existing = existing_row[0] if existing_row else 0
+        # RealDictCursor: 用 column name 取值；tuple cursor: 用 positional index
+        existing = 0
+        if existing_row:
+            if isinstance(existing_row, dict):
+                existing = int(list(existing_row.values())[0])  # 任取 first value
+            else:
+                existing = existing_row[0]
         if existing > 0:
             cur.close()
             return jsonify({"status": "skipped", "reason": f"Already {existing} NPB players in DB"}), 200
