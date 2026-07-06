@@ -1105,6 +1105,41 @@ def migrate_pitcher_tracking():
         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
+@app.route('/api/admin/check_settlement', methods=['POST'])
+def check_settlement():
+    """診斷 endpoint：檢查指定 game 的 analysis_data->actual_result 內容"""
+    body = request.get_json(silent=True) or {}
+    if body.get('secret') != os.getenv('ADMIN_SECRET', 'predictx-admin-2026'):
+        return jsonify({"error": "unauthorized"}), 403
+    try:
+        game_ids = body.get('game_ids', [])
+        if not game_ids:
+            return jsonify({"error": "need game_ids"}), 400
+
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("""
+            SELECT g.game_id::text, g.match_date, g.status, g.home_team_score, g.away_team_score,
+                   ga.analysis_data,
+                   ga.analysis_data->'actual_result' as actual_result,
+                   ht.english_name as home_team, at.english_name as away_team
+            FROM predictx.games g
+            LEFT JOIN predictx.game_analysis ga ON g.game_id = ga.game_id
+            JOIN predictx.teams ht ON g.home_team_id = ht.team_id
+            JOIN predictx.teams at ON g.away_team_id = at.team_id
+            WHERE g.game_id = ANY(%s::uuid[])
+        """, (game_ids,))
+        rows = cur.fetchall()
+        cur.close()
+        return jsonify({
+            "count": len(rows),
+            "games": [dict(r) for r in rows]
+        }), 200
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
 if __name__ == "__main__":
     port = int(os.getenv('PORT', 8081))
     app.run(host="0.0.0.0", port=port, debug=False)
