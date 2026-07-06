@@ -1015,6 +1015,49 @@ def import_npb_players():
         return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
+@app.route('/api/admin/db_player_stats', methods=['POST'])
+def db_player_stats():
+    """一次性端點：列出 DB 內各聯盟球員數量（診斷用）"""
+    body = request.get_json(silent=True) or {}
+    if body.get('secret') != os.getenv('ADMIN_SECRET', 'predictx-admin-2026'):
+        return jsonify({"error": "unauthorized"}), 403
+    try:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("""
+            SELECT t.league, COUNT(p.player_id) AS cnt
+            FROM predictx.teams t
+            JOIN predictx.player_teams pt ON t.team_id = pt.team_id
+            JOIN predictx.players p ON pt.player_id = p.player_id
+            WHERE pt.is_active = true
+            GROUP BY t.league
+            ORDER BY t.league
+        """)
+        by_league = cur.fetchall()
+
+        # Sample 球員 (NBA, WNBA)
+        samples = {}
+        for lg in ('NBA', 'WNBA', 'MLB', 'CPBL', 'NPB'):
+            cur.execute("""
+                SELECT p.player_id, p.player_name, p.position, t.english_name
+                FROM predictx.players p
+                JOIN predictx.player_teams pt ON p.player_id = pt.player_id
+                JOIN predictx.teams t ON pt.team_id = t.team_id
+                WHERE t.league = %s AND pt.is_active = true
+                LIMIT 3
+            """, (lg,))
+            samples[lg] = [dict(r) for r in cur.fetchall()]
+
+        cur.close()
+        return jsonify({
+            "by_league": [dict(r) for r in by_league],
+            "samples": samples,
+        }), 200
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
+
 if __name__ == "__main__":
     port = int(os.getenv('PORT', 8081))
     app.run(host="0.0.0.0", port=port, debug=False)
