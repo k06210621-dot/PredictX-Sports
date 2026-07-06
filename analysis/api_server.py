@@ -1231,7 +1231,12 @@ def import_npb_player_stats():
             SELECT english_name, team_id FROM predictx.teams
             WHERE league = 'NPB' AND english_name NOT LIKE '%Deprecated%'
         """)
-        team_name_to_id = {row[0]: row[1] for row in cur.fetchall()}
+        team_name_to_id = {}
+        for row in cur.fetchall():
+            if isinstance(row, dict):
+                team_name_to_id[row.get('english_name')] = row.get('team_id')
+            else:
+                team_name_to_id[row[0]] = row[1]
 
         # 取得現有 NPB 球員 (player_id, name, team_id)
         cur.execute("""
@@ -1241,7 +1246,12 @@ def import_npb_player_stats():
             JOIN predictx.teams t ON pt.team_id = t.team_id
             WHERE t.league = 'NPB' AND pt.is_active = true
         """)
-        existing_players = {r['player_name']: r for r in cur.fetchall()}
+        existing_players = {}
+        for row in cur.fetchall():
+            if isinstance(row, dict):
+                existing_players[row['player_name']] = dict(row)
+            else:
+                existing_players[row[1]] = {'player_id': row[0], 'player_name': row[1], 'team_id': row[3]}
 
         # 讀取 npb_players.json
         script_dir = _os.path.dirname(_os.path.abspath(__file__))
