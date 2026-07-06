@@ -1162,14 +1162,14 @@ def migrate_player_stats():
             era NUMERIC(5,2),
             w INTEGER, l INTEGER, sv INTEGER, hld INTEGER, cg INTEGER, sho INTEGER,
             ip NUMERIC(6,2),
-            h INTEGER, r INTEGER, er INTEGER,
-            hr INTEGER, bb INTEGER, hbp INTEGER, so INTEGER,
+            p_h INTEGER, p_r INTEGER, p_er INTEGER,
+            p_hr INTEGER, p_bb INTEGER, p_hbp INTEGER, p_so INTEGER,
             -- 打者 stats
             avg NUMERIC(5,3), obp NUMERIC(5,3), slg NUMERIC(5,3),
             g INTEGER, pa INTEGER, ab INTEGER,
-            r INTEGER, h INTEGER,
+            b_r INTEGER, b_h INTEGER,
             tb INTEGER, rbi INTEGER, sb INTEGER,
-            hr INTEGER, bb INTEGER, hbp INTEGER, so INTEGER,
+            b_hr INTEGER, b_bb INTEGER, b_hbp INTEGER, b_so INTEGER,
             -- 通用
             source VARCHAR(50),
             fetched_at TIMESTAMPTZ DEFAULT NOW(),
@@ -1340,28 +1340,36 @@ def import_npb_player_stats():
                 cur.execute("""
                     INSERT INTO predictx.player_season_stats
                         (player_id, league, season, kind,
-                         era, w, l, sv, hld, cg, sho, ip, h, r, er, hr, bb, hbp, so,
-                         avg, obp, slg, g, pa, ab, tb, rbi, sb,
+                         era, w, l, sv, hld, cg, sho, ip,
+                         p_h, p_r, p_er, p_hr, p_bb, p_hbp, p_so,
+                         avg, obp, slg, g, pa, ab, b_r, b_h,
+                         tb, rbi, sb, b_hr, b_bb, b_hbp, b_so,
                          source)
                     VALUES (%s, %s, %s, %s,
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s, %s, %s, %s,
+                            %s, %s, %s, %s, %s, %s, %s,
                             'npb_players_json')
                     ON CONFLICT (player_id, season, source) DO UPDATE SET
                         era = EXCLUDED.era,
                         w = EXCLUDED.w, l = EXCLUDED.l, sv = EXCLUDED.sv, hld = EXCLUDED.hld,
                         cg = EXCLUDED.cg, sho = EXCLUDED.sho, ip = EXCLUDED.ip,
-                        h = EXCLUDED.h, r = EXCLUDED.r, er = EXCLUDED.er,
-                        hr = EXCLUDED.hr, bb = EXCLUDED.bb, hbp = EXCLUDED.hbp, so = EXCLUDED.so,
+                        p_h = EXCLUDED.p_h, p_r = EXCLUDED.p_r, p_er = EXCLUDED.p_er,
+                        p_hr = EXCLUDED.p_hr, p_bb = EXCLUDED.p_bb, p_hbp = EXCLUDED.p_hbp, p_so = EXCLUDED.p_so,
                         avg = EXCLUDED.avg, obp = EXCLUDED.obp, slg = EXCLUDED.slg,
                         g = EXCLUDED.g, pa = EXCLUDED.pa, ab = EXCLUDED.ab,
+                        b_r = EXCLUDED.b_r, b_h = EXCLUDED.b_h,
                         tb = EXCLUDED.tb, rbi = EXCLUDED.rbi, sb = EXCLUDED.sb,
+                        b_hr = EXCLUDED.b_hr, b_bb = EXCLUDED.b_bb, b_hbp = EXCLUDED.b_hbp, b_so = EXCLUDED.b_so,
                         kind = EXCLUDED.kind,
                         fetched_at = NOW()
                 """, (
                     player_id, league, 2026, kind,
-                    era, w, l, sv, hld, cg, sho, ip, h, r, er, hr, bb, hbp, so,
-                    avg, obp, slg, games, pa, ab, tb, rbi, sb,
+                    era, w, l, sv, hld, cg, sho, ip,
+                    h, r, er, hr, bb, hbp, so,
+                    avg, obp, slg, games, pa, ab, r, h,
+                    tb, rbi, sb, hr, bb, hbp, so,
                 ))
                 inserted += 1
             except Exception as e:
