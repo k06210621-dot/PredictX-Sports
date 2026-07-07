@@ -1450,16 +1450,15 @@ Park Factor: {pf:.2f} ({park_interp})
                     except Exception as e:
                         print(f"  ⚠ CPBL player stats fetch error: {e}")
 
-                        # CPBL 今日先發投手（從 cpbl.com.tw 官網 API）
-            cpbl_starters = features.get('cpbl_starting_pitchers', {})
-            if cpbl_starters:
-                h_sp = cpbl_starters.get(home_team, {})
-                a_sp = cpbl_starters.get(away_team, {})
-                h_name = h_sp.get('name', 'TBD') if h_sp else 'TBD'
-                a_name = a_sp.get('name', 'TBD') if a_sp else 'TBD'
-                cpbl_spec += f"\n\n===== 今日先發投手（來源：cpbl.com.tw）====="
-                cpbl_spec += f"\n主隊 {home_team} 先發：{h_name}"
-                cpbl_spec += f"\n客隊 {away_team} 先發：{a_name}"
+            # CPBL 今日先發投手（優先用 game 字典的 lottonavi/手動資料，其次用 cpbl.com.tw 抓取資料）
+            cpbl_starters = features.get('cpbl_starting_pitchers', {}) or {}
+            home_sp = game.get('home_pitcher_name') or (cpbl_starters.get(home_team, {}).get('name') if cpbl_starters else None) or 'TBD'
+            away_sp = game.get('away_pitcher_name') or (cpbl_starters.get(away_team, {}).get('name') if cpbl_starters else None) or 'TBD'
+            print(f"  🔍 [CPBL SP] game.home_pitcher_name={game.get('home_pitcher_name')!r} game.away_pitcher_name={game.get('away_pitcher_name')!r} → home_sp={home_sp!r} away_sp={away_sp!r}")
+            if home_sp != 'TBD' or away_sp != 'TBD':
+                cpbl_spec += f"\n\n===== 今日先發投手（來源：games 表）====="
+                cpbl_spec += f"\n主隊 {home_team} 先發：{home_sp}"
+                cpbl_spec += f"\n客隊 {away_team} 先發：{away_sp}"
 
             cpbl_analysis_guide = "\n===== " + cpbl_spec + "\n\n請根據以上 CPBL 特性，結合提供的數據進行分析。\n"
 
