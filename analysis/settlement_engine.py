@@ -72,45 +72,8 @@ class SettlementEngine:
             analysis_data = game['analysis_data']
             league = game['league']
             
-            # 1. 判定實際結果
-            actual_total_goals = actual_home_score + actual_away_score
-            
-            if league == 'FIFA':
-                # FIFA 使用 Over/Under 2.5 結算
-                actual_over_under = actual_total_goals > 2.5
-                predicted_over_under = analysis_data.get('over_under_2_5', None)
-                
-                if predicted_over_under is not None:
-                    is_hit = (actual_over_under == predicted_over_under)
-                    actual_result = {
-                        "is_hit": is_hit,
-                        "settlement_type": "over_under_2.5",
-                        "actual_over_under": actual_over_under,
-                        "predicted_over_under": predicted_over_under,
-                        "actual_total_goals": actual_total_goals,
-                        "actual_score": f"{int(actual_home_score)}-{int(actual_away_score)}",
-                        "settled_at": datetime.now().isoformat()
-                    }
-                else:
-                    # 無 over_under 預測時，回退到勝負判斷
-                    self._settle_win_loss(game_id, actual_home_score, actual_away_score, analysis_data)
-                    settled_count += 1
-                    continue
-            else:
-                # 棒球/籃球使用勝負結算
-                self._settle_win_loss(game_id, actual_home_score, actual_away_score, analysis_data)
-                settled_count += 1
-                continue
-            
-            # 5. 更新 analysis_data
-            analysis_data['actual_result'] = actual_result
-            
-            update_query = """
-                UPDATE predictx.game_analysis 
-                SET analysis_data = %s, updated_at = CURRENT_TIMESTAMP 
-                WHERE game_id = %s
-            """
-            self.cur.execute(update_query, (json.dumps(analysis_data), game_id))
+            # All leagues use win/loss settlement
+            self._settle_win_loss(game_id, actual_home_score, actual_away_score, analysis_data)
             settled_count += 1
             
         self.conn.commit()
@@ -221,10 +184,19 @@ class SettlementEngine:
             self.cur.execute(query)
             postponed_games = self.cur.fetchall()
         except Exception:
-            # 連線失效，重新建立
-            self.conn.close()
-            self._get_connection()
-            self.cur = self.conn.cursor()
+            # 連線失效，重新建立連線與游標
+            try:
+                self.conn.close()
+            except Exception:
+                pass
+            database_url = os.getenv('DATABASE_URL')
+            if database_url:
+                if database_url.startswith('postgres://'):
+                    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+                self.conn = psycopg2.connect(database_url, cursor_factory=RealDictCursor)
+            else:
+                self.conn = psycopg2.connect(**DB_CONFIG)
+            self.cur = self.conn.cursor(cursor_factory=RealDictCursor)
             self.cur.execute(query)
             postponed_games = self.cur.fetchall()
 

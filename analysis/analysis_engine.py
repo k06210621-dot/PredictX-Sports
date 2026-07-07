@@ -169,14 +169,6 @@ class AnalysisEngine:
                 home_away = clamp(float(venue_wr) * 10)
             recent = clamp(recent_winrate * 10)
             values = [team_strength, offense, defense, clutch, home_away, recent]
-        elif league == 'FIFA':
-            team_strength = clamp(win_pct * 10) if win_pct and win_pct > 0 else 5.0
-            attack = clamp((avg_for - 1.0) * 2.5 + 5)
-            midfield = clamp(5 + (avg_for - avg_against) * 0.5)
-            defense = clamp(10 - max(0, opp_avg_for - 1.2) * 3)
-            home_away = 6.0 if side == 'home' else 5.0
-            recent = clamp(recent_winrate * 10)
-            values = [team_strength, attack, midfield, defense, home_away, recent]
         else:
             team_strength = clamp(win_pct * 10) if win_pct and win_pct > 0 else 5.0
             offense = clamp((avg_for - 2) * 1.5 + 5)
@@ -855,24 +847,6 @@ class AnalysisEngine:
             except Exception as e:
                 print(f"  ⚠ CPBL starting pitcher fetch error: {e}")
         
-        # 10. FIFA 隊伍排名資料（從 ESPN API）
-        if league and league.upper() == 'FIFA':
-            try:
-                from fifa_data_fetcher import FIFADataFetcher
-                fetcher = FIFADataFetcher()
-                home_name = game['home_team_en']
-                away_name = game['away_team_en']
-                home_rank = fetcher.get_team_ranking(home_name)
-                away_rank = fetcher.get_team_ranking(away_name)
-                if home_rank or away_rank:
-                    features['fifa_rankings'] = {
-                        'home': home_rank or {'standing': 'N/A', 'record': 'N/A'},
-                        'away': away_rank or {'standing': 'N/A', 'record': 'N/A'},
-                    }
-                    print(f"  ⚽ FIFA rankings: {home_name}={home_rank.get('standing', 'N/A') if home_rank else 'N/A'}, {away_name}={away_rank.get('standing', 'N/A') if away_rank else 'N/A'}")
-            except Exception as e:
-                print(f"  ⚠ FIFA ranking fetch error: {e}")
-        
         return features
 
     def generate_win_probability_prompt(self, features):
@@ -1324,7 +1298,6 @@ Park Factor: {pf:.2f} ({park_interp})
             "CPBL": ["球隊整體戰力", "打線火力", "先發投手", "牛棚表現", "主客場因素", "近期狀態"],
             "NBA": ["團隊整體戰力", "進攻效率", "防守強度", "籃板能力", "關鍵球處理", "近期狀態"],
             "WNBA": ["團隊整體戰力", "進攻效率", "防守強度", "籃板能力", "關鍵球處理", "近期狀態"],
-            "FIFA": ["整體戰術實力", "前場進攻", "中場掌控", "後防穩定", "門將表現", "近期狀態"]
         }
         
         league_upper = league.upper() if league else ""
@@ -1522,27 +1495,12 @@ Park Factor: {pf:.2f} ({park_interp})
                 f"{pos_hint}\n"
             )
 
-        # FIFA Over/Under 2.5 指令
-        fifa_ou_instruction = ""
-        fifa_ou_field = ""
-        fifa_rankings_section = ""
-        if league and league.upper() == "FIFA":
-            fifa_ou_instruction = "6. **Over/Under 2.5 預測**：請根據總進球數趨勢，判斷本場總進球數是否超過 2.5 球。"
-            fifa_ou_field = ', "over_under_2_5": true'
-            # FIFA 隊伍排名資料
-            fifa_rank = features.get('fifa_rankings', {})
-            if fifa_rank:
-                h = fifa_rank.get('home', {})
-                a = fifa_rank.get('away', {})
-                fifa_rankings_section = f"===== FIFA 隊伍排名（來源：ESPN）=====\n主隊 {home_team}: {h.get('standing', 'N/A')}, 戰績 {h.get('record', 'N/A')}\n客隊 {away_team}: {a.get('standing', 'N/A')}, 戰績 {a.get('record', 'N/A')}\n"
-
         # 🆕 [2026-06-24] 聯盟主場優勢常數（依歷史統計資料）
         league_home_adv_const = {
             "MLB": 0.030,   # 主力棒球歷史主場勝率約 53%
             "NPB": 0.030,   # 日本職棒類似 MLB
             "CPBL": 0.050,  # 中職較高（球迷文化）
             "NBA": 0.080,   # NBA 主場勝率約 60%
-            "FIFA": 0.040,  # 足球
         }
         league_home_adv = league_home_adv_const.get((league or "").upper(), 0.030)
 
@@ -1595,11 +1553,6 @@ Park Factor: {pf:.2f} ({park_interp})
 範例：若加權平均後是 0.50 + 0.05 (主場優勢) = 0.55，最終值為 0.55（若接近則微調至 0.52-0.58 區間）。
 禁止：忽視主場優勢導致客隊勝率 > 主隊勝率 (五五波對戰時)。
 """
-
-        # 保留 FIFA 指令以向後相容
-        fifa_ou_instruction = ""
-        if league and league.upper() == "FIFA":
-            fifa_ou_instruction = "6. **Over/Under 2.5 預測**：請根據總進球數趨勢，判斷本場總進球數是否超過 2.5 球。"
 
         prompt = f'''
 你是一位專業運動數據分析師。你的任務是用結構化的方式分析比賽，並輸出**機器可解析的 JSON**。
@@ -1675,7 +1628,6 @@ Park Factor: {pf:.2f} ({park_interp})
 {weather_section}
 {cpbl_analysis_guide}
 {home_advantage_note}
-{fifa_rankings_section}
 {rostersection}
 
 ═══════════════════════════════════════
@@ -1733,7 +1685,7 @@ Park Factor: {pf:.2f} ({park_interp})
     ...
   ],
   "summary": "深度分析摘要（180-400字，引用具體球員與數據）",
-  "predicted_score": "X-Y"{fifa_ou_field},
+  "predicted_score": "X-Y",
   "radar_chart": {{
     "categories": {json.dumps(current_dims, ensure_ascii=False)},
     "home_team": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -2320,7 +2272,6 @@ Park Factor: {pf:.2f} ({park_interp})
                         "CPBL": ["球隊整體戰力", "打線火力", "先發投手", "牛棚表現", "主客場因素", "近期狀態"],
                         "NBA": ["團隊整體戰力", "進攻效率", "防守強度", "籃板能力", "關鍵球處理", "近期狀態"],
                         "WNBA": ["團隊整體戰力", "進攻效率", "防守強度", "籃板能力", "關鍵球處理", "近期狀態"],
-                        "FIFA": ["整體戰術實力", "前場進攻", "中場掌控", "後防穩定", "門將表現", "近期狀態"],
                     }
                     dims = dims_map.get(league_lc, ["整體戰力", "進攻能力", "防守能力", "戰術執行", "環境因素", "近期狀態"])
                     home_radar_scores = self._compute_team_radar_scores(features, 'home')
@@ -2363,7 +2314,6 @@ Park Factor: {pf:.2f} ({park_interp})
             "MLB": ["球隊整體戰力", "打線火力", "先發投手", "牛棚表現", "主客場因素", "近期狀態"],
             "NBA": ["團隊整體戰力", "進攻效率", "防守強度", "籃板能力", "關鍵球處理", "近期狀態"],
             "WNBA": ["團隊整體戰力", "進攻效率", "防守強度", "籃板能力", "關鍵球處理", "近期狀態"],
-            "FIFA": ["整體戰術實力", "前場進攻", "中場掌控", "後防穩定", "門將表現", "近期狀態"],
         }
         dims = leauge_dims_map.get(
             league.upper() if league else "",

@@ -5,7 +5,7 @@ run_all_ingest.py
 五大賽事自動 ingestion 主程式
 
 設計：
-- 5 個 fetcher（MLB / NPB / CPBL / NBA / FIFA）依序執行
+- 5 個 fetcher（MLB / NPB / CPBL / NBA / WNBA）依序執行
 - 排程最佳化：各聯盟對齊開打時間往前 6 小時 ingest
 - 重試已在 BaseIngester.run() 內處理
 
@@ -14,7 +14,6 @@ Cron Schedule（Railway UTC, 台北 UTC+8）：
 - 09:00 UTC = 17:00 台北 → NPB 當日 + 明日（NPB 開打時間台北 18:00）
 - 02:00 UTC = 10:00 台北 → CPBL 當日
 - 06:00 UTC = 14:00 台北 → NBA 當日（NBA 開打台北上午 08:00 之後, 涵蓋跨日賽）
-- 03:00 UTC = 11:00 台北 → FIFA 當日（歐洲下午場, 台北夜晚開打）
 
 執行：
     python run_all_ingest.py                  # 全部跑

@@ -206,7 +206,7 @@ def save_analysis(conn, game_id, analysis_result):
     except Exception as e:
         print(f"  ❌ DB save error for {game_id}: {e}")
         conn.rollback()
-        return False
+        return False, None
     finally:
         try:
             cur.close()

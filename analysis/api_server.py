@@ -63,6 +63,23 @@ DB_POOL = pool.ThreadedConnectionPool(
 app = Flask(__name__)
 CORS(app)
 
+# Admin endpoint 認證：必須在 Railway 環境變數設 ADMIN_SECRET，
+# 未設定時所有 admin endpoint 一律拒絕（不允許硬編碼 fallback）
+_ADMIN_SECRET = os.getenv('ADMIN_SECRET')
+if not _ADMIN_SECRET:
+    logger.warning("ADMIN_SECRET 未設定，所有 admin endpoint 將拒絕請求")
+else:
+    logger.info("ADMIN_SECRET 已設定，admin endpoint 受保護")
+
+
+def _check_admin_secret(body):
+    """檢查 admin 認證，回傳 (ok, error_response)"""
+    if not _ADMIN_SECRET:
+        return False, (jsonify({"error": "ADMIN_SECRET not configured on server"}), 503)
+    if (body or {}).get('secret') != _ADMIN_SECRET:
+        return False, (jsonify({"error": "unauthorized"}), 403)
+    return True, None
+
 _stats_engine = None
 _settler_engine = None
 
@@ -104,9 +121,18 @@ def get_db():
 
 @app.teardown_appcontext
 def close_db(exc):
-    """請求結束時將連線歸還連線池（而非關閉）"""
+    """請求結束時將連線歸還連線池（而非關閉）
+    
+    重要：歸還前重置 autocommit = False，因為 insert_games / init_db / update_score
+    等端點會設 conn.autocommit = True，若不重置，下一個請求拿到此連線時
+    所有 SQL 都會自動 commit，導致需要 transaction 的端點（如 register_device）異常。
+    """
     conn = g.pop('db', None)
     if conn is not None:
+        try:
+            conn.autocommit = False
+        except Exception:
+            pass  # 連線可能已失效，忽略不影響歸還
         DB_POOL.putconn(conn)
 
 
@@ -198,9 +224,10 @@ def update_push_preference():
             SET push_enabled = %s, updated_at = NOW()
             WHERE device_token = %s
         """, (bool(push_enabled), token))
+        rows_updated = cur.rowcount
         conn.commit()
         cur.close()
-        return jsonify({"status": "ok", "rows_updated": cur.rowcount}), 200
+        return jsonify({"status": "ok", "rows_updated": rows_updated}), 200
     except Exception as e:
         logger.error(f"update_push_preference error: {e}")
         return jsonify({"error": str(e)}), 500
@@ -219,7 +246,7 @@ def init_db():
         results['schema_created'] = True
 
         schema_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'db', 'schema.sql')
-        seed_path = os.path.join(os.path.dirname(os.path.abspath(__file__file__)), 'db', 'seed_core.sql')
+        seed_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'db', 'seed_core.sql')
 
         with open(schema_path, 'r') as f:
             raw = f.read()
@@ -520,6 +547,12 @@ def run_analysis():
         from datetime import datetime, timedelta
 
         body = request.get_json(silent=True) or {}
+
+        # 認證檢查：防止未授權呼叫消耗 LLM 額度
+        ok, err = _check_admin_secret(body)
+        if not ok:
+            return err
+
         force_game_id = body.get('game_id')
         max_count = int(body.get('max_count', 5))
 
@@ -536,9 +569,14 @@ def run_analysis():
             engine = AnalysisEngine(conn=conn)
             try:
                 result = engine.analyze_game(force_game_id)
-                if result and save_analysis(conn, force_game_id, result):
-                    results['analyzed'] = 1
-                    results['game_id'] = force_game_id
+                if result:
+                    saved, _ = save_analysis(conn, force_game_id, result)
+                    if saved:
+                        results['analyzed'] = 1
+                        results['game_id'] = force_game_id
+                    else:
+                        results['analyzed'] = 0
+                        results['error'] = 'save_analysis failed'
                 else:
                     results['analyzed'] = 0
                     results['error'] = 'no result from engine'
@@ -565,8 +603,10 @@ def run_analysis():
                 game_id = game['game_id']
                 try:
                     result = engine.analyze_game(game_id)
-                    if result and save_analysis(conn, game_id, result):
-                        success += 1
+                    if result:
+                        saved, _ = save_analysis(conn, game_id, result)
+                        if saved:
+                            success += 1
                 except Exception as e:
                     import traceback
                     results[f'e{idx}'] = str(e)[:100]
@@ -916,8 +956,9 @@ def get_player_detail(player_id):
 def import_npb_players():
     """一次性端點：匯入 npb_players.json 到 predictx.players"""
     body = request.get_json(silent=True) or {}
-    if body.get('secret') != os.getenv('ADMIN_SECRET', 'predictx-admin-2026'):
-        return jsonify({"error": "unauthorized"}), 403
+    ok, err = _check_admin_secret(body)
+    if not ok:
+        return err
     try:
         import json as _json
         import uuid as _uuid
@@ -1024,8 +1065,9 @@ def import_npb_players():
 def db_player_stats():
     """一次性端點：列出 DB 內各聯盟球員數量（診斷用）"""
     body = request.get_json(silent=True) or {}
-    if body.get('secret') != os.getenv('ADMIN_SECRET', 'predictx-admin-2026'):
-        return jsonify({"error": "unauthorized"}), 403
+    ok, err = _check_admin_secret(body)
+    if not ok:
+        return err
     try:
         conn = get_db()
         cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -1067,8 +1109,9 @@ def db_player_stats():
 def migrate_pitcher_tracking():
     """一次性 migration：加 pitcher_updated_at 與 last_analyzed_pitcher_update 欄位"""
     body = request.get_json(silent=True) or {}
-    if body.get('secret') != os.getenv('ADMIN_SECRET', 'predictx-admin-2026'):
-        return jsonify({"error": "unauthorized"}), 403
+    ok, err = _check_admin_secret(body)
+    if not ok:
+        return err
     try:
         conn = get_db()
         cur = conn.cursor()
@@ -1109,8 +1152,9 @@ def migrate_pitcher_tracking():
 def check_settlement():
     """診斷 endpoint：檢查指定 game 的 analysis_data->actual_result 內容"""
     body = request.get_json(silent=True) or {}
-    if body.get('secret') != os.getenv('ADMIN_SECRET', 'predictx-admin-2026'):
-        return jsonify({"error": "unauthorized"}), 403
+    ok, err = _check_admin_secret(body)
+    if not ok:
+        return err
     try:
         game_ids = body.get('game_ids', [])
         if not game_ids:
@@ -1144,8 +1188,9 @@ def check_settlement():
 def migrate_player_stats():
     """一次性 migration：建 predictx.player_season_stats 表存 NPB 球員個人 stats"""
     body = request.get_json(silent=True) or {}
-    if body.get('secret') != os.getenv('ADMIN_SECRET', 'predictx-admin-2026'):
-        return jsonify({"error": "unauthorized"}), 403
+    ok, err = _check_admin_secret(body)
+    if not ok:
+        return err
     try:
         conn = get_db()
         cur = conn.cursor()
@@ -1209,8 +1254,9 @@ def migrate_player_stats():
 def import_npb_player_stats():
     """一次性 endpoint：從 npb_players.json 匯入 118 名 NPB 球員的個人 stats"""
     body = request.get_json(silent=True) or {}
-    if body.get('secret') != os.getenv('ADMIN_SECRET', 'predictx-admin-2026'):
-        return jsonify({"error": "unauthorized"}), 403
+    ok, err = _check_admin_secret(body)
+    if not ok:
+        return err
     try:
         import json as _json
         import os as _os
@@ -1428,8 +1474,9 @@ def import_npb_player_stats():
 def import_cpbl_player_stats():
     """一次性 endpoint：從 sportify.tw 爬 CPBL 投手+打者 stats 寫入 player_season_stats"""
     body = request.get_json(silent=True) or {}
-    if body.get('secret') != os.getenv('ADMIN_SECRET', 'predictx-admin-2026'):
-        return jsonify({"error": "unauthorized"}), 403
+    ok, err = _check_admin_secret(body)
+    if not ok:
+        return err
     try:
         import subprocess, re, json as _json
 
@@ -1674,8 +1721,9 @@ def import_cpbl_player_stats():
 def import_cpbl_roster():
     """一次性 endpoint：從 sportify.tw 爬 CPBL 投手+打者名單並建立 DB 球員 + 自動串連 stats"""
     body = request.get_json(silent=True) or {}
-    if body.get('secret') != os.getenv('ADMIN_SECRET', 'predictx-admin-2026'):
-        return jsonify({"error": "unauthorized"}), 403
+    ok, err = _check_admin_secret(body)
+    if not ok:
+        return err
     try:
         import subprocess, re, json as _json, uuid as _uuid
 

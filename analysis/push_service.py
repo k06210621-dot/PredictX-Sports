@@ -254,23 +254,30 @@ async def send_match_notification(
 # 從 DB 抓取符合資格的裝置並發送
 # ==========================================
 
-def _fetch_premium_devices_sync(min_tier: str = "premium") -> List[str]:
+def _get_push_db_conn():
+    """取得 DB 連線（背景 thread 用，不複用 Flask 連線池）
+    
+    push_service 在 daemon thread 中執行，無法存取 Flask app context 的連線池，
+    因此需要獨立建立連線。呼叫端負責 close。
     """
-    從 DATABASE_URL 直接建立連線（背景 thread 使用，避免 Flask app context leak）
-    用 psycopg2 + RealDictCursor 同步查詢
-    """
-    import os
-    import psycopg2
-    from psycopg2.extras import RealDictCursor
-
     database_url = os.environ.get("DATABASE_URL", "")
     if not database_url:
-        logger.error("[APNs] DATABASE_URL 未設定，無法查詢 device_tokens")
-        return []
+        return None
     if database_url.startswith("postgres://"):
         database_url = database_url.replace("postgres://", "postgresql://", 1)
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    return psycopg2.connect(database_url, cursor_factory=RealDictCursor)
 
-    conn = psycopg2.connect(database_url, cursor_factory=RealDictCursor)
+
+def _fetch_premium_devices_sync(min_tier: str = "premium", conn=None) -> List[str]:
+    """從 DB 查詢符合資格的 device tokens（可傳入共用連線）"""
+    own_conn = conn is None
+    if conn is None:
+        conn = _get_push_db_conn()
+        if conn is None:
+            logger.error("[APNs] DATABASE_URL 未設定，無法查詢 device_tokens")
+            return []
     try:
         cur = conn.cursor()
         cur.execute(
@@ -288,29 +295,21 @@ def _fetch_premium_devices_sync(min_tier: str = "premium") -> List[str]:
         cur.close()
         return [r["device_token"] for r in rows if r]
     finally:
-        conn.close()
+        if own_conn:
+            conn.close()
 
 
 # 🆕 [2026-06-27] 去重常數：同一 game_id 6 小時內不重複推播
 PUSH_DEDUP_HOURS = 6
 
 
-def _record_push_sync(game_id: str, devices_count: int, success_count: int) -> None:
-    """
-    記錄推播事件到 push_log 表（如果存在），供下次去重檢查使用
-    用 predictx.push_log 表 + auto-create（無表就 skip，不影響功能）
-    """
-    import os
-    import psycopg2
-    from psycopg2.extras import RealDictCursor
-
-    database_url = os.environ.get("DATABASE_URL", "")
-    if not database_url:
-        return
-    if database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql://", 1)
-
-    conn = psycopg2.connect(database_url, cursor_factory=RealDictCursor)
+def _record_push_sync(game_id: str, devices_count: int, success_count: int, conn=None) -> None:
+    """記錄推播事件到 push_log 表（可傳入共用連線）"""
+    own_conn = conn is None
+    if conn is None:
+        conn = _get_push_db_conn()
+        if conn is None:
+            return
     try:
         cur = conn.cursor()
         # 檢查表是否存在
@@ -323,7 +322,6 @@ def _record_push_sync(game_id: str, devices_count: int, success_count: int) -> N
         """)
         has_table = cur.fetchone()["exists"]
         if not has_table:
-            # 表不存在時自動建立（方便新環境快速啟用）
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS predictx.push_log (
                     id SERIAL PRIMARY KEY,
@@ -350,28 +348,21 @@ def _record_push_sync(game_id: str, devices_count: int, success_count: int) -> N
         logger.error(f"[APNs] push_log 寫入失敗（non-fatal）: {e}")
         conn.rollback()
     finally:
-        conn.close()
+        if own_conn:
+            conn.close()
 
 
-def _was_recently_pushed_sync(game_id: str, hours: int = PUSH_DEDUP_HOURS) -> bool:
-    """
-    檢查指定 game_id 是否在最近 N 小時內已推播過（用 ai_prediction_history 表的 prediction_time）
-    用 predictx.push_log 表（如果存在），沒有就 fallback 到 ai_prediction_history.prediction_time + game_id 唯一性
+def _was_recently_pushed_sync(game_id: str, hours: int = PUSH_DEDUP_HOURS, conn=None) -> bool:
+    """檢查 game_id 最近 N 小時內是否已推播（可傳入共用連線）
 
     Returns:
-        bool: True = 已推過（要跳過）, False = 未推過（可以推）
+        True = 已推過（跳過）, False = 未推過（可以推）
     """
-    import os
-    import psycopg2
-    from psycopg2.extras import RealDictCursor
-
-    database_url = os.environ.get("DATABASE_URL", "")
-    if not database_url:
-        return False  # 無 DB 連線 → 預設不阻擋推播（避免配錯環境就完全沒推播）
-    if database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql://", 1)
-
-    conn = psycopg2.connect(database_url, cursor_factory=RealDictCursor)
+    own_conn = conn is None
+    if conn is None:
+        conn = _get_push_db_conn()
+        if conn is None:
+            return False  # 無 DB 連線 → 預設不阻擋推播
     try:
         cur = conn.cursor()
         # 先檢查 push_log 表是否存在（migration 安全設計）
@@ -392,8 +383,6 @@ def _was_recently_pushed_sync(game_id: str, hours: int = PUSH_DEDUP_HOURS) -> bo
                   AND pushed_at >= NOW() - (%s || ' hours')::interval
             """, (game_id, hours))
         else:
-            # Fallback: 用 ai_prediction_history 最近 N 小時內的多筆快照當作去重依據
-            # 同 game_id 在 N 小時內出現 >= 2 次 = 重複（首次分析 + N 小時後重分析）
             cur.execute("""
                 SELECT COUNT(*) AS cnt
                 FROM predictx.ai_prediction_history
@@ -405,15 +394,14 @@ def _was_recently_pushed_sync(game_id: str, hours: int = PUSH_DEDUP_HOURS) -> bo
         cur.close()
         cnt = int(row["cnt"]) if row else 0
 
-        # 有 push_log 表時，>= 1 表示已推過
-        # 用 ai_prediction_history fallback 時，>= 2 表示有重複（首次不算）
         threshold = 1 if has_push_log else 2
         return cnt >= threshold
     except Exception as e:
         logger.error(f"[APNs] 去重檢查失敗（non-fatal）: {e}")
-        return False  # 檢查失敗時預設允許推播（避免誤擋）
+        return False
     finally:
-        conn.close()
+        if own_conn:
+            conn.close()
 
 
 async def trigger_match_push(
@@ -436,50 +424,61 @@ async def trigger_match_push(
     if confidence < CONFIDENCE_THRESHOLD:
         return {"devices_found": 0, "success_count": 0, "failed_count": 0, "skipped": "low_confidence"}
 
-    # 🆕 去重檢查：同一 game_id 6 小時內不重複推播（防止 cron + iOS 強制重跑重複推送）
     game_id = match_info.get("game_id")
-    if game_id:
-        try:
-            recently_pushed = await asyncio.to_thread(_was_recently_pushed_sync, str(game_id), PUSH_DEDUP_HOURS)
-            if recently_pushed:
-                logger.info(
-                    f"[APNs] 跳過重複推播：game {str(game_id)[:8]}... "
-                    f"在 {PUSH_DEDUP_HOURS} 小時內已推過"
+
+    # 建立一條共用 DB 連線（去重檢查 → 查裝置 → 記錄推播 全程複用）
+    conn = await asyncio.to_thread(_get_push_db_conn)
+    if conn is None:
+        logger.error("[APNs] 無法建立 DB 連線，跳過推播")
+        return {"devices_found": 0, "success_count": 0, "failed_count": 0, "skipped": "no_db"}
+
+    try:
+        # 去重檢查：同一 game_id 6 小時內不重複推播
+        if game_id:
+            try:
+                recently_pushed = await asyncio.to_thread(_was_recently_pushed_sync, str(game_id), PUSH_DEDUP_HOURS, conn)
+                if recently_pushed:
+                    logger.info(
+                        f"[APNs] 跳過重複推播：game {str(game_id)[:8]}... "
+                        f"在 {PUSH_DEDUP_HOURS} 小時內已推過"
+                    )
+                    return {"devices_found": 0, "success_count": 0, "failed_count": 0, "skipped": "recently_pushed"}
+            except Exception as dedup_err:
+                logger.error(f"[APNs] 去重檢查失敗（繼續推播）: {dedup_err}")
+
+        # 查詢符合資格的裝置
+        device_tokens = await asyncio.to_thread(_fetch_premium_devices_sync, min_tier, conn)
+
+        if not device_tokens:
+            logger.info(f"[APNs] 無 {min_tier} 用戶啟用推播（match: {match_info.get('game_id')}）")
+            return {"devices_found": 0, "success_count": 0, "failed_count": 0}
+
+        result = await send_match_notification(
+            device_tokens=device_tokens,
+            match_info=match_info,
+            confidence=confidence,
+        )
+
+        # 推播完成 → 記錄到 push_log（供下次去重）
+        if game_id and result.get("success_count", 0) > 0:
+            try:
+                await asyncio.to_thread(
+                    _record_push_sync,
+                    str(game_id),
+                    len(device_tokens),
+                    result["success_count"],
+                    conn,
                 )
-                return {"devices_found": 0, "success_count": 0, "failed_count": 0, "skipped": "recently_pushed"}
-        except Exception as dedup_err:
-            logger.error(f"[APNs] 去重檢查失敗（繼續推播）: {dedup_err}")
+            except Exception as rec_err:
+                logger.error(f"[APNs] push_log 記錄失敗（不影響本次推播）: {rec_err}")
 
-    # 用 to_thread 把同步 DB 查詢丟到 thread pool（不阻塞 event loop）
-    device_tokens = await asyncio.to_thread(_fetch_premium_devices_sync, min_tier)
-
-    if not device_tokens:
-        logger.info(f"[APNs] 無 {min_tier} 用戶啟用推播（match: {match_info.get('game_id')}）")
-        return {"devices_found": 0, "success_count": 0, "failed_count": 0}
-
-    result = await send_match_notification(
-        device_tokens=device_tokens,
-        match_info=match_info,
-        confidence=confidence,
-    )
-
-    # 🆕 推播完成 → 記錄到 push_log（供下次去重）
-    if game_id and result.get("success_count", 0) > 0:
-        try:
-            await asyncio.to_thread(
-                _record_push_sync,
-                str(game_id),
-                len(device_tokens),
-                result["success_count"],
-            )
-        except Exception as rec_err:
-            logger.error(f"[APNs] push_log 記錄失敗（不影響本次推播）: {rec_err}")
-
-    return {
-        "devices_found": len(device_tokens),
-        "success_count": result["success_count"],
-        "failed_count": result["failed_count"],
-    }
+        return {
+            "devices_found": len(device_tokens),
+            "success_count": result["success_count"],
+            "failed_count": result["failed_count"],
+        }
+    finally:
+        conn.close()
 
 
 # ==========================================
