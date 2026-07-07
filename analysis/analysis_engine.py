@@ -722,6 +722,35 @@ class AnalysisEngine:
                         self.log_source("official_api")
                     print(f"  🏯 NPB live data: standings + batting + pitching")
 
+                # 🆕 [2026-07-07] 抓 NPB 兩隊前 5 名投手個人 stats（ERA/WHIP/K9）
+                # 目的：注入 features['npb_pitchers']，讓 Recipe 6/7 投手 ERA 差距觸發
+                try:
+                    home_pitchers = fetcher.get_top_starters(home_name, top_n=5) or []
+                    away_pitchers = fetcher.get_top_starters(away_name, top_n=5) or []
+                    if home_pitchers or away_pitchers:
+                        features['npb_pitchers'] = {
+                            'home_team': home_name,
+                            'away_team': away_name,
+                            'home_pitchers': home_pitchers,
+                            'away_pitchers': away_pitchers,
+                            'home_pitcher': {
+                                'name': home_pitchers[0]['name'] if home_pitchers else 'TBD',
+                                'stats': home_pitchers[0] if home_pitchers else {},
+                            },
+                            'away_pitcher': {
+                                'name': away_pitchers[0]['name'] if away_pitchers else 'TBD',
+                                'stats': away_pitchers[0] if away_pitchers else {},
+                            },
+                        }
+                        if home_pitchers:
+                            h0 = home_pitchers[0]
+                            print(f"  ⚾ Home Top SP: {h0['name']} (ERA={h0.get('era', 0)}, WHIP={h0.get('whip', 0)}, K/9={h0.get('k_per_9', 0)})")
+                        if away_pitchers:
+                            a0 = away_pitchers[0]
+                            print(f"  ⚾ Away Top SP: {a0['name']} (ERA={a0.get('era', 0)}, WHIP={a0.get('whip', 0)}, K/9={a0.get('k_per_9', 0)})")
+                except Exception as pitcher_err:
+                    print(f"  ⚠ NPB top starters fetch error: {pitcher_err}")
+
                 # NPB 先發投手輪值資料
                 try:
                     home_starters = fetcher.get_top_starters(home_name, 5)
