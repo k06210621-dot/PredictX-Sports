@@ -731,6 +731,55 @@ class AnalysisEngine:
                 try:
                     home_pitchers = fetcher.get_top_starters(home_name, top_n=5) or []
                     away_pitchers = fetcher.get_top_starters(away_name, top_n=5) or []
+
+                    # 🆕 [方案 A] 分析時重新抓 lottonavi 當日先發投手
+                    # ingest 階段可能先發尚未公布，分析時重抓可確保拿到最新先發名單
+                    today_sp_home = game.get('home_pitcher_name')
+                    today_sp_away = game.get('away_pitcher_name')
+                    try:
+                        match_date_str = str(game.get('match_date', '')).replace('-', '')
+                        if match_date_str:
+                            lottonavi_starters = fetcher.get_today_starters(match_date_str)
+                            if lottonavi_starters:
+                                key1 = f"{home_name}_vs_{away_name}"
+                                key2 = f"{away_name}_vs_{home_name}"
+                                sp = lottonavi_starters.get(key1)
+                                if sp:
+                                    today_sp_home = sp.get('home_pitcher', {}).get('name') or today_sp_home
+                                    today_sp_away = sp.get('away_pitcher', {}).get('name') or today_sp_away
+                                elif key2 in lottonavi_starters:
+                                    sp = lottonavi_starters[key2]
+                                    today_sp_home = sp.get('away_pitcher', {}).get('name') or today_sp_home
+                                    today_sp_away = sp.get('home_pitcher', {}).get('name') or today_sp_away
+                                print(f"  🏯 NPB lottonavi 即時先發: {home_name}={today_sp_home}, {away_name}={today_sp_away}")
+                    except Exception as lot_err:
+                        print(f"  ⚠ NPB lottonavi re-fetch error: {lot_err}")
+
+                    # 🆕 [方案 B] 用 lottonavi 先發姓名比對 baseball-data.com 投手列表
+                    # 找出今日先發投手的完整 stats（ERA/WHIP/K9），而非盲目取 pitchers[0]
+                    def _find_pitcher_by_name(pitchers_list, target_name):
+                        """用名字模糊比對找出今日先發投手的完整 stats"""
+                        if not target_name or target_name == 'TBD':
+                            return None
+                        # 精確比對
+                        for p in pitchers_list:
+                            if p['name'] == target_name:
+                                return p
+                        # 模糊比對：去空白後部分匹配
+                        target_clean = target_name.replace('　', ' ').replace(' ', '').strip()
+                        for p in pitchers_list:
+                            name_clean = p['name'].replace('　', ' ').replace(' ', '').strip()
+                            if target_clean in name_clean or name_clean in target_clean:
+                                return p
+                        # 只比對姓氏（最後一個字）
+                        for p in pitchers_list:
+                            if target_name[-1:] and p['name'][-1:] == target_name[-1:]:
+                                return p
+                        return None
+
+                    home_sp_stats = _find_pitcher_by_name(home_pitchers, today_sp_home) if home_pitchers else None
+                    away_sp_stats = _find_pitcher_by_name(away_pitchers, today_sp_away) if away_pitchers else None
+
                     if home_pitchers or away_pitchers:
                         features['npb_pitchers'] = {
                             'home_team': home_name,
@@ -738,20 +787,20 @@ class AnalysisEngine:
                             'home_pitchers': home_pitchers,
                             'away_pitchers': away_pitchers,
                             'home_pitcher': {
-                                'name': home_pitchers[0]['name'] if home_pitchers else 'TBD',
-                                'stats': home_pitchers[0] if home_pitchers else {},
+                                'name': today_sp_home or (home_pitchers[0]['name'] if home_pitchers else 'TBD'),
+                                'stats': home_sp_stats or (home_pitchers[0] if home_pitchers else {}),
                             },
                             'away_pitcher': {
-                                'name': away_pitchers[0]['name'] if away_pitchers else 'TBD',
-                                'stats': away_pitchers[0] if away_pitchers else {},
+                                'name': today_sp_away or (away_pitchers[0]['name'] if away_pitchers else 'TBD'),
+                                'stats': away_sp_stats or (away_pitchers[0] if away_pitchers else {}),
                             },
                         }
-                        if home_pitchers:
-                            h0 = home_pitchers[0]
-                            print(f"  ⚾ Home Top SP: {h0['name']} (ERA={h0.get('era', 0)}, WHIP={h0.get('whip', 0)}, K/9={h0.get('k_per_9', 0)})")
-                        if away_pitchers:
-                            a0 = away_pitchers[0]
-                            print(f"  ⚾ Away Top SP: {a0['name']} (ERA={a0.get('era', 0)}, WHIP={a0.get('whip', 0)}, K/9={a0.get('k_per_9', 0)})")
+                        h_disp = home_sp_stats or (home_pitchers[0] if home_pitchers else {})
+                        a_disp = away_sp_stats or (away_pitchers[0] if away_pitchers else {})
+                        h_name = features['npb_pitchers']['home_pitcher']['name']
+                        a_name = features['npb_pitchers']['away_pitcher']['name']
+                        print(f"  ⚾ Home SP: {h_name} (ERA={h_disp.get('era', 0)}, WHIP={h_disp.get('whip', 0)}, K/9={h_disp.get('k_per_9', 0)}){' [lottonavi匹配]' if home_sp_stats else ' [top SP fallback]'}")
+                        print(f"  ⚾ Away SP: {a_name} (ERA={a_disp.get('era', 0)}, WHIP={a_disp.get('whip', 0)}, K/9={a_disp.get('k_per_9', 0)}){' [lottonavi匹配]' if away_sp_stats else ' [top SP fallback]'}")
                 except Exception as pitcher_err:
                     print(f"  ⚠ NPB top starters fetch error: {pitcher_err}")
 
