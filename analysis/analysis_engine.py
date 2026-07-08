@@ -76,13 +76,25 @@ class AnalysisEngine:
             "official_api": 5.0,
             "sports_data_platform": 4.0,
             "news_media": 3.0,
-            "social_community": 1.0
+            "expert_opinion": 3.0,
+            "historical_stats": 4.5,
+            "weather": 2.5,
+            "computed": 2.0
         }
         self.used_sources = []
 
     def log_source(self, source_type):
         if source_type in self.source_registry:
             self.used_sources.append(source_type)
+
+    def _execute_query(self, query, params=None):
+        """統一查詢執行：帶錯誤處理與日誌"""
+        try:
+            self.cur.execute(query, params)
+            return self.cur.fetchall()
+        except Exception as e:
+            print(f"  ⚠ DB query error: {e}")
+            raise
 
     def calculate_source_score(self):
         if not self.used_sources:
@@ -1726,7 +1738,7 @@ Park Factor: {pf:.2f} ({park_interp})
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.5,
-            "max_tokens": 8192,
+            "max_tokens": 9830,  # 8192 * 1.2 = 9830（提高 20% 避免 JSON 截斷）
             "stream": False
         }
         headers = {
@@ -2314,6 +2326,7 @@ Park Factor: {pf:.2f} ({park_interp})
             "MLB": ["球隊整體戰力", "打線火力", "先發投手", "牛棚表現", "主客場因素", "近期狀態"],
             "NBA": ["團隊整體戰力", "進攻效率", "防守強度", "籃板能力", "關鍵球處理", "近期狀態"],
             "WNBA": ["團隊整體戰力", "進攻效率", "防守強度", "籃板能力", "關鍵球處理", "近期狀態"],
+            "CPBL": ["球隊整體戰力", "打線火力", "先發投手", "牛棚表現", "主客場因素", "近期狀態"],
         }
         dims = leauge_dims_map.get(
             league.upper() if league else "",
@@ -2325,13 +2338,6 @@ Park Factor: {pf:.2f} ({park_interp})
         away_radar = self._compute_team_radar_scores(features, 'away')
         home_vals = home_radar['values']
         away_vals = away_radar['values']
-
-        # Key factors
-        factors = []  # 暫時，等 home_predicted/away_predicted 等變數設定後再補
-
-        # Confidence
-        fallback_conf = max(home_prob, 1 - home_prob)
-        fallback_conf_norm = max(1, min(10, round(fallback_conf * 10)))
 
         # 預測單隊得分 = (己隊進攻實力 + 對手防守弱點) / 2
         home_predicted = round(((home_avg_f or 3) + (away_avg_a or 3)) / 2)
@@ -2377,7 +2383,7 @@ Park Factor: {pf:.2f} ({park_interp})
                 f"若投打無法互補則難以取勝；"
             )
         else:
-            away_team_strength_sentence = f"客隊攻守穩定（淨分差 {away_net:+.1f}）；"
+            away_team_strength_sentence = f"客隊攻守穩定（淨分差 {away_net:.1f}）；"
 
         # 3. 對戰洞察
         if abs(home_net - away_net) < 0.5:
@@ -2425,7 +2431,7 @@ Park Factor: {pf:.2f} ({park_interp})
         fallback = {
             "home_win_probability": round(home_prob, 4),
             "away_win_probability": round(1 - home_prob, 4),
-            "confidence": fallback_conf_norm,
+            "confidence": max(1, min(10, round(max(home_prob, 1 - home_prob) * 10))),
             "key_factors": factors[:4],
             "summary": (
                 f"{features['game_info']['home_team_name']} vs {features['game_info']['away_team_name']}："
@@ -2453,11 +2459,17 @@ Park Factor: {pf:.2f} ({park_interp})
         return fallback
 
     def close(self):
-        self.cur.close()
-        self.conn.close()
+        if self.conn and not getattr(self.conn, 'closed', False):
+            try:
+                self.cur.close()
+                self.conn.close()
+            except Exception:
+                pass
+        self.conn = None
+        self.cur = None
 
 if __name__ == "__main__":
-    engine = AnalysisEngine()
+    pass
     engine.cur.execute("SELECT game_id FROM predictx.games WHERE match_date = '2026-06-09' LIMIT 1")
     res = engine.cur.fetchone()
     if res:
