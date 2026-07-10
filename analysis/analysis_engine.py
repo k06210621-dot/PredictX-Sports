@@ -1163,7 +1163,10 @@ class AnalysisEngine:
 - **【強制規則】若近 3 場極佳（ERA < 2.0），即使整季普通，下場該球隊勝率應上修至少 3-5%**
 - **【強制規則】summary 中必須明確寫出「近 3 場 ERA vs 整季 ERA」的對比數字**
 - 投手明顯「降溫中」的徵兆：近 3 場被打全壘打數增加、WHIP > 1.5、被安打率上升
-- 投手明顯「升溫中」的徵兆：近 3 場 K/9 > 10、WHIP < 1.0、對手打擊率 < .220"""
+- 投手明顯「升溫中」的徵兆：近 3 場 K/9 > 10、WHIP < 1.0、對手打擊率 < .220
+
+**⚾ 關鍵指標提醒：先發投手的 K/9（三振能力）與 BB/9（保送控制）/ K/BB 比值，往往是 MLB 比賽勝負的決定性因素。請優先根據 K/9 + BB/9 對位差距判斷投手優勢，再疊加團隊戰績與打線數據；若投手對位懸殊，即使團隊戰績落後，仍可能由先發投手主導比賽走向。**
+"""
 
         # 🆕 Bullpen 疲勞指數
         bullpen = pitchers.get("bullpen_fatigue", {})
@@ -1393,7 +1396,8 @@ Park Factor: {pf:.2f} ({park_interp})
             cpbl_spec += "- 近期團隊打擊狀況（近5場平均得分）比整季數據更具參考價值\n"
             cpbl_spec += "- 中職比賽節奏快，比分差距通常不大\n"
             cpbl_spec += "- 請特別關注兩隊近5場得失分差（淨勝分）\n"
-            cpbl_spec += "- 對戰組合的歷史交手紀錄（H2H）在中職有較高參考價值"
+            cpbl_spec += "- 對戰組合的歷史交手紀錄（H2H）在中職有較高參考價值\n"
+            cpbl_spec += "\n**⚾ 關鍵指標提醒：先發投手的 K/9（三振能力）與 BB/9（保送控制）/ K/BB 比值，是中職勝負關鍵指標。中職洋將投手常主導戰局，請優先根據 K/9 + BB/9 對位差距判斷投手優勢，權重應高於團隊戰績。**\n"
 
             cpbl_data = features.get('cpbl_advanced', {})
             if cpbl_data:
@@ -2154,8 +2158,28 @@ Park Factor: {pf:.2f} ({park_interp})
                 # 原因：AI prompt 已加強引導，但 LLM 仍會被戰績/排名蓋過，需後處理保險
                 lg = (features.get('league') or '').upper()
                 if lg in ('MLB', 'NPB', 'CPBL'):
-                    pitcher_data = features.get('mlb_pitchers') or features.get('npb_pitchers') or features.get('pitchers') or {}
+                    pitcher_data = features.get('mlb_pitchers') or features.get('npb_pitchers') or features.get('cpbl_pitchers') or features.get('pitchers') or {}
                     pitcher_adjustment_log = []
+
+                    def _get_pitcher(side):
+                        return (pitcher_data.get(f'{side}_pitcher') or {}).get('stats') or {}
+
+                    def _safe_float(value, default=0.0):
+                        try:
+                            v = float(value or 0)
+                            return v if v > 0 else default
+                        except (TypeError, ValueError):
+                            return default
+
+                    home_pitcher_stats = _get_pitcher('home')
+                    away_pitcher_stats = _get_pitcher('away')
+
+                    home_k9 = _safe_float(home_pitcher_stats.get('k_per_9'))
+                    away_k9 = _safe_float(away_pitcher_stats.get('k_per_9'))
+                    home_bb9 = _safe_float(home_pitcher_stats.get('bb_per_9'))
+                    away_bb9 = _safe_float(away_pitcher_stats.get('bb_per_9'))
+                    home_kbb_ratio = _safe_float(home_pitcher_stats.get('k_bb_ratio'))
+                    away_kbb_ratio = _safe_float(away_pitcher_stats.get('k_bb_ratio'))
 
                     for side, current_prob_name in [('home', 'home_prob'), ('away', 'away_prob')]:
                         p = pitcher_data.get(f'{side}_pitcher') or {}
@@ -2179,7 +2203,7 @@ Park Factor: {pf:.2f} ({park_interp})
 
                         # 降溫中：近 3 場比整季差很多
                         if recent_era > 6.0 and era_diff > 3.0:
-                            adjustment = -0.08  # 該隊勝率降 8%
+                            adjustment = -0.08 # 該隊勝率降 8%
                             reason = f"{side}_pitcher 降溫中（近3場 ERA={recent_era}, 整季={season_era}）"
                         elif recent_era > 5.0 and era_diff > 2.5:
                             adjustment = -0.05
@@ -2209,7 +2233,49 @@ Park Factor: {pf:.2f} ({park_interp})
                         adjustment_note = "\n\n[投手近況校正] " + "; ".join(pitcher_adjustment_log)
                         if "近 3 場" not in existing_summary and "近3場" not in existing_summary:
                             result["summary"] = existing_summary + adjustment_note
-                        print(f"  ⚾ Recipe 6 投手調整: {pitcher_adjustment_log}")
+                        print(f" ⚾ Recipe 6 投手調整: {pitcher_adjustment_log}")
+
+                    # 🆕 [Recipe NPB/MLB/CPBL 投手參數擴充] 先發投手 K/9 + BB/9 的確定性加成
+                    pitcher_param_delta = {
+                        'home_k9': home_k9,
+                        'away_k9': away_k9,
+                        'home_bb9': home_bb9,
+                        'away_bb9': away_bb9,
+                    }
+
+                    pitcher_adjustment = 0.0
+                    pitcher_adjustment_reasons = []
+
+                    k9_advantage = (home_k9 - away_k9)
+                    if k9_advantage >= 1.0:
+                        pitcher_adjustment += min(0.02 * (k9_advantage / 1.0), 0.04)
+                        pitcher_adjustment_reasons.append(f"主隊先發K/9優勢 +{k9_advantage:.1f}")
+
+                    bb9_gap = (away_bb9 - home_bb9)
+                    if bb9_gap >= 0.5:
+                        pitcher_adjustment += 0.01 * (bb9_gap / 0.5)
+                        pitcher_adjustment_reasons.append(f"客隊BB/9偏高 +{bb9_gap:.1f}")
+
+                    if home_kbb_ratio > 0 and away_kbb_ratio > 0 and (home_kbb_ratio - away_kbb_ratio) > 0.5:
+                        pitcher_adjustment += 0.02
+                        pitcher_adjustment_reasons.append(f"主隊K/BB比值優勢 +{(home_kbb_ratio - away_kbb_ratio):.2f}")
+
+                    if pitcher_adjustment != 0.0:
+                        pitcher_adjustment = max(-0.05, min(0.05, pitcher_adjustment))
+                        if home_prob > away_prob:
+                            home_prob = max(0.30, min(0.85, home_prob + pitcher_adjustment))
+                            away_prob = 1.0 - home_prob
+                        else:
+                            away_prob = max(0.30, min(0.85, away_prob - pitcher_adjustment))
+                            home_prob = 1.0 - away_prob
+                        result["home_win_probability"] = round(home_prob, 4)
+                        result["away_win_probability"] = round(away_prob, 4)
+                        existing_summary = result.get("summary", "") or ""
+                        adjustment_note = "\n\n[投手參數校正] " + "; ".join(pitcher_adjustment_reasons) + f" => 勝率調整 {pitcher_adjustment:+.2f}"
+                        if "[投手參數校正]" not in existing_summary:
+                            result["summary"] = existing_summary + adjustment_note
+                        print(f" ⚾ Recipe 6 投手參數調整: {pitcher_adjustment_reasons}")
+
 
                 # 信心指數標準化: 若 Ollama 回傳 0~1 分數則轉換為 1~10 評分
                 raw_conf = float(result.get("confidence", 0.0))
