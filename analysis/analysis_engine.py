@@ -2228,6 +2228,19 @@ Park Factor: {pf:.2f} ({park_interp})
                         kb_adjust_log = []
                         h_sp = (pitcher_data.get('home_pitcher') or {}).get('stats') or {}
                         a_sp = (pitcher_data.get('away_pitcher') or {}).get('stats') or {}
+                        
+                        # 🆕 [fix] lottonavi 只提供 ERA，缺少 K/9 BB/9 時從輪值 #1 借用
+                        if h_sp and 'k_per_9' not in h_sp:
+                            home_pitchers_list = features.get('npb_pitchers', {}).get('home_pitchers', [])
+                            if home_pitchers_list:
+                                h_sp['k_per_9'] = home_pitchers_list[0].get('k_per_9', 0)
+                                h_sp['bb_per_9'] = home_pitchers_list[0].get('bb_per_9', 0)
+                        if a_sp and 'k_per_9' not in a_sp:
+                            away_pitchers_list = features.get('npb_pitchers', {}).get('away_pitchers', [])
+                            if away_pitchers_list:
+                                a_sp['k_per_9'] = away_pitchers_list[0].get('k_per_9', 0)
+                                a_sp['bb_per_9'] = away_pitchers_list[0].get('bb_per_9', 0)
+                        
                         h_k9 = float(h_sp.get('k_per_9', 0) or 0)
                         a_k9 = float(a_sp.get('k_per_9', 0) or 0)
                         h_bb9 = float(h_sp.get('bb_per_9', 0) or 0)
