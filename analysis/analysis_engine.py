@@ -25,12 +25,12 @@ OLLAMA_URL = "http://localhost:11434/api/generate"
 # --- 雲端 LLM 配置（支援 NVIDIA / OpenRouter / Groq / Nous Portal / Ollama Cloud）---
 # 🆕 預設改為 Ollama Cloud + qwen3-coder-next（CPBL/NPB 分析品質顯著提升）
 # 切換方式：透過 Railway 環境變數 CLOUD_LLM_PROVIDER 覆寫
-#   - "nous"       → Nous Portal（stepfun/step-3.7-flash:free 等）
-#   - "ollama"     → Ollama Cloud（推薦，AI 路徑觸發率 > 95%）
-#   - "nvidia"     → NVIDIA API（向下相容）
+#   - "nvidia"     → NVIDIA NIM API（主要，節省成本）
+#   - "nous"       → Nous Portal（備援）
+#   - "ollama"     → Ollama Cloud
 #   - "groq"       → Groq
 #   - "openrouter" → OpenRouter
-CLOUD_LLM_PROVIDER = os.environ.get("CLOUD_LLM_PROVIDER", "ollama")
+CLOUD_LLM_PROVIDER = os.environ.get("CLOUD_LLM_PROVIDER", "nvidia")
 
 if CLOUD_LLM_PROVIDER == "openrouter":
     CLOUD_LLM_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -49,14 +49,15 @@ elif CLOUD_LLM_PROVIDER == "ollama":
     CLOUD_LLM_MODEL = os.environ.get("CLOUD_LLM_MODEL", "qwen3-coder-next")
     CLOUD_LLM_API_KEY = os.environ.get("OLLAMA_API_KEY", "")
 else:
+    # NVIDIA NIM（主要 provider）
     CLOUD_LLM_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
-    CLOUD_LLM_MODEL = os.environ.get("CLOUD_LLM_MODEL", "deepseek-ai/deepseek-v4-flash")
+    CLOUD_LLM_MODEL = os.environ.get("CLOUD_LLM_MODEL", "minimaxai/minimax-m3")
     CLOUD_LLM_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 
-# 備援 LLM 配置（當主要 LLM 失敗時使用）— 改為 NVIDIA integrate API + minimax-m3
-FALLBACK_LLM_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
-FALLBACK_LLM_MODEL = "minimaxai/minimax-m3"
-FALLBACK_LLM_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
+# 備援 LLM 配置（當主要 LLM 失敗時使用）— Nous Portal + minimax-m3
+FALLBACK_LLM_URL = "https://inference-api.nousresearch.com/v1/chat/completions"
+FALLBACK_LLM_MODEL = "minimax/minimax-m3"
+FALLBACK_LLM_API_KEY = os.environ.get("NOUS_API_KEY", "")
 
 # 可透過環境變數 PREDICTX_MODEL 切換模型
 # qwen:latest (4B, ~6s/場) | qwen3.5:9b (9B, ~200s/場，預設) | cloud (雲端 LLM)
