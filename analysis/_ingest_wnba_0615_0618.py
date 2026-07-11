@@ -3,17 +3,22 @@
 補抓 6/15-6/18 WNBA 賽程+比分進 Railway 生產 DB。
 從 ESPN API 抓取，對应 predictx.teams 的 english_name 寫入 predictx.games。
 """
-import requests, json, psycopg2
+import os, requests, json, psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime
 
-DB = dict(host='thomas.proxy.rlwy.net', port=49887, user='postgres',
-          password='REDACTED', dbname='railway')
+def _get_db_connection():
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        raise RuntimeError("DATABASE_URL 環境變數未設定")
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+    return psycopg2.connect(db_url, cursor_factory=RealDictCursor)
 
 ESPN_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/scoreboard"
 
 def main():
-    conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB)
+    conn = _get_db_connection()
     cur = conn.cursor()
 
     # 先撈 WNBA team name → team_id mapping
