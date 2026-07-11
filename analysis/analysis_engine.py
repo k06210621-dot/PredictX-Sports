@@ -22,12 +22,13 @@ MODEL_CONFIGS = {
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 
-# --- 雲端 LLM 配置（支援 NVIDIA / OpenRouter / Groq / Ollama Cloud）---
+# --- 雲端 LLM 配置（支援 NVIDIA / OpenRouter / Groq / Nous Portal / Ollama Cloud）---
 # 🆕 預設改為 Ollama Cloud + qwen3-coder-next（CPBL/NPB 分析品質顯著提升）
 # 切換方式：透過 Railway 環境變數 CLOUD_LLM_PROVIDER 覆寫
-#   - "ollama" → Ollama Cloud（推薦，AI 路徑觸發率 > 95%）
-#   - "nvidia" → NVIDIA API（向下相容）
-#   - "groq"   → Groq
+#   - "nous"       → Nous Portal（stepfun/step-3.7-flash:free 等）
+#   - "ollama"     → Ollama Cloud（推薦，AI 路徑觸發率 > 95%）
+#   - "nvidia"     → NVIDIA API（向下相容）
+#   - "groq"       → Groq
 #   - "openrouter" → OpenRouter
 CLOUD_LLM_PROVIDER = os.environ.get("CLOUD_LLM_PROVIDER", "ollama")
 
@@ -39,13 +40,17 @@ elif CLOUD_LLM_PROVIDER == "groq":
     CLOUD_LLM_URL = "https://api.groq.com/openai/v1/chat/completions"
     CLOUD_LLM_MODEL = os.environ.get("CLOUD_LLM_MODEL", "llama-3.3-70b-versatile")
     CLOUD_LLM_API_KEY = os.environ.get("GROQ_API_KEY", "")
+elif CLOUD_LLM_PROVIDER == "nous":
+    CLOUD_LLM_URL = "https://inference-api.nousresearch.com/v1/chat/completions"
+    CLOUD_LLM_MODEL = os.environ.get("CLOUD_LLM_MODEL", "stepfun/step-3.7-flash:free")
+    CLOUD_LLM_API_KEY = os.environ.get("NOUS_API_KEY", "")
 elif CLOUD_LLM_PROVIDER == "ollama":
     CLOUD_LLM_URL = "https://api.ollama.com/api/chat"
     CLOUD_LLM_MODEL = os.environ.get("CLOUD_LLM_MODEL", "qwen3-coder-next")
     CLOUD_LLM_API_KEY = os.environ.get("OLLAMA_API_KEY", "")
 else:
     CLOUD_LLM_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
-    CLOUD_LLM_MODEL = "deepseek-ai/deepseek-v4-flash"
+    CLOUD_LLM_MODEL = os.environ.get("CLOUD_LLM_MODEL", "deepseek-ai/deepseek-v4-flash")
     CLOUD_LLM_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 
 # 備援 LLM 配置（當主要 LLM 失敗時使用）— 改為 NVIDIA integrate API + minimax-m3
@@ -736,6 +741,8 @@ class AnalysisEngine:
                     # ingest 階段可能先發尚未公布，分析時重抓可確保拿到最新先發名單
                     today_sp_home = game.get('home_pitcher_name')
                     today_sp_away = game.get('away_pitcher_name')
+                    lottonavi_home_era = None
+                    lottonavi_away_era = None
                     try:
                         match_date_str = str(game.get('match_date', '')).replace('-', '')
                         if match_date_str:
@@ -747,38 +754,22 @@ class AnalysisEngine:
                                 if sp:
                                     today_sp_home = sp.get('home_pitcher', {}).get('name') or today_sp_home
                                     today_sp_away = sp.get('away_pitcher', {}).get('name') or today_sp_away
+                                    lottonavi_home_era = sp.get('home_pitcher', {}).get('era')
+                                    lottonavi_away_era = sp.get('away_pitcher', {}).get('era')
                                 elif key2 in lottonavi_starters:
                                     sp = lottonavi_starters[key2]
                                     today_sp_home = sp.get('away_pitcher', {}).get('name') or today_sp_home
                                     today_sp_away = sp.get('home_pitcher', {}).get('name') or today_sp_away
+                                    lottonavi_home_era = sp.get('away_pitcher', {}).get('era')
+                                    lottonavi_away_era = sp.get('home_pitcher', {}).get('era')
                                 print(f"  🏯 NPB lottonavi 即時先發: {home_name}={today_sp_home}, {away_name}={today_sp_away}")
                     except Exception as lot_err:
                         print(f"  ⚠ NPB lottonavi re-fetch error: {lot_err}")
 
-                    # 🆕 [方案 B] 用 lottonavi 先發姓名比對 baseball-data.com 投手列表
-                    # 找出今日先發投手的完整 stats（ERA/WHIP/K9），而非盲目取 pitchers[0]
-                    def _find_pitcher_by_name(pitchers_list, target_name):
-                        """用名字模糊比對找出今日先發投手的完整 stats"""
-                        if not target_name or target_name == 'TBD':
-                            return None
-                        # 精確比對
-                        for p in pitchers_list:
-                            if p['name'] == target_name:
-                                return p
-                        # 模糊比對：去空白後部分匹配
-                        target_clean = target_name.replace('　', ' ').replace(' ', '').strip()
-                        for p in pitchers_list:
-                            name_clean = p['name'].replace('　', ' ').replace(' ', '').strip()
-                            if target_clean in name_clean or name_clean in target_clean:
-                                return p
-                        # 只比對姓氏（最後一個字）
-                        for p in pitchers_list:
-                            if target_name[-1:] and p['name'][-1:] == target_name[-1:]:
-                                return p
-                        return None
-
-                    home_sp_stats = _find_pitcher_by_name(home_pitchers, today_sp_home) if home_pitchers else None
-                    away_sp_stats = _find_pitcher_by_name(away_pitchers, today_sp_away) if away_pitchers else None
+                    # 🆕 直接使用 lottonavi 先發投手數據（不再比對 baseball-data.com）
+                    # lottonavi 已提供先發名字 + ERA，比對常因日文姓名寫法差異失敗
+                    home_sp_stats = {'era': lottonavi_home_era} if lottonavi_home_era else None
+                    away_sp_stats = {'era': lottonavi_away_era} if lottonavi_away_era else None
 
                     if home_pitchers or away_pitchers:
                         features['npb_pitchers'] = {
@@ -799,8 +790,8 @@ class AnalysisEngine:
                         a_disp = away_sp_stats or (away_pitchers[0] if away_pitchers else {})
                         h_name = features['npb_pitchers']['home_pitcher']['name']
                         a_name = features['npb_pitchers']['away_pitcher']['name']
-                        print(f"  ⚾ Home SP: {h_name} (ERA={h_disp.get('era', 0)}, WHIP={h_disp.get('whip', 0)}, K/9={h_disp.get('k_per_9', 0)}){' [lottonavi匹配]' if home_sp_stats else ' [top SP fallback]'}")
-                        print(f"  ⚾ Away SP: {a_name} (ERA={a_disp.get('era', 0)}, WHIP={a_disp.get('whip', 0)}, K/9={a_disp.get('k_per_9', 0)}){' [lottonavi匹配]' if away_sp_stats else ' [top SP fallback]'}")
+                        print(f"  ⚾ Home SP: {h_name} (ERA={h_disp.get('era', 0)}) [lottonavi{' ✓' if home_sp_stats else ' fallback'}]")
+                        print(f"  ⚾ Away SP: {a_name} (ERA={a_disp.get('era', 0)}) [lottonavi{' ✓' if away_sp_stats else ' fallback'}]")
                 except Exception as pitcher_err:
                     print(f"  ⚠ NPB top starters fetch error: {pitcher_err}")
 
@@ -1342,7 +1333,12 @@ Park Factor: {pf:.2f} ({park_interp})
 
 ===== 今日先發投手（來源：lottonavi）=====
 主隊 {home_team} 今日先發：{home_sp or '尚未公布'}
-客隊 {away_team} 今日先發：{away_sp or '尚未公布'}"""
+客隊 {away_team} 今日先發：{away_sp or '尚未公布'}
+
+💡 NPB 分析指引【強制規則】：
+- **先發投手的三振能力(K/9)與保送控制(BB/9、K/BB)是 NPB 低得分比賽的「勝負關鍵指標」，權重應明顯高於團隊戰績/排名。**
+- 當雙方先發 K/9 差距 ≥ 2.0，或 BB/9 差距 ≥ 1.0，或 K/BB 比值差距 ≥ 1.0 時，勝率應直接朝「三振能力強、保送少」的一方偏移至少 3-5%。
+- summary 中必須明確寫出雙方先發的 K/9 與 BB/9 對比數字，並說明其對勝負的影響。"""
 
         # 🆕 [2026-07-06] NPB 當日 SP 個人 stats（從 predictx.player_season_stats）
         # 這是 lottonavi 抓出「指定先發投手」後，從 DB 撈這位投手的當季 ERA/SO/BB
@@ -1791,7 +1787,7 @@ Park Factor: {pf:.2f} ({park_interp})
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.5,
-            "max_tokens": 9830,  # 8192 * 1.2 = 9830（提高 20% 避免 JSON 截斷）
+            "max_tokens": 11796,  # 9830 * 1.2 = 11796（再提高 20% 避免 reasoning 過長導致 JSON 截斷）
             "stream": False
         }
         headers = {
@@ -2225,6 +2221,36 @@ Park Factor: {pf:.2f} ({park_interp})
                                 home_prob = 1.0 - away_prob
                             pitcher_adjustment_log.append(f"{reason} → 勝率調整 {adjustment:+.2f}")
 
+                    # 🆕 [P0-NPB] 先發投手三振能力(K/9)與四壞球控制(BB/9)確定性加成
+                    # 只對 NPB 生效：NPB 得分低、先發投手 K/BB 是勝負關鍵指標
+                    # 直接調整勝率（不依賴 LLM 感覺），與 Recipe 6 ERA 校正疊加
+                    if lg == 'NPB':
+                        kb_adjust_log = []
+                        h_sp = (pitcher_data.get('home_pitcher') or {}).get('stats') or {}
+                        a_sp = (pitcher_data.get('away_pitcher') or {}).get('stats') or {}
+                        h_k9 = float(h_sp.get('k_per_9', 0) or 0)
+                        a_k9 = float(a_sp.get('k_per_9', 0) or 0)
+                        h_bb9 = float(h_sp.get('bb_per_9', 0) or 0)
+                        a_bb9 = float(a_sp.get('bb_per_9', 0) or 0)
+                        # 雙方都要有有效數據（ip>0 才有 k_per_9/bb_per_9）才調整
+                        if h_k9 > 0 and a_k9 > 0 and h_bb9 > 0 and a_bb9 > 0:
+                            # 三振能力差：每 1.0 K/9 差距 → 勝率 ±0.015
+                            k9_diff = h_k9 - a_k9
+                            k9_adj = round(k9_diff * 0.015, 4)
+                            # 控球差（BB/9 越低越好）：每 0.5 BB/9 差距 → 勝率 ±0.01
+                            bb9_diff = a_bb9 - h_bb9  # 我方 BB 越少越有利
+                            bb9_adj = round(bb9_diff * 0.02, 4)  # 0.5 差距 → 0.01
+                            kb_adj = round(k9_adj + bb9_adj, 4)
+                            if abs(kb_adj) >= 0.005:
+                                home_prob = max(0.30, min(0.85, home_prob + kb_adj))
+                                away_prob = 1.0 - home_prob
+                                kb_adjust_log.append(
+                                    f"NPB SP K/BB: 主K/9={h_k9}(BB/9={h_bb9}) vs 客K/9={a_k9}(BB/9={a_bb9}) "
+                                    f"→ 勝率調整 {kb_adj:+.4f}"
+                                )
+                        if kb_adjust_log:
+                            pitcher_adjustment_log.extend(kb_adjust_log)
+
                     if pitcher_adjustment_log:
                         result["home_win_probability"] = round(home_prob, 4)
                         result["away_win_probability"] = round(away_prob, 4)
@@ -2434,6 +2460,25 @@ Park Factor: {pf:.2f} ({park_interp})
         home_avg_a = home_form.get('avg_goals_against', 0) or 0
         away_avg_f = away_form.get('avg_goals_for', 0) or 0
         away_avg_a = away_form.get('avg_goals_against', 0) or 0
+
+        # 🆕 [P0-NPB fallback 同步] 先發投手 K/9 與 BB/9 確定性加成
+        # 與正常路徑 Recipe 6 區塊使用完全一致公式，確保 fallback 也反映投手三振/保送優勢
+        lg_fb = (features.get('league') or '').upper()
+        if lg_fb == 'NPB':
+            kb_pitcher = features.get('npb_pitchers') or features.get('mlb_pitchers') or features.get('pitchers') or {}
+            h_sp_fb = (kb_pitcher.get('home_pitcher') or {}).get('stats') or {}
+            a_sp_fb = (kb_pitcher.get('away_pitcher') or {}).get('stats') or {}
+            h_k9_fb = float(h_sp_fb.get('k_per_9', 0) or 0)
+            a_k9_fb = float(a_sp_fb.get('k_per_9', 0) or 0)
+            h_bb9_fb = float(h_sp_fb.get('bb_per_9', 0) or 0)
+            a_bb9_fb = float(a_sp_fb.get('bb_per_9', 0) or 0)
+            if h_k9_fb > 0 and a_k9_fb > 0 and h_bb9_fb > 0 and a_bb9_fb > 0:
+                k9_adj_fb = round((h_k9_fb - a_k9_fb) * 0.015, 4)
+                bb9_adj_fb = round((a_bb9_fb - h_bb9_fb) * 0.02, 4)
+                kb_adj_fb = round(k9_adj_fb + bb9_adj_fb, 4)
+                if abs(kb_adj_fb) >= 0.005:
+                    home_prob = max(0.30, min(0.85, home_prob + kb_adj_fb))
+                    print(f"  ⚾ [fallback] NPB SP K/BB: 主K/9={h_k9_fb}(BB/9={h_bb9_fb}) vs 客K/9={a_k9_fb}(BB/9={a_bb9_fb}) → 勝率調整 {kb_adj_fb:+.4f}")
 
         # Radar chart 維度（用於 fallback 也保留 AI-style 6 維度）
         league = features.get('league', '')
