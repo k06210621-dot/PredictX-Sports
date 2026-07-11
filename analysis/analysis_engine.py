@@ -2468,6 +2468,19 @@ Park Factor: {pf:.2f} ({park_interp})
             kb_pitcher = features.get('npb_pitchers') or features.get('mlb_pitchers') or features.get('pitchers') or {}
             h_sp_fb = (kb_pitcher.get('home_pitcher') or {}).get('stats') or {}
             a_sp_fb = (kb_pitcher.get('away_pitcher') or {}).get('stats') or {}
+            
+            # 🆕 [fix] lottonavi 只提供 ERA，缺少 K/9 BB/9 時從輪值 #1 借用
+            if h_sp_fb and 'k_per_9' not in h_sp_fb:
+                home_pitchers_fb = features.get('npb_pitchers', {}).get('home_pitchers', [])
+                if home_pitchers_fb:
+                    h_sp_fb['k_per_9'] = home_pitchers_fb[0].get('k_per_9', 0)
+                    h_sp_fb['bb_per_9'] = home_pitchers_fb[0].get('bb_per_9', 0)
+            if a_sp_fb and 'k_per_9' not in a_sp_fb:
+                away_pitchers_fb = features.get('npb_pitchers', {}).get('away_pitchers', [])
+                if away_pitchers_fb:
+                    a_sp_fb['k_per_9'] = away_pitchers_fb[0].get('k_per_9', 0)
+                    a_sp_fb['bb_per_9'] = away_pitchers_fb[0].get('bb_per_9', 0)
+            
             h_k9_fb = float(h_sp_fb.get('k_per_9', 0) or 0)
             a_k9_fb = float(a_sp_fb.get('k_per_9', 0) or 0)
             h_bb9_fb = float(h_sp_fb.get('bb_per_9', 0) or 0)
@@ -2478,7 +2491,7 @@ Park Factor: {pf:.2f} ({park_interp})
                 kb_adj_fb = round(k9_adj_fb + bb9_adj_fb, 4)
                 if abs(kb_adj_fb) >= 0.005:
                     home_prob = max(0.30, min(0.85, home_prob + kb_adj_fb))
-                    print(f"  ⚾ [fallback] NPB SP K/BB: 主K/9={h_k9_fb}(BB/9={h_bb9_fb}) vs 客K/9={a_k9_fb}(BB/9={a_bb9_fb}) → 勝率調整 {kb_adj_fb:+.4f}")
+                    print(f"  ⚾ [fallback] NPB SP K/BB: 主 K/9={h_k9_fb}(BB/9={h_bb9_fb}) vs 客 K/9={a_k9_fb}(BB/9={a_bb9_fb}) → 勝率調整 {kb_adj_fb:+.4f}")
 
         # Radar chart 維度（用於 fallback 也保留 AI-style 6 維度）
         league = features.get('league', '')
