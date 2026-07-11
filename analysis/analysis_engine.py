@@ -745,7 +745,25 @@ class AnalysisEngine:
             except Exception as e:
                 print(f"  ⚠ Weather fetch error: {e}")
                 self.conn.rollback()
-        
+
+        # 7.5 傷兵名單（MLB / NBA / WNBA）
+        if league and league.upper() in ('MLB', 'NBA', 'WNBA'):
+            try:
+                from injury_fetcher import fetch_injuries
+                home_name = game['home_team_en']
+                away_name = game['away_team_en']
+                injuries = fetch_injuries(league, home_name, away_name)
+                if injuries.get('home') or injuries.get('away'):
+                    features['injuries'] = injuries
+                    h_cnt = len(injuries.get('home', []))
+                    a_cnt = len(injuries.get('away', []))
+                    print(f"  🏥 Injuries: home={h_cnt}, away={a_cnt}")
+                else:
+                    features['injuries'] = {"home": [], "away": []}
+            except Exception as e:
+                print(f"  ⚠ Injury fetch error: {e}")
+                features['injuries'] = {"home": [], "away": []}
+
         # 8. NPB 即時數據（從 baseball-data.com 爬取）
         if league and league.upper() == 'NPB':
             try:
@@ -1274,6 +1292,35 @@ class AnalysisEngine:
         else:
             weather_section = ""
         
+        # 🏥 傷兵名單段落
+        injury_data = features.get('injuries', {})
+        if injury_data and (injury_data.get('home') or injury_data.get('away')):
+            def _format_injury_list(players):
+                if not players:
+                    return "無傷兵"
+                lines = []
+                for p in players:
+                    pos = f" [{p['position']}]" if p.get('position') else ""
+                    desc = f" — {p['desc']}" if p.get('desc') else ""
+                    lines.append(f"  • {p['name']}{pos} ({p['status']}){desc}")
+                return "\n".join(lines)
+
+            injury_section = f"""===== 傷兵名單（來源：{'MLB statsapi' if league.upper() == 'MLB' else 'ESPN'}）=====
+主隊 {home_team} 傷兵:
+{_format_injury_list(injury_data.get('home', []))}
+
+客隊 {away_team} 傷兵:
+{_format_injury_list(injury_data.get('away', []))}
+
+💡 分析指引：
+- 先發投手若在傷兵名單中，該隊勝率應明顯下修（IL10: -5%，IL15: -8%，IL60: -10%）
+- 核心打者（主力先發）缺陣影響較大，替補球員缺陣影響較小
+- Day-To-Day 不確定性高，保守估計勝率下修 2-3%
+- 若兩隊都有傷兵，請比較「誰的傷兵對戰力影響更大」再決定調整方向
+"""
+        else:
+            injury_section = ""
+        
         # NPB 即時數據（從 baseball-data.com 爬取）
         npb_data = features.get('npb_advanced', {})
         if npb_data:
@@ -1716,6 +1763,7 @@ Park Factor: {pf:.2f} ({park_interp})
 {wnba_advanced_section}
 {npb_section}
 {weather_section}
+{injury_section}
 {cpbl_analysis_guide}
 {home_advantage_note}
 {rostersection}
