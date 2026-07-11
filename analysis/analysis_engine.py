@@ -1,10 +1,38 @@
 import os
 import json
 import time
+import threading
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 import requests
+
+# --- LLM 呼叫速率限制（token bucket）---
+# 避免 container 起動初期多場並發打爆 NVIDIA 免費層額度。
+# 透過環境變數 LLM_RATE_PER_SEC 調整填補速度（預設 0.4 = 每 2.5 秒 1 次）。
+class _TokenBucket:
+    def __init__(self, rate, capacity=None):
+        self.rate = rate                      # tokens per second
+        self.capacity = capacity or max(1.0, rate)
+        self.tokens = self.capacity
+        self.last = time.monotonic()
+        self.lock = threading.Lock()
+
+    def acquire(self, n=1):
+        with self.lock:
+            now = time.monotonic()
+            self.tokens = min(self.capacity, self.tokens + (now - self.last) * self.rate)
+            self.last = now
+            if self.tokens >= n:
+                self.tokens -= n
+                return
+            wait = (n - self.tokens) / self.rate
+        time.sleep(wait)
+        with self.lock:
+            self.tokens = min(self.capacity, self.tokens - n)
+
+_LLM_RATE = float(os.environ.get("LLM_RATE_PER_SEC", "0.4"))
+_llm_bucket = _TokenBucket(_LLM_RATE)
 
 # --- 配置區 ---
 DB_CONFIG = {
@@ -1769,7 +1797,8 @@ Park Factor: {pf:.2f} ({park_interp})
 
     def _call_cloud(self, prompt):
         """調用雲端 LLM 含 retry，失敗時自動切換到備援 LLM"""
-        # 先試主要 LLM
+        # 先試主要 LLM（受 token bucket 限速，避免免費層並發限制）
+        _llm_bucket.acquire()
         result = self._try_llm(CLOUD_LLM_URL, CLOUD_LLM_MODEL, CLOUD_LLM_API_KEY, prompt)
         if result:
             return result
