@@ -116,16 +116,18 @@ async def send_push_notification(
     badge: int = 1,
     sound: str = "default",
     category: str = "MATCH_NOTIFICATION",
-) -> bool:
+) -> dict:
     """
     發送推播通知到指定裝置
 
     Returns:
-        bool: 是否成功送達 APNs（HTTP 200）
+        dict: {"token": str, "ok": bool, "remove": bool, "status": int}
+              ok=True 表示 HTTP 200 送達；
+              remove=True 表示 token 永久失效（410 Unregistered / 400 BadDeviceToken），應從 DB 清除。
     """
     if not device_token:
         logger.warning("[APNs] device_token 為空，跳過")
-        return False
+        return {"token": device_token, "ok": False, "remove": False, "status": 0}
 
     url = f"{APNS_HOST}/3/device/{device_token}"
     headers = {
@@ -159,20 +161,32 @@ async def send_push_notification(
             resp = await client.post(url, headers=headers, json=payload)
             if resp.status_code == 200:
                 logger.info(f"[APNs] 推播成功 → {device_token[:16]}...")
-                return True
+                return {"token": device_token, "ok": True, "remove": False, "status": 200}
             else:
                 error_text = resp.text
                 logger.warning(
                     f"[APNs] 推播失敗 HTTP {resp.status_code}: {error_text} "
                     f"(token={device_token[:16]}...)"
                 )
-                return False
+                # 判斷是否為「永久失效」→ 需從 DB 清除
+                # 410 Unregistered：token 已失效（App 移除/重裝）
+                # 400 BadDeviceToken：token 格式錯或 sandbox/production 環境不符
+                reason = ""
+                try:
+                    reason = (json.loads(error_text) or {}).get("reason", "")
+                except Exception:
+                    pass
+                remove = (
+                    resp.status_code == 410
+                    or (resp.status_code == 400 and reason == "BadDeviceToken")
+                )
+                return {"token": device_token, "ok": False, "remove": remove, "status": resp.status_code}
     except httpx.TimeoutException:
         logger.error(f"[APNs] 推播逾時 (token={device_token[:16]}...)")
-        return False
+        return {"token": device_token, "ok": False, "remove": False, "status": 0}
     except Exception as e:
         logger.error(f"[APNs] 推播異常: {e} (token={device_token[:16]}...)")
-        return False
+        return {"token": device_token, "ok": False, "remove": False, "status": 0}
 
 
 # ==========================================
@@ -235,18 +249,28 @@ async def send_match_notification(
     ]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    success_count = sum(1 for r in results if r is True)
+    success_count = 0
+    invalid_tokens = []
+    for r in results:
+        if isinstance(r, dict):
+            if r.get("ok"):
+                success_count += 1
+            elif r.get("remove"):
+                invalid_tokens.append(r.get("token"))
+        # 例外（Exception）或非預期回傳一律視為非永久失敗，不清除
     failed_count = len(results) - success_count
 
     logger.info(
         f"[APNs] 推播完成：{home_team} vs {away_team} "
         f"(conf={confidence:.1f}) → {success_count}/{len(device_tokens)} 成功"
+        + (f"，{len(invalid_tokens)} 個失效 token 待清除" if invalid_tokens else "")
     )
 
     return {
         "success_count": success_count,
         "failed_count": failed_count,
         "results": results,
+        "invalid_tokens": invalid_tokens,
     }
 
 
@@ -301,6 +325,46 @@ def _fetch_premium_devices_sync(min_tier: str = "premium", conn=None) -> List[st
 
 # 🆕 [2026-06-27] 去重常數：同一 game_id 6 小時內不重複推播
 PUSH_DEDUP_HOURS = 6
+
+
+def _remove_invalid_tokens_sync(tokens: List[str], conn=None) -> int:
+    """從 predictx.device_tokens 刪除永久失效的 device token（410/BadDeviceToken）。
+
+    收到 410 Unregistered 或 400 BadDeviceToken 代表該 token 已永久失效
+    （App 已移除/重裝/環境不符），留著只會每次推播都白打。裝置若仍在使用，
+    下次啟動會重新註冊新 token，因此直接刪除安全。
+
+    Returns:
+        int: 實際刪除的筆數
+    """
+    if not tokens:
+        return 0
+    own_conn = conn is None
+    if conn is None:
+        conn = _get_push_db_conn()
+        if conn is None:
+            return 0
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM predictx.device_tokens WHERE device_token = ANY(%s)",
+            (list(tokens),),
+        )
+        deleted = cur.rowcount
+        conn.commit()
+        cur.close()
+        logger.info(f"[APNs] 已清除 {deleted} 個失效 device token")
+        return deleted
+    except Exception as e:
+        logger.error(f"[APNs] 清除失效 token 失敗（non-fatal）: {e}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return 0
+    finally:
+        if own_conn:
+            conn.close()
 
 
 def _record_push_sync(game_id: str, devices_count: int, success_count: int, conn=None) -> None:
@@ -472,10 +536,22 @@ async def trigger_match_push(
             except Exception as rec_err:
                 logger.error(f"[APNs] push_log 記錄失敗（不影響本次推播）: {rec_err}")
 
+        # 清除永久失效的 device token（410 Unregistered / 400 BadDeviceToken）
+        invalid_tokens = result.get("invalid_tokens") or []
+        removed_count = 0
+        if invalid_tokens:
+            try:
+                removed_count = await asyncio.to_thread(
+                    _remove_invalid_tokens_sync, invalid_tokens, conn
+                )
+            except Exception as rm_err:
+                logger.error(f"[APNs] 清除失效 token 失敗（不影響本次推播）: {rm_err}")
+
         return {
             "devices_found": len(device_tokens),
             "success_count": result["success_count"],
             "failed_count": result["failed_count"],
+            "removed_invalid": removed_count,
         }
     finally:
         conn.close()
