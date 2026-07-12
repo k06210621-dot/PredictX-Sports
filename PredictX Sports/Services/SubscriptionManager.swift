@@ -27,6 +27,9 @@ class SubscriptionManager: ObservableObject {
     @Published var trialDaysRemaining: Int = 30
     @Published var trialExpired: Bool = false
 
+    // 🆕 [2026-06-29] 已取消訂閱的 transaction ID，避免重複觸發降級
+    private var processedExpiredTransactionIDs: Set<UInt64> = []
+
     // 廣告觀看機制
     @Published var adsWatchedToday: Int = 0
     @Published var lastAdWatchDate: Date? = nil
@@ -361,12 +364,35 @@ class SubscriptionManager: ObservableObject {
         defer { isProcessing = false }
         do {
             try await AppStore.sync()
+            var foundValidTransaction = false
             for await result in StoreKit.Transaction.currentEntitlements {
                 if case .verified(let transaction) = result {
-                    await applyTier(for: transaction.productID)
+                    // 檢查交易是否仍有效
+                    if let expirationDate = transaction.expirationDate,
+                       expirationDate <= Date() {
+                        // 交易已過期 → 降級
+                        await handleSubscriptionExpired(
+                            productID: transaction.productID,
+                            transactionID: transaction.id
+                        )
+                    } else {
+                        // 交易有效 → 升級
+                        await applyTier(for: transaction.productID)
+                        foundValidTransaction = true
+                    }
                     await transaction.finish()
                 }
             }
+
+            // 🆕 [2026-06-29] 如果目前是付費會員但找不到任何有效交易（刪除 App 重裝、跨 Apple ID 登入）
+            // 主動降級到 free
+            if !foundValidTransaction && tier != .free {
+                #if DEBUG
+                print("⚠️ No valid transactions found, but tier=\(tier). Downgrading to free.")
+                #endif
+                restoreFreeTier(reason: "restore_no_valid_transaction")
+            }
+
             lastPurchaseSucceeded = true
         } catch {
             lastPurchaseError = "恢復購買失敗：\(error.localizedDescription)"
@@ -406,14 +432,109 @@ class SubscriptionManager: ObservableObject {
         save()
     }
 
+    // MARK: - 訂閱降級 / 取消處理
+
+    /// 處理訂閱交易已過期（取消、退款、Apple 拒絕續訂）
+    /// 🆕 [2026-06-29] 修正 bug：取消訂閱後 tier 卡在 .standard 不還原
+    @MainActor
+    private func handleSubscriptionExpired(productID: String, transactionID: UInt64) async {
+        // 避免重複處理同一個 transaction
+        guard !processedExpiredTransactionIDs.contains(transactionID) else { return }
+        processedExpiredTransactionIDs.insert(transactionID)
+
+        // 還原到 free 方案
+        restoreFreeTier(reason: "subscription_expired:\(productID)")
+    }
+
+    /// 還原到 free 方案（取消訂閱、訂閱過期、退款時呼叫）
+    /// 🆕 [2026-06-29] 新增：統一處理降級到 free 的邏輯
+    @MainActor
+    func restoreFreeTier(reason: String) {
+        // 記錄降級原因（debug 用）
+        #if DEBUG
+        print("🔻 訂閱降級到 Free: \(reason)")
+        #endif
+
+        // 1. 還原 tier
+        tier = .free
+
+        // 2. 還原點數設定
+        diamondDailyCap = 60
+
+        // 3. 判斷試用期狀態
+        if let start = trialStartDate {
+            let elapsed = Calendar.current.dateComponents([.day], from: start, to: Date()).day ?? 0
+            if elapsed >= trialDurationDays {
+                // 試用期早已過期 → 維持 expired 狀態
+                trialExpired = true
+                trialDaysRemaining = 0
+                diamonds = 0
+            } else {
+                // 試用期還沒過（理論上 Apple 不會讓你重複用）→ 仍可繼續
+                trialExpired = false
+                trialDaysRemaining = max(0, trialDurationDays - elapsed)
+                diamonds = 60
+            }
+        } else {
+            // 沒有 trialStartDate（不太可能）
+            trialExpired = true
+            trialDaysRemaining = 0
+            diamonds = 0
+        }
+
+        // 4. 清空解鎖紀錄（保守做法：用戶降級後不應保留 Premium 解鎖）
+        unlockedAnalysisIds = []
+
+        // 5. 持久化
+        save()
+
+        // 6. 推播通知（todo）：通知 UI 顯示「訂閱已到期」
+    }
+
     // MARK: - StoreKit 交易監聽（含背景更新）
 
+    /// 🆕 [2026-06-29] 修正 bug：完整處理交易過期/取消事件
+    /// - 偵測 transaction.expirationDate 已過期
+    /// - 偵測 transaction.revocationDate（退款）
+    /// - 偵測 .unverified 事件
     private func observeTransactions() -> Task<Void, Never> {
         Task { [weak self] in
             for await result in StoreKit.Transaction.updates {
-                if case .verified(let transaction) = result {
-                    await self?.applyTier(for: transaction.productID)
+                guard let self else { return }
+                switch result {
+                case .verified(let transaction):
+                    // 判斷交易是否仍有效
+                    if let expirationDate = transaction.expirationDate,
+                       expirationDate <= Date() {
+                        // 交易已過期（取消、拒絕續訂）
+                        #if DEBUG
+                        print("⚠️ Transaction expired: \(transaction.id) (product=\(transaction.productID))")
+                        #endif
+                        await self.handleSubscriptionExpired(
+                            productID: transaction.productID,
+                            transactionID: transaction.id
+                        )
+                    } else if transaction.revocationDate != nil {
+                        // 退款導致撤銷
+                        #if DEBUG
+                        print("⚠️ Transaction revoked: \(transaction.id) (product=\(transaction.productID))")
+                        #endif
+                        await self.handleSubscriptionExpired(
+                            productID: transaction.productID,
+                            transactionID: transaction.id
+                        )
+                    } else {
+                        // 交易有效（首次購買、續訂）
+                        await self.applyTier(for: transaction.productID)
+                    }
                     await transaction.finish()
+
+                case .unverified(_, let error):
+                    #if DEBUG
+                    print("⚠️ Transaction unverified: \(error.localizedDescription)")
+                    #endif
+                    // 驗證失敗：保守做法不動作（讓 App 維持原狀）
+                    break
                 }
             }
         }

@@ -14,6 +14,7 @@ Push Notification Service for PredictX Sports
 """
 
 import os
+import sys
 import json
 import time
 import base64
@@ -25,6 +26,13 @@ from datetime import datetime
 from typing import List, Optional
 
 logger = logging.getLogger("push_service")
+# 確保 push_service 的 log 在 Railway cron 環境中可見
+if not logger.handlers:
+    h = logging.StreamHandler(sys.stdout)
+    h.setFormatter(logging.Formatter('[APNs] %(message)s'))
+    logger.addHandler(h)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
 
 # ==========================================
 # 環境配置

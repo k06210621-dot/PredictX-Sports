@@ -153,16 +153,37 @@ struct LegalDisclaimerView: View {
     
     // MARK: - 連結行
     private func linkRow(text: String, url: String?) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "envelope.fill")
-                .font(.caption)
-                .foregroundColor(.blue)
-            Text(text)
-                .font(.subheadline)
-                .foregroundColor(.blue)
-                .underline()
+        Group {
+            if let urlString = url, let url = URL(string: urlString) {
+                Link(destination: url) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.up.right.square.fill")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                        Text(text)
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
+                            .underline()
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 4)
+                    .contentShape(Rectangle())
+                }
+            } else {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.up.right.square.fill")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    Text(text)
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                    Spacer()
+                }
+                .padding(.vertical, 8)
+                .padding(.horizontal, 4)
+            }
         }
-        .padding(.vertical, 4)
     }
     
     // MARK: - 底部版權
@@ -421,18 +442,18 @@ private var sections: [DisclaimerSection] {
                         ParagraphItem(text: "我們收集的資料類型："),
                         ParagraphItem(bullet: "APNs 推播識別碼：您開啟推播時系統產生的 device token（用於發送高信心度賽事推播）", icon: "applelogo", color: .mint),
                         ParagraphItem(bullet: "訂閱資訊：透過 Apple StoreKit 處理的訂閱等級（Free / Basic / Standard / Premium）", icon: "creditcard.fill", color: .mint),
-                        ParagraphItem(bullet: "推論觀看歷史：您查看過的 AI 推論結果（用於個人化驗證率統計）", icon: "chart.line.uptrend.xyaxis", color: .mint),
                         ParagraphItem(bullet: "廣告識別碼 (IDFA)：僅在您同意時用於 Google AdMob 個人化廣告", icon: "rectangle.advertised", color: .mint),
                         ParagraphItem(text: "我們不會收集的資料："),
                         ParagraphItem(bullet: "個人身分識別資訊（email、姓名、Apple ID 個資）", icon: "person.slash.fill", color: .green),
                         ParagraphItem(bullet: "地理位置資訊", icon: "location.slash.fill", color: .green),
                         ParagraphItem(bullet: "聯絡人、照片或裝置儲存內容", icon: "lock.shield.fill", color: .green),
                         ParagraphItem(bullet: "iOS 版本、機型等裝置資訊", icon: "iphone.slash", color: .green),
+                        ParagraphItem(bullet: "App 內點擊行為、瀏覽歷史、使用模式等使用者行為", icon: "hand.tap.fill", color: .green),
                         ParagraphItem(text: "本地儲存（僅存於您裝置）："),
                         ParagraphItem(bullet: "收藏的隊伍、深色模式偏好、解鎖的賽事（儲存於 iOS UserDefaults）", icon: "internaldrive.fill", color: .blue),
                         ParagraphItem(text: "資料保留期限："),
                         ParagraphItem(bullet: "APNs 推播 token：保留至您解除安裝 App 或手動關閉推播", icon: "clock.fill", color: .blue),
-                        ParagraphItem(bullet: "推論觀看歷史：保留 90 天後自動刪除", icon: "calendar.badge.clock", color: .blue),
+                        ParagraphItem(bullet: "後端無使用行為紀錄（不上傳點擊/瀏覽/解鎖歷史）", icon: "xmark.bin.fill", color: .green),
                         ParagraphItem(bullet: "本地偏好設定：隨時可透過解除安裝 App 清除", icon: "trash.fill", color: .blue),
                         ParagraphItem(text: "第三方服務："),
                         ParagraphItem(bullet: "Apple StoreKit：處理訂閱付款", icon: "applelogo", color: .gray),

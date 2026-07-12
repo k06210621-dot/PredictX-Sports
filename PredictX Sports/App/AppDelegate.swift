@@ -2,6 +2,7 @@ import SwiftUI
 import GoogleMobileAds
 import UIKit
 import UserNotifications
+import AppTrackingTransparency
 
 /// AppDelegate — 在 App 啟動時初始化第三方 SDK
 /// - Google Mobile Ads SDK（廣告）
@@ -19,14 +20,18 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
             // 初始化完成
         })
 
+        // 🆕 [2026-06-29] 不在啟動時自動請求 ATT 同意框
+        // 改在使用者點擊「觀看廣告獲得分析點數」時才觸發
+        // 配合 AdConsentView 自訂預告畫面，給使用者更友善的引導體驗
+
         // 2. 設定 UNUserNotificationCenter delegate（讓前景也能收到推播）
         UNUserNotificationCenter.current().delegate = self
 
-        // 3. 註冊 APNs 推播（背景模式）
-        application.registerForRemoteNotifications()
+        // 3. 🆕 [2026-06-29] 不在啟動時自動註冊 APNs 推播
+        //    改由使用者在 ProfileView → 推播設定主動開啟
+        //    避免「ATT 同意框 + 通知請求」連續兩個彈窗影響體驗
 
-        // 4. 🆕 App 啟動時清除 App 圖示 badge 數字（從桌面點圖示進入 → 自動清除）
-        //    APNs 推播會設定 badge=1，點擊 App 進來應該清掉
+        // 4. App 啟動時清除 App 圖示 badge 數字
         if #available(iOS 17.0, *) {
             UNUserNotificationCenter.current().setBadgeCount(0) { _ in }
         } else {

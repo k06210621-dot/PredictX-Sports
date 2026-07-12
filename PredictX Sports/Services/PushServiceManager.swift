@@ -62,12 +62,18 @@ final class PushServiceManager: ObservableObject {
     // MARK: - 使用者切換開關
 
     /// 使用者在 ProfileView 切換推播開關時呼叫
+    /// 🆕 [2026-06-29] 修正：使用者從 ProfileView 主動開啟推播時才觸發系統通知請求
+    ///                避免啟動時連續彈出 ATT + 通知請求兩個彈窗
     func setPushEnabled(_ enabled: Bool) async {
         self.isPushEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: pushEnabledKey)
 
         // 如果是從關→開，需要重新請求授權（若之前拒絕則無法再開啟）
         if enabled {
+            // 🆕 先註冊 APNs（取得 device token）
+            UIApplication.shared.registerForRemoteNotifications()
+
+            // 再請求通知權限
             let granted = await requestAuthorization()
             if !granted {
                 #if DEBUG

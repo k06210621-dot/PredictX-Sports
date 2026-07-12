@@ -1,7 +1,7 @@
 import SwiftUI
 import StoreKit
 
-// MARK: - 訂閱 Paywall 主頁（卡片式舊版介面）
+// MARK: - 訂閱 Paywall 主頁（Carousel 風格優化版）
 /// 點 ProfileView「升級 Premium」或「訂閱中心」後彈出
 struct SubscribeView: View {
     @EnvironmentObject var subscriptionManager: SubscriptionManager
@@ -26,22 +26,21 @@ struct SubscribeView: View {
                     VStack(spacing: 24) {
                         header
                         legalShield
-                        tierSelection
-                        if !isAnnual {
-                            Text("切換年訂可享約 83 折優惠・每年最高省 NT$ \(annuallySavedForSelectedTier())")
-                                .font(.callout)
-                                .foregroundColor(Color(.tertiaryLabel))
-                                .multilineTextAlignment(.center)
-                        }
+                        billingToggle
+                        tierCarousel
+                        trialDisclosure
                         paywallButton
                         paywallLoadError()
                         featuresChart
                         additionalInfo
+                        manageSubscriptionButton
                         restoreButton
                     }
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 40)
+                    .padding(.top, 8)
+                    .padding(.bottom, 100)  // 預留底部空間避免被 Tab Bar 遮擋
                 }
+                .scrollIndicators(.hidden)
             }
             .navigationTitle(NSLocalizedString("subscribe.title", comment: "AI 額度儲值中心"))
             .navigationBarTitleDisplayMode(.inline)
@@ -103,71 +102,85 @@ struct SubscribeView: View {
         .clipShape(Capsule())
     }
 
-    // MARK: - 方案選擇
+    // MARK: - 方案選擇 (Carousel 風格)
+    private var tierCarousel: some View {
+        VStack(spacing: 16) {
+            // ⚠️ [2026-06-29] 統一門檻為 >= 8（與 iOS App ProfileView.swift:575 顯示文字及 push_service.CONFIDENCE_THRESHOLD 一致）。之前用 > 8 會漏推 confidence = 8 的賽事，造成 App 顯示「高信心度」但收不到通知的混淆。
+            TabView(selection: $selectedTier) {
+                ForEach(ProductTier.allCases, id: \.self) { tier in
+                    TierCard(
+                        tier: tier,
+                        isSelected: selectedTier == tier,
+                        isAnnual: isAnnual,
+                        annualDiscount: annualDiscount
+                    )
+                    .padding(.horizontal, 20)
+                    .frame(maxWidth: .infinity)
+                    .tag(tier)
+                    .disabled(tier == .free) // Free 方案不可選
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .always))
+            .frame(height: 280) // 固定高度
+            .animation(.spring(), value: selectedTier)
+        }
+    }
 
-    private var tierSelection: some View {
+    // MARK: - 月/年費切換器 (膠囊狀 Segmented Control)
+    private var billingToggle: some View {
+        Picker("", selection: $isAnnual) {
+            Text("Monthly")
+                .tag(false)
+            Text("Yearly")
+                .tag(true)
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal, 4)
+    }
+
+    // MARK: - 試用/取消說明 + 法律連結 (在購買按鈕上方)
+    private var trialDisclosure: some View {
         VStack(spacing: 12) {
-            HStack(spacing: 0) {
-                billingToggle(title: "月訂", isSelected: !isAnnual) {
-                    isAnnual = false
-                }
-                billingToggle(title: "年訂・約 83 折", isSelected: isAnnual) {
-                    isAnnual = true
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(4)
-            .background(Color(.systemGray6).opacity(0.5))
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .padding(.bottom, 4)
+            Text("訂閱可隨時在「設定 > Apple ID > 訂閱」中取消")
+                .font(.callout)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
 
-            ForEach(ProductTier.allCases, id: \.self) { tier in
-                TierCard(
-                    tier: tier,
-                    isSelected: selectedTier == tier,
-                    isAnnual: isAnnual,
-                    annualDiscount: annualDiscount
-                )
-                .onTapGesture {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                        selectedTier = tier
-                    }
+            // 法律連結 (符合 Apple Guideline 3.1.2c)
+            VStack(spacing: 8) {
+                Text("購買即代表您同意")
+                    .font(.callout)
+                    .foregroundColor(.secondary)
+
+                HStack(spacing: 4) {
+                    Link("《使用條款 (EULA)》", destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
+                    Text("與")
+                        .foregroundColor(.secondary)
+                    Link("《隱私權政策》", destination: privacyPolicyURL)
                 }
+                .font(.callout)
+                .foregroundColor(.blue)
             }
         }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 4)
     }
-
-    private func billingToggle(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.callout.bold())
-                .padding(.vertical, 10)
-                .frame(maxWidth: .infinity)
-                .foregroundColor(isSelected ? .white : .white.opacity(0.5))
-                .background(isSelected ? Color.blue : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-        }
-    }
-
-    // MARK: - 付費按鈕
 
     private var paywallButton: some View {
         Button(action: { Task { await purchase() } }) {
-            HStack {
+            HStack(spacing: 8) {
                 if subscriptionManager.isProcessing {
                     ProgressView().tint(.white)
                 } else {
                     Image(systemName: "crown.fill")
-                    Text(priceStringForPaywall())
-                        .font(.title3.bold())
-                    if isAnnual {
-                        Text("/ 年")
-                            .font(.headline)
-                            .opacity(0.85)
-                    } else {
-                        Text("/ 月")
-                            .font(.headline)
-                            .opacity(0.85)
+                    VStack(spacing: 2) {
+                        Text(buttonMainText)
+                            .font(.title3.bold())
+                        if !subscriptionManager.trialExpired {
+                            Text(buttonSubText)
+                                .font(.caption2)
+                                .opacity(0.85)
+                        }
                     }
                 }
             }
@@ -185,6 +198,19 @@ struct SubscribeView: View {
         .opacity(subscriptionManager.isProcessing ? 0.7 : 1.0)
     }
 
+    // MARK: - 按鈕文字
+    private var buttonMainText: String {
+        // 主文字：明確顯示訂購金額（讓使用者知道按下去會扣多少）
+        let price = selectedTier.currentPriceTWD(isAnnual: isAnnual)
+        let unit = isAnnual ? "/年" : "/月"
+        return "NT$ \(price) \(unit)"
+    }
+
+    private var buttonSubText: String {
+        // 副文字：點按鈕後的行為說明
+        return "按下按鈕後將進入訂閱流程"
+    }
+
     @ViewBuilder
     private func paywallLoadError() -> some View {
         if let err = loadError {
@@ -193,6 +219,27 @@ struct SubscribeView: View {
                 .foregroundColor(.orange)
                 .multilineTextAlignment(.center)
         }
+    }
+
+    // MARK: - 管理訂閱按鈕
+    private var manageSubscriptionButton: some View {
+        Button(action: {
+            if let url = URL(string: "https://apps.apple.com/account/subscriptions") {
+                UIApplication.shared.open(url)
+            }
+        }) {
+            HStack {
+                Image(systemName: "gear")
+                Text("管理訂閱")
+            }
+            .font(.callout.bold())
+            .foregroundColor(.blue)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(Color.blue.opacity(0.15))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .padding(.horizontal, 20)
     }
 
     private func priceStringForPaywall() -> String {
@@ -236,7 +283,7 @@ struct SubscribeView: View {
                 FeatureRow(label: NSLocalizedString("feature.favorites", comment: "收藏賽事分析"),
                            free: "—", basic: "✓", standard: "✓", premium: "✓")
                 Divider().background(Color(.separator))
-                FeatureRow(label: NSLocalizedString("feature.watch_ads", comment: "觀看廣告（上限三則）"),
+                FeatureRow(label: NSLocalizedString("feature.watch_ads", comment: "每日觀看廣告上限三則"),
                            free: "20 點", basic: "20 點", standard: "—", premium: "—")
                 Divider().background(Color(.separator))
                 FeatureRow(label: NSLocalizedString("feature.dashboard", comment: "模型驗證率儀表板"),
@@ -255,27 +302,6 @@ struct SubscribeView: View {
 
     private var additionalInfo: some View {
         VStack(spacing: 12) {
-            // 隱私政策與使用條款卡片
-            HStack(spacing: 12) {
-                Link(destination: privacyPolicyURL) {
-                    LegalLinkCard(
-                        icon: "lock.shield.fill",
-                        iconColor: .blue,
-                        title: "隱私政策",
-                        subtitle: "個資蒐集與使用"
-                    )
-                }
-                
-                Link(destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!) {
-                    LegalLinkCard(
-                        icon: "doc.text.fill",
-                        iconColor: .purple,
-                        title: "使用條款",
-                        subtitle: "Apple 標準 EULA"
-                    )
-                }
-            }
-            
             // 新手贈禮說明
             Text(NSLocalizedString("gift.info", comment: "新手登入即享 30 天贈禮：每天補充 60 分析點數。30 天後如未訂閱，仍可透過觀看廣告獲得額外點數。"))
                 .font(.footnote)
@@ -310,6 +336,7 @@ struct SubscribeView: View {
             .background(Color.blue.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 10))
         }
+        .padding(.horizontal, 20)
     }
 
     // MARK: - StoreKit
@@ -353,81 +380,113 @@ private struct TierCard: View {
     let annualDiscount: Double
 
     var body: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                Circle()
-                    .fill(tier.tint.opacity(0.18))
-                    .frame(width: 52, height: 52)
-                Image(systemName: tier.icon)
-                    .font(.title2)
-                    .foregroundColor(tier.tint)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(tier.displayName)
-                        .font(.title3.bold())
-                        .foregroundColor(.white)
-                    if tier == .standard {
-                        Text("推薦")
-                            .font(.system(size: 11, weight: .black))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 8).padding(.vertical, 2)
-                            .background(Color.orange)
-                            .clipShape(Capsule())
+        ZStack(alignment: .topTrailing) {
+            VStack(spacing: 0) {
+                // MARK: - 上半部：圖示 + 標題 + 標籤
+                HStack(alignment: .center, spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(tier.tint.opacity(0.18))
+                            .frame(width: 56, height: 56)
+                        Image(systemName: tier.icon)
+                            .font(.title2)
+                            .foregroundColor(tier.tint)
                     }
-                    if tier == .premium {
-                        Text("最高性價比")
-                            .font(.system(size: 11, weight: .black))
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("PredictX Sports \(tier.displayName) \(isAnnual ? "年訂" : "月訂")")
+                            .font(.title3.bold())
                             .foregroundColor(.white)
-                            .padding(.horizontal, 8).padding(.vertical, 2)
-                            .background(Color.purple)
-                            .clipShape(Capsule())
+                            .lineLimit(nil)
+
+                        Text(tier.tagline)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer(minLength: 4)
+                }
+                .padding(.bottom, 12)
+
+                Divider()
+                    .background(Color.white.opacity(0.1))
+                    .padding(.bottom, 10)
+
+                // MARK: - 中間：價格
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text("NT$ \(tier.currentPriceTWD(isAnnual: isAnnual))")
+                        .font(.system(size: 32, weight: .heavy))
+                        .foregroundColor(tier.tint)
+                    Text(isAnnual ? "/ 年" : "/ 月")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.bottom, 10)
+
+                // MARK: - 下半部：權益清單
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(tier.benefits.prefix(5), id: \.self) { benefit in
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 11))
+                                .foregroundColor(tier.tint)
+                                .padding(.top, 1)
+                            Text(benefit)
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.85))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                        }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text(tier.tagline)
-                    .font(.callout)
-                    .foregroundColor(.secondary)
+                Spacer(minLength: 0)
+                }
+                .padding(12)
+                .background(
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(Color.cardBackground)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18)
+                            .stroke(isSelected ? tier.tint : Color.white.opacity(0.05),
+                                    lineWidth: isSelected ? 2 : 1)
+                    )
+            )
+            .shadow(color: tier.tint.opacity(isSelected ? 0.35 : 0.08),
+                    radius: isSelected ? 14 : 6, x: 0, y: 6)
 
-                Text(displayPrice)
-                    .font(.headline.bold())
-                    .foregroundColor(tier.tint)
-            }
-
-            Spacer()
-
-            VStack {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.title2)
-                    .foregroundColor(isSelected ? tier.tint : .white.opacity(0.3))
-                Spacer()
-                Text(unitLabel)
-                    .font(.caption2)
-                    .foregroundColor(Color(.tertiaryLabel))
+            // MARK: - Best Offer 角標（浮在卡片右上角）
+            if tier == .standard {
+                HStack(spacing: 3) {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 9))
+                    Text("Best Offer")
+                        .font(.system(size: 10, weight: .heavy))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    LinearGradient(
+                        colors: [Color.orange, Color.red],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .clipShape(Capsule())
+                .shadow(color: .orange.opacity(0.5), radius: 4, y: 2)
+                .offset(x: -8, y: 8)
             }
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.cardBackground)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(isSelected ? tier.tint : Color.clear, lineWidth: 2)
-                )
-        )
-        .shadow(color: tier.tint.opacity(isSelected ? 0.25 : 0), radius: 10, x: 0, y: 4)
     }
 
     private var unitLabel: String { isAnnual ? "年" : "月" }
-
-    private var displayPrice: String {
-        if isAnnual {
-            return "NT$ \(tier.yearlyPriceTWD) / 年"
-        } else {
-            return "NT$ \(tier.monthlyPriceTWD) / 月"
-        }
-    }
 }
 
 /// 方案名稱標題列用
@@ -518,12 +577,14 @@ private struct FeatureRow: View {
 // MARK: - Product Tier 定義
 
 enum ProductTier: CaseIterable {
+    case free
     case basic
     case standard
     case premium
 
     var displayName: String {
         switch self {
+        case .free: return "Free"
         case .basic: return "Basic"
         case .standard: return "Standard"
         case .premium: return "Premium"
@@ -532,6 +593,7 @@ enum ProductTier: CaseIterable {
 
     var tagline: String {
         switch self {
+        case .free: return "前 30 天每日 60 點，期滿後可看廣告獲點"
         case .basic: return "每日 120 分析點數（可累積・無上限）"
         case .standard: return "無限點數・含驗證率儀表板"
         case .premium: return "無限點數+驗證率儀表板+重點觀察賽事推播通知"
@@ -540,6 +602,7 @@ enum ProductTier: CaseIterable {
 
     var icon: String {
         switch self {
+        case .free: return "circle"
         case .basic: return "leaf.fill"
         case .standard: return "star.fill"
         case .premium: return "crown.fill"
@@ -548,14 +611,48 @@ enum ProductTier: CaseIterable {
 
     var tint: Color {
         switch self {
+        case .free: return .gray
         case .basic: return .green
         case .standard: return .blue
         case .premium: return .purple
         }
     }
 
+    var benefits: [String] {
+        switch self {
+        case .free:
+            return [
+                "前 30 天每日 60 分析點數",
+                "期滿後可觀看廣告獲得點數",
+                "基礎賽事資訊"
+            ]
+        case .basic:
+            return [
+                "每日 120 分析點數",
+                "點數可累積・無上限",
+                "基礎賽事分析"
+            ]
+        case .standard:
+            return [
+                "無限分析點數",
+                "模型驗證率儀表板",
+                "收藏賽事分析",
+                "觀看廣告獲點數"
+            ]
+        case .premium:
+            return [
+                "無限分析點數",
+                "完整驗證率儀表板",
+                "收藏賽事無限制",
+                "推播通知",
+                "優先客服支援"
+            ]
+        }
+    }
+
     var monthlyPriceTWD: Int {
         switch self {
+        case .free: return 0
         case .basic: return 100
         case .standard: return 290
         case .premium: return 390
@@ -564,10 +661,16 @@ enum ProductTier: CaseIterable {
 
     var yearlyPriceTWD: Int {
         switch self {
+        case .free: return 0
         case .basic: return 990
         case .standard: return 2990
         case .premium: return 3850
         }
+    }
+
+    /// 依月/年返回當前顯示的價格
+    func currentPriceTWD(isAnnual: Bool) -> Int {
+        return isAnnual ? yearlyPriceTWD : monthlyPriceTWD
     }
 
     func productID(isAnnual: Bool) -> String {
@@ -581,6 +684,7 @@ enum ProductTier: CaseIterable {
 
     private var rawValue: String {
         switch self {
+        case .free: return "free"
         case .basic: return "basic"
         case .standard: return "standard"
         case .premium: return "premium"

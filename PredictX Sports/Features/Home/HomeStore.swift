@@ -17,7 +17,6 @@ class HomeStore: ObservableObject {
     // 內部全量賽事快取記憶體暫存區
     private var allMatches: [Match] = []
     private var cancellables = Set<AnyCancellable>()
-    private var hasLoadedFullHistory: Bool = false
     
     init() {
         setupDataStreamObservers()
@@ -137,13 +136,8 @@ class HomeStore: ObservableObject {
     }
     
     /// 💡 保留向後相容（單一聯賽載入）
+    /// 🆕 [2026-07-01] 移除 hasLoadedFullHistory 護欄，每次下拉刷新都重新發送 API 請求
     func loadHistoryForLeague(_ league: LeagueType) async {
-        // 只載入一次完整歷史：第一次進入歷史頁面時抓取全部聯賽，之後跳過
-        if hasLoadedFullHistory {
-            print("✅ [History] Full history already loaded, using cache")
-            return
-        }
-        hasLoadedFullHistory = true
         await loadHistoryForAllLeagues()
     }
     
