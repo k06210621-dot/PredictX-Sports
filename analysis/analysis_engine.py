@@ -2768,7 +2768,13 @@ Park Factor: {pf:.2f} ({park_interp})
                 f"{away_team_strength_sentence}"
                 f"{matchup_insight}"
             ),
-            "predicted_score": f"{home_predicted}-{away_predicted}",
+            # 🆕 [fix] fallback 也要過 reconcile，避免未來賽事（無先發數據 → CPBL SP 404）
+            # 走 fallback 時算出平手比分（如 4-4）被原樣寫入，造成棒球平手異常。
+            # 統一用 _reconcile_predicted_score 確保 favorite 勝 1 分以上。
+            "predicted_score": self._reconcile_predicted_score(
+                f"{home_predicted}-{away_predicted}", home_prob, 1 - home_prob,
+                features.get('league', '')
+            ),
             "radar_chart": {
                 "categories": dims,
                 "home_team": [min(10, h) for h in home_vals],
