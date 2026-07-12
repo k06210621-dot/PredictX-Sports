@@ -77,15 +77,15 @@ elif CLOUD_LLM_PROVIDER == "ollama":
     CLOUD_LLM_MODEL = os.environ.get("CLOUD_LLM_MODEL", "qwen3-coder-next")
     CLOUD_LLM_API_KEY = os.environ.get("OLLAMA_API_KEY", "")
 else:
-    # NVIDIA NIM（主要 provider）
-    CLOUD_LLM_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
-    CLOUD_LLM_MODEL = os.environ.get("CLOUD_LLM_MODEL", "minimaxai/minimax-m3")
-    CLOUD_LLM_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
+    # 主模型：deepseek/deepseek-v4-flash via Nous Portal（較不易併發爆量）
+    CLOUD_LLM_URL = "https://inference-api.nousresearch.com/v1/chat/completions"
+    CLOUD_LLM_MODEL = os.environ.get("CLOUD_LLM_MODEL", "deepseek/deepseek-v4-flash")
+    CLOUD_LLM_API_KEY = os.environ.get("NOUS_API_KEY", "")
 
-# 備援 LLM 配置（當主要 LLM 失敗時使用）— Nous Portal + minimax-m3
-FALLBACK_LLM_URL = "https://inference-api.nousresearch.com/v1/chat/completions"
-FALLBACK_LLM_MODEL = "minimax/minimax-m3"
-FALLBACK_LLM_API_KEY = os.environ.get("NOUS_API_KEY", "")
+# 備援 LLM 配置（當主要 LLM 失敗時使用）— qwen/qwen3.5-397b-a17b via NVIDIA
+FALLBACK_LLM_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+FALLBACK_LLM_MODEL = "qwen/qwen3.5-397b-a17b"
+FALLBACK_LLM_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 
 # 可透過環境變數 PREDICTX_MODEL 切換模型
 # qwen:latest (4B, ~6s/場) | qwen3.5:9b (9B, ~200s/場，預設) | cloud (雲端 LLM)
