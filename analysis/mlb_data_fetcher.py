@@ -444,6 +444,57 @@ class MLBDataFetcher:
         row = self.cur.fetchone()
         return (row['team_id'], row['english_name']) if row else (None, None)
 
+    def get_top_batters(self, mlb_team_id, top_n=5):
+        """取得球隊前 N 名主力打者關鍵打擊數據（依 RBI 排序）
+
+        注意：此方法使用 MLB Stats API 的 team-scoped `/stats?teamId=`，
+        不要使用 `/teams/{id}/stats`（只回傳球隊總計）。
+        """
+        try:
+            url = (
+                f"{MLB_API_BASE}/stats"
+                f"?stats=season&group=hitting&season=2026&limit={top_n}"
+                f"&teamId={mlb_team_id}"
+            )
+            resp = self.session.get(url, timeout=15)
+            if resp.status_code != 200:
+                return []
+            data = resp.json()
+            stats_list = data.get('stats', [])
+            if not stats_list:
+                return []
+            splits = stats_list[0].get('splits', [])[:top_n]
+            players = []
+            for s in splits:
+                stat = s.get('stat', {})
+                person = s.get('player', {}) or {}
+                ab = stat.get('atBats', 0) or 0
+                hits = stat.get('hits', 0) or 0
+                hr = stat.get('homeRuns', 0) or 0
+                rbi = stat.get('rbi', 0) or 0
+                avg = stat.get('avg')
+                obp = stat.get('obp')
+                slg = stat.get('slg')
+                ops = stat.get('ops')
+                players.append({
+                    'name': person.get('fullName', ''),
+                    'position': s.get('position', {}).get('abbreviation', ''),
+                    'avg': avg,
+                    'obp': obp,
+                    'slg': slg,
+                    'ops': ops,
+                    'hr': hr,
+                    'rbi': rbi,
+                    'hits': hits,
+                    'ab': ab,
+                })
+            players.sort(key=lambda x: x.get('rbi', 0) or 0, reverse=True)
+            self.fetched_sources.append("statsapi.mlb.com")
+            return players
+        except Exception as e:
+            print(f"  ⚠ get_top_batters error: {e}")
+            return []
+
     def fetch_and_store_game_data(self, game_id, home_team_name, away_team_name):
         """為一場比賽獲取完整 MLB 進階數據並存入資料庫"""
         today = datetime.now()
@@ -459,6 +510,10 @@ class MLBDataFetcher:
         home_stats = self.get_team_season_stats(home_mlb_id)
         away_stats = self.get_team_season_stats(away_mlb_id)
 
+        # 主力打者數據
+        home_top5 = self.get_top_batters(home_mlb_id, top_n=5) or []
+        away_top5 = self.get_top_batters(away_mlb_id, top_n=5) or []
+
         data = {
             "home_team_name": home_team_name,
             "away_team_name": away_team_name,
@@ -467,6 +522,10 @@ class MLBDataFetcher:
             "team_stats": {
                 "home": home_stats or {},
                 "away": away_stats or {}
+            },
+            "top_batters": {
+                "home": home_top5,
+                "away": away_top5,
             },
             "fetched_at": today.isoformat(),
             "sources": list(set(self.fetched_sources))

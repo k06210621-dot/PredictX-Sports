@@ -1,0 +1,640 @@
+{
+  "last_updated": "2026-07-12T13:27:56.810511",
+  "season": 2026,
+  "source": "stats.wnba.com",
+  "page": 1,
+  "total_players": 50,
+  "team_count": 15,
+  "teams": {
+    "LVA": [
+      {
+        "name": "Justine Pissott",
+        "team": "LVA",
+        "gp": 1,
+        "min": 10,
+        "netrtg": 28.6,
+        "ast_pct": 25,
+        "reb_pct": 22.2,
+        "efg_pct": 10,
+        "ts_pct": 118.8,
+        "pie": 40.4
+      },
+      {
+        "name": "A'ja Wilson",
+        "team": "LVA",
+        "gp": 21,
+        "min": 31.7,
+        "netrtg": 13.1,
+        "ast_pct": 16,
+        "reb_pct": 23.8,
+        "efg_pct": 9.6,
+        "ts_pct": 55,
+        "pie": 21.4
+      },
+      {
+        "name": "Jackie Young",
+        "team": "LVA",
+        "gp": 23,
+        "min": 32.3,
+        "netrtg": 10.8,
+        "ast_pct": 32.6,
+        "reb_pct": 10.7,
+        "efg_pct": 10,
+        "ts_pct": 53.6,
+        "pie": 13.5
+      },
+      {
+        "name": "Chennedy Carter",
+        "team": "LVA",
+        "gp": 13,
+        "min": 16.9,
+        "netrtg": 5.1,
+        "ast_pct": 13.6,
+        "reb_pct": 5.7,
+        "efg_pct": 11.3,
+        "ts_pct": 65.5,
+        "pie": 12.9
+      },
+      {
+        "name": "NaLyssa Smith",
+        "team": "LVA",
+        "gp": 23,
+        "min": 24,
+        "netrtg": 6.8,
+        "ast_pct": 5.4,
+        "reb_pct": 18.4,
+        "efg_pct": 8.4,
+        "ts_pct": 66.4,
+        "pie": 12.4
+      }
+    ],
+    "DAL": [
+      {
+        "name": "Costanza Verona",
+        "team": "DAL",
+        "gp": 1,
+        "min": 5.8,
+        "netrtg": -33.3,
+        "ast_pct": 100,
+        "reb_pct": null,
+        "efg_pct": null,
+        "ts_pct": 100,
+        "pie": 38.7
+      },
+      {
+        "name": "Jessica Shepard",
+        "team": "DAL",
+        "gp": 23,
+        "min": 32.8,
+        "netrtg": 5.1,
+        "ast_pct": 24.5,
+        "reb_pct": 27.3,
+        "efg_pct": 10.4,
+        "ts_pct": 59.7,
+        "pie": 17.6
+      },
+      {
+        "name": "Paige Bueckers",
+        "team": "DAL",
+        "gp": 22,
+        "min": 33.4,
+        "netrtg": 7,
+        "ast_pct": 29,
+        "reb_pct": 11.4,
+        "efg_pct": 8.1,
+        "ts_pct": 57.5,
+        "pie": 15.1
+      }
+    ],
+    "ATL": [
+      {
+        "name": "Amy Okonkwo",
+        "team": "ATL",
+        "gp": 1,
+        "min": 1.3,
+        "netrtg": 8.3,
+        "ast_pct": null,
+        "reb_pct": 33.3,
+        "efg_pct": null,
+        "ts_pct": null,
+        "pie": 20
+      },
+      {
+        "name": "Madina Okot",
+        "team": "ATL",
+        "gp": 23,
+        "min": 10.1,
+        "netrtg": -6.9,
+        "ast_pct": 5,
+        "reb_pct": 27.3,
+        "efg_pct": 20.8,
+        "ts_pct": 59.3,
+        "pie": 16.9
+      },
+      {
+        "name": "Jordin Canada",
+        "team": "ATL",
+        "gp": 23,
+        "min": 31.2,
+        "netrtg": 8.8,
+        "ast_pct": 35.7,
+        "reb_pct": 11.7,
+        "efg_pct": 11.5,
+        "ts_pct": 49.7,
+        "pie": 13.2
+      },
+      {
+        "name": "Rhyne Howard",
+        "team": "ATL",
+        "gp": 22,
+        "min": 35,
+        "netrtg": 4.3,
+        "ast_pct": 15.5,
+        "reb_pct": 9.9,
+        "efg_pct": 7,
+        "ts_pct": 52.8,
+        "pie": 13
+      },
+      {
+        "name": "Angel Reese",
+        "team": "ATL",
+        "gp": 22,
+        "min": 30.6,
+        "netrtg": 5.8,
+        "ast_pct": 14,
+        "reb_pct": 23.5,
+        "efg_pct": 16.4,
+        "ts_pct": 42.1,
+        "pie": 12.5
+      }
+    ],
+    "NYL": [
+      {
+        "name": "Breanna Stewart",
+        "team": "NYL",
+        "gp": 22,
+        "min": 32.9,
+        "netrtg": 6.1,
+        "ast_pct": 16.1,
+        "reb_pct": 20.2,
+        "efg_pct": 10.9,
+        "ts_pct": 49.8,
+        "pie": 17.2
+      },
+      {
+        "name": "Jonquel Jones",
+        "team": "NYL",
+        "gp": 22,
+        "min": 29.7,
+        "netrtg": 4.8,
+        "ast_pct": 15.7,
+        "reb_pct": 24.1,
+        "efg_pct": 12.4,
+        "ts_pct": 60,
+        "pie": 16.2
+      },
+      {
+        "name": "Han Xu",
+        "team": "NYL",
+        "gp": 23,
+        "min": 12.3,
+        "netrtg": 4.8,
+        "ast_pct": 11.3,
+        "reb_pct": 9.8,
+        "efg_pct": 8.1,
+        "ts_pct": 64.6,
+        "pie": 13.3
+      },
+      {
+        "name": "Julie Vanloo",
+        "team": "NYL",
+        "gp": 5,
+        "min": 16.2,
+        "netrtg": 18.1,
+        "ast_pct": 44.3,
+        "reb_pct": 8.5,
+        "efg_pct": 20.7,
+        "ts_pct": 73.5,
+        "pie": 13.2
+      }
+    ],
+    "IND": [
+      {
+        "name": "Aliyah Boston",
+        "team": "IND",
+        "gp": 20,
+        "min": 27.6,
+        "netrtg": 7.8,
+        "ast_pct": 16.6,
+        "reb_pct": 25.1,
+        "efg_pct": 13.8,
+        "ts_pct": 56.1,
+        "pie": 17.2
+      },
+      {
+        "name": "Caitlin Clark",
+        "team": "IND",
+        "gp": 18,
+        "min": 29.9,
+        "netrtg": 2.9,
+        "ast_pct": 44.5,
+        "reb_pct": 12.7,
+        "efg_pct": 15.2,
+        "ts_pct": 50.7,
+        "pie": 14.9
+      },
+      {
+        "name": "Kelsey Mitchell",
+        "team": "IND",
+        "gp": 22,
+        "min": 32.6,
+        "netrtg": 7.5,
+        "ast_pct": 15.3,
+        "reb_pct": 3.7,
+        "efg_pct": 8.1,
+        "ts_pct": 56.9,
+        "pie": 12.5
+      }
+    ],
+    "WAS": [
+      {
+        "name": "Kiki Iriafen",
+        "team": "WAS",
+        "gp": 17,
+        "min": 28.2,
+        "netrtg": 0.4,
+        "ast_pct": 12.3,
+        "reb_pct": 21.9,
+        "efg_pct": 10.3,
+        "ts_pct": 54.2,
+        "pie": 17
+      },
+      {
+        "name": "Sonia Citron",
+        "team": "WAS",
+        "gp": 17,
+        "min": 34.6,
+        "netrtg": -0.8,
+        "ast_pct": 19.4,
+        "reb_pct": 9.4,
+        "efg_pct": 12.5,
+        "ts_pct": 53.3,
+        "pie": 15.6
+      },
+      {
+        "name": "Shakira Austin",
+        "team": "WAS",
+        "gp": 19,
+        "min": 28.8,
+        "netrtg": -3.8,
+        "ast_pct": 18.2,
+        "reb_pct": 24.7,
+        "efg_pct": 16.7,
+        "ts_pct": 46.3,
+        "pie": 15.6
+      },
+      {
+        "name": "Lauren Betts",
+        "team": "WAS",
+        "gp": 20,
+        "min": 16.2,
+        "netrtg": -4.2,
+        "ast_pct": 10.4,
+        "reb_pct": 14.7,
+        "efg_pct": 13.4,
+        "ts_pct": 53.1,
+        "pie": 12.7
+      }
+    ],
+    "LAS": [
+      {
+        "name": "Nneka Ogwumike",
+        "team": "LAS",
+        "gp": 20,
+        "min": 31.5,
+        "netrtg": -5.9,
+        "ast_pct": 14.1,
+        "reb_pct": 24.4,
+        "efg_pct": 8.1,
+        "ts_pct": 57.3,
+        "pie": 16.3
+      },
+      {
+        "name": "Kelsey Plum",
+        "team": "LAS",
+        "gp": 12,
+        "min": 34.5,
+        "netrtg": -0.9,
+        "ast_pct": 33.2,
+        "reb_pct": 5.9,
+        "efg_pct": 11.2,
+        "ts_pct": 60.9,
+        "pie": 14.4
+      },
+      {
+        "name": "Dearica Hamby",
+        "team": "LAS",
+        "gp": 21,
+        "min": 29.3,
+        "netrtg": -3.9,
+        "ast_pct": 13.4,
+        "reb_pct": 19.4,
+        "efg_pct": 10.4,
+        "ts_pct": 54.4,
+        "pie": 13.4
+      }
+    ],
+    "MIN": [
+      {
+        "name": "Olivia Miles",
+        "team": "MIN",
+        "gp": 21,
+        "min": 30.6,
+        "netrtg": 14.6,
+        "ast_pct": 28.3,
+        "reb_pct": 12.4,
+        "efg_pct": 13.7,
+        "ts_pct": 54.4,
+        "pie": 16.2
+      },
+      {
+        "name": "Natasha Howard",
+        "team": "MIN",
+        "gp": 23,
+        "min": 30,
+        "netrtg": 13.2,
+        "ast_pct": 14.9,
+        "reb_pct": 15.1,
+        "efg_pct": 15,
+        "ts_pct": 59.3,
+        "pie": 14.4
+      },
+      {
+        "name": "Courtney Williams",
+        "team": "MIN",
+        "gp": 23,
+        "min": 30.6,
+        "netrtg": 8.3,
+        "ast_pct": 21.6,
+        "reb_pct": 15,
+        "efg_pct": 9.3,
+        "ts_pct": 50.4,
+        "pie": 13.3
+      }
+    ],
+    "CHI": [
+      {
+        "name": "Kamilla Cardoso",
+        "team": "CHI",
+        "gp": 22,
+        "min": 26.8,
+        "netrtg": -5.2,
+        "ast_pct": 17.2,
+        "reb_pct": 21.3,
+        "efg_pct": 11.7,
+        "ts_pct": 58.9,
+        "pie": 15.9
+      },
+      {
+        "name": "Rickea Jackson",
+        "team": "CHI",
+        "gp": 4,
+        "min": 29.5,
+        "netrtg": -7.2,
+        "ast_pct": 14.3,
+        "reb_pct": 11.1,
+        "efg_pct": 9.3,
+        "ts_pct": 45,
+        "pie": 13.4
+      }
+    ],
+    "PHX": [
+      {
+        "name": "Natasha Mack",
+        "team": "PHX",
+        "gp": 18,
+        "min": 25.1,
+        "netrtg": 2.2,
+        "ast_pct": 10.8,
+        "reb_pct": 22.5,
+        "efg_pct": 10.9,
+        "ts_pct": 61.7,
+        "pie": 15.6
+      },
+      {
+        "name": "Alyssa Thomas",
+        "team": "PHX",
+        "gp": 22,
+        "min": 33.2,
+        "netrtg": -4.5,
+        "ast_pct": 41.3,
+        "reb_pct": 16.6,
+        "efg_pct": 15,
+        "ts_pct": 51.1,
+        "pie": 14.2
+      }
+    ],
+    "CON": [
+      {
+        "name": "Aneesah Morrow",
+        "team": "CON",
+        "gp": 17,
+        "min": 22.7,
+        "netrtg": -12.7,
+        "ast_pct": null,
+        "reb_pct": 29.5,
+        "efg_pct": 12.1,
+        "ts_pct": 43.3,
+        "pie": 14.7
+      },
+      {
+        "name": "Brittney Griner",
+        "team": "CON",
+        "gp": 13,
+        "min": 25.5,
+        "netrtg": -5.5,
+        "ast_pct": 17.4,
+        "reb_pct": 15.3,
+        "efg_pct": 11.2,
+        "ts_pct": 53.7,
+        "pie": 14.7
+      },
+      {
+        "name": "Olivia Nelson-Ododa",
+        "team": "CON",
+        "gp": 19,
+        "min": 20.2,
+        "netrtg": -0.8,
+        "ast_pct": 16.1,
+        "reb_pct": 20.2,
+        "efg_pct": 13.3,
+        "ts_pct": 59.5,
+        "pie": 13.9
+      }
+    ],
+    "TOR": [
+      {
+        "name": "Marina Mabrey",
+        "team": "TOR",
+        "gp": 21,
+        "min": 28.9,
+        "netrtg": -4.1,
+        "ast_pct": 23.8,
+        "reb_pct": 10.1,
+        "efg_pct": 12.6,
+        "ts_pct": 56.6,
+        "pie": 14.4
+      },
+      {
+        "name": "Ornella Bankole",
+        "team": "TOR",
+        "gp": 1,
+        "min": 8,
+        "netrtg": 5.9,
+        "ast_pct": null,
+        "reb_pct": null,
+        "efg_pct": null,
+        "ts_pct": null,
+        "pie": 14.3
+      },
+      {
+        "name": "Isabelle Harrison",
+        "team": "TOR",
+        "gp": 12,
+        "min": 24.8,
+        "netrtg": -6.6,
+        "ast_pct": 13.1,
+        "reb_pct": 17.1,
+        "efg_pct": 10,
+        "ts_pct": 56.7,
+        "pie": 13
+      },
+      {
+        "name": "Nyara Sabally",
+        "team": "TOR",
+        "gp": 15,
+        "min": 24,
+        "netrtg": -0.7,
+        "ast_pct": 13.8,
+        "reb_pct": 14,
+        "efg_pct": 8.9,
+        "ts_pct": 58.4,
+        "pie": 12.5
+      },
+      {
+        "name": "Brittney Sykes",
+        "team": "TOR",
+        "gp": 15,
+        "min": 31.8,
+        "netrtg": -2.3,
+        "ast_pct": 20.2,
+        "reb_pct": 9.2,
+        "efg_pct": 9.8,
+        "ts_pct": 45.6,
+        "pie": 12.5
+      }
+    ],
+    "GSV": [
+      {
+        "name": "Gabby Williams",
+        "team": "GSV",
+        "gp": 23,
+        "min": 25.5,
+        "netrtg": 6.4,
+        "ast_pct": 16.9,
+        "reb_pct": 11,
+        "efg_pct": 8.8,
+        "ts_pct": 48.5,
+        "pie": 13.8
+      },
+      {
+        "name": "Ashten Prechtel",
+        "team": "GSV",
+        "gp": 1,
+        "min": 4.8,
+        "netrtg": -28.8,
+        "ast_pct": null,
+        "reb_pct": null,
+        "efg_pct": 25,
+        "ts_pct": 83.3,
+        "pie": 13.2
+      },
+      {
+        "name": "Veronica Burton",
+        "team": "GSV",
+        "gp": 24,
+        "min": 28.1,
+        "netrtg": 10.7,
+        "ast_pct": 33,
+        "reb_pct": 8.4,
+        "efg_pct": 9.2,
+        "ts_pct": 46.6,
+        "pie": 13.2
+      },
+      {
+        "name": "Janelle Salaun",
+        "team": "GSV",
+        "gp": 24,
+        "min": 22.8,
+        "netrtg": 7.9,
+        "ast_pct": 8.3,
+        "reb_pct": 14.4,
+        "efg_pct": 6.7,
+        "ts_pct": 54.2,
+        "pie": 12.9
+      }
+    ],
+    "SEA": [
+      {
+        "name": "Mackenzie Holmes",
+        "team": "SEA",
+        "gp": 20,
+        "min": 11.3,
+        "netrtg": -14.3,
+        "ast_pct": 11.4,
+        "reb_pct": 19.7,
+        "efg_pct": 14.7,
+        "ts_pct": 64.1,
+        "pie": 13.5
+      },
+      {
+        "name": "Joyner Holmes",
+        "team": "SEA",
+        "gp": 1,
+        "min": 14.7,
+        "netrtg": -4.4,
+        "ast_pct": 14.3,
+        "reb_pct": 21.1,
+        "efg_pct": 28.6,
+        "ts_pct": 25,
+        "pie": 13.3
+      },
+      {
+        "name": "Natisha Hiedeman",
+        "team": "SEA",
+        "gp": 24,
+        "min": 28.8,
+        "netrtg": -4.2,
+        "ast_pct": 27.7,
+        "reb_pct": 8.2,
+        "efg_pct": 12.1,
+        "ts_pct": 54.4,
+        "pie": 12.4
+      }
+    ],
+    "PDX": [
+      {
+        "name": "Carla Leite",
+        "team": "PDX",
+        "gp": 21,
+        "min": 25.2,
+        "netrtg": -5.4,
+        "ast_pct": 42.1,
+        "reb_pct": 7,
+        "efg_pct": 15.7,
+        "ts_pct": 46.9,
+        "pie": 12.9
+      }
+    ]
+  }
+}

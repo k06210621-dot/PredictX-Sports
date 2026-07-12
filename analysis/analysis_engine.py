@@ -1279,6 +1279,38 @@ class AnalysisEngine:
         else:
             wnba_advanced_section = ""
         
+
+        # 🆕 WNBA 主力球員（從 2026-07-12 開始，使用團隊估算數據）
+        wnba_top_players = wnba_advanced.get('top_players', {}) if wnba_advanced else {}
+        if wnba_top_players:
+            home_players = wnba_top_players.get('home', [])
+            away_players = wnba_top_players.get('away', [])
+            
+            if home_players or away_players:
+                def fmt_wnba_players(players, team_name):
+                    if not players:
+                        return f"{team_name}: 無球員數據"
+                    line_items = []
+                    for i, p in enumerate(players[:5], 1):
+                        name = p.get('name', '?')
+                        pts = p.get('pts', 0)
+                        reb = p.get('reb', 0)
+                        ast = p.get('ast', 0)
+                        fg_pct = p.get('fg_pct')
+                        fg_str = f"{fg_pct:.1%}" if fg_pct and fg_pct > 0 else '?.?%'
+                        line_items.append(f"    #{i} {name}: PTS={pts:.1f}, REB={reb:.1f}, AST={ast:.1f}, FG%={fg_str}")
+                    return "\n".join(line_items)
+
+                wnba_advanced_section += """
+
+===== 主力球員 Top 5（團隊估算，依 PTS 排序）=====
+主隊 """ + home_team + """:
+""" + fmt_wnba_players(home_players, home_team) + """
+
+客隊 """ + away_team + """:
+""" + fmt_wnba_players(away_players, away_team) + """
+
+💡 註：WNBA ESPN API 不提供球員數據，此為主隊/客隊主力球員的估算值（基於團隊 PPG 分配）。"""
         # 天氣資料
         weather_data = features.get('weather', {})
         if weather_data:
@@ -1350,6 +1382,35 @@ class AnalysisEngine:
   排名: {a_stand.get('rank', '?')}位, 戰績: {a_stand.get('wins', '0')}W-{a_stand.get('losses', '0')}L-{a_stand.get('ties', '0')}D
   團隊打擊: AVG={a_avg}, HR={a_hr}
   團隊投球: {a_pitch.get('wins', 0)}W-{a_pitch.get('losses', 0)}L, Win%={a_pwpct:.3f}"""
+
+            # 🆕 加入主力打者 Top 5（從 2026-07-12 開始）
+            top_batters = npb_data.get('top_batters', {})
+            home_batters = top_batters.get('home', [])
+            away_batters = top_batters.get('away', [])
+
+            if home_batters or away_batters:
+                def fmt_batters(batters, team_name):
+                    if not batters:
+                        return f"{team_name}: 無球員數據"
+                    lines = []
+                    for i, b in enumerate(batters, 1):
+                        name = b.get('name', '?')
+                        avg = b.get('avg')
+                        hr = b.get('hr', 0)
+                        rbi = b.get('rbi', 0)
+                        avg_str = f"{avg:.3f}" if avg else "N/A"
+                        lines.append(f"    #{i} {name}: AVG={avg_str}, HR={hr}, RBI={rbi}")
+                    return "\n".join(lines)
+
+                npb_section += """
+
+===== 主力打者 Top 5（依 RBI 排序）=====
+主隊 """ + home_team + """:
+""" + fmt_batters(home_batters, home_team) + """
+
+客隊 """ + away_team + """:
+""" + fmt_batters(away_batters, away_team) + """
+"""
 
             # 🆕 注入 Park Factor（球場修正）
             pf = npb_data.get('park_factor')

@@ -311,6 +311,72 @@ class NPBDataFetcher:
         pitchers.sort(key=lambda p: p["ip"], reverse=True)
         return pitchers[:top_n]
 
+    def get_top_batters(self, team_name, top_n=5):
+        """取得 NPB 球隊前 N 名主力打者（依打點排序）
+
+        Args:
+            team_name: NPB 球隊英文名（如 'Yomiuri Giants'）
+            top_n: 取前 N 名（預設 5）
+
+        Returns:
+            list of dict: [{name, avg, hr, rbi, hits, ab}, ...]
+            若抓取失敗回傳空陣列
+        """
+        code = TEAM_URL_CODES.get(team_name)
+        if not code:
+            return []
+
+        url = f"https://baseball-data.com/stats/hitter-{code}/"
+        resp = self.session.get(url, timeout=15)
+        if resp.status_code != 200:
+            return []
+
+        soup = BeautifulSoup(resp.text, 'lxml')
+        self.fetched_sources.append("baseball-data.com")
+
+        batters = []
+        tables = soup.find_all('table')
+        for table in tables:
+            rows = table.find_all('tr')
+            for row in rows[1:]:  # 跳過表頭
+                cells = row.find_all('td')
+                if len(cells) >= 9:
+                    try:
+                        name = cells[1].get_text(strip=True)
+                        # 打率=2, 試合=3, 打席=4, 打數=5, 安打=6, 本塁打=7, 打點=8
+                        avg_str = cells[2].get_text(strip=True)
+                        ab_str = cells[5].get_text(strip=True)
+                        hits_str = cells[6].get_text(strip=True)
+                        hr_str = cells[7].get_text(strip=True)
+                        rbi_str = cells[8].get_text(strip=True)
+
+                        # 轉換為數值
+                        avg = float(avg_str.replace("-", "0")) if avg_str else 0
+                        ab = int(ab_str) if ab_str else 0
+                        hits = int(hits_str) if hits_str else 0
+                        hr = int(hr_str) if hr_str else 0
+                        rbi = int(rbi_str) if rbi_str else 0
+
+                        # baseball-data.com 無 OBP/SLG/OPS，設為 None
+                        batters.append({
+                            'name': name,
+                            'position': '',
+                            'avg': avg if avg > 0 else None,
+                            'obp': None,
+                            'slg': None,
+                            'ops': None,
+                            'hr': hr,
+                            'rbi': rbi,
+                            'hits': hits,
+                            'ab': ab,
+                        })
+                    except (ValueError, IndexError):
+                        continue
+
+        # 依 RBI 排序（降冪）
+        batters.sort(key=lambda x: x['rbi'] or 0, reverse=True)
+        return batters[:top_n]
+
 
     def get_local_team_id(self, team_name):
         """查詢本地資料庫的 NPB 隊伍 ID"""
@@ -428,6 +494,10 @@ class NPBDataFetcher:
         home_pitch = self.get_team_pitching_stats(home_team_name)
         away_bat = self.get_team_batting_stats(away_team_name)
         away_pitch = self.get_team_pitching_stats(away_team_name)
+        
+        # 🆕 取得主力打者 Top 5
+        home_top_batters = self.get_top_batters(home_team_name, 5)
+        away_top_batters = self.get_top_batters(away_team_name, 5)
 
         home_stand = standings.get(home_team_name, {}) if standings else {}
         away_stand = standings.get(away_team_name, {}) if standings else {}
@@ -442,6 +512,7 @@ class NPBDataFetcher:
             "standings": {"home": home_stand, "away": away_stand},
             "batting": {"home": home_bat or {}, "away": away_bat or {}},
             "pitching": {"home": home_pitch or {}, "away": away_pitch or {}},
+            "top_batters": {"home": home_top_batters or [], "away": away_top_batters or []},
             "sources": list(set(self.fetched_sources)),
             # 🆕 Park Factor：>1.0 = 主場打者有利、<1.0 = 投手有利
             "home_park": home_park,

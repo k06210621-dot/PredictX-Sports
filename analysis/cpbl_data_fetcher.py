@@ -85,6 +85,7 @@ class CPBLDataFetcher:
         return players_by_team
 
     def get_hitting_leaderboard(self):
+        """從 CPBL 官網抓取打擊排行榜（舊版，只抓前頁）"""
         resp = self.session.get("https://www.cpbl.com.tw/stats/recordall", timeout=15)
         if resp.status_code != 200:
             return None
@@ -125,6 +126,173 @@ class CPBLDataFetcher:
                     'sb': cells[14].get_text(strip=True),
                 })
         return hitters
+
+    def get_hitting_leaderboard_from_sportify(self):
+        """從 sportify.tw 抓取完整的 CPBL 打擊排行榜（含 OPS/OBP/SLG）
+
+        Returns:
+            list of dict: [{name, team_en, pa, h, hr, rbi, bb, avg, obp, slg, ops}, ...]
+            若抓取失敗回傳 None
+        """
+        try:
+            url = "https://sportify.tw/zh-CN/stats/batting?league=cpbl&season=2026&type=1"
+            # sportify.tw 需要 TLS 1.2+，Railway 環境可能不支援，關閉 SSL 驗證
+            resp = self.session.get(url, timeout=15, verify=False)
+            if resp.status_code != 200:
+                print(f"  ⚠ sportify.tw returned HTTP {resp.status_code}")
+                return None
+
+            self.fetched_sources.append("sportify.tw")
+            soup = BeautifulSoup(resp.text, 'lxml')
+            tables = soup.find_all('table')
+            if not tables:
+                return None
+
+            # Sportify 有兩個表格：第一個是 PA 排序，第二個是 OPS 排序
+            # 我們抓取第一個表格（預設按 PA 排序）
+            table = tables[0]
+            rows = table.find('tbody').find_all('tr') if table.find('tbody') else table.find_all('tr')[1:]
+
+            hitters = []
+            for row in rows:
+                cells = row.find_all('td')
+                if len(cells) < 10:
+                    continue
+
+                # 解析球員姓名和球隊
+                # 格式：「富 张育成 富邦悍将」或「统 陈傑憲 统一狮」
+                team_cell = cells[1].get_text(strip=True)
+                
+                # 球隊縮寫對照
+                team_code_map = {
+                    '富': 'Fubon Guardians',
+                    '乐': 'Rakuten Monkeys',
+                    '统': 'Uni-President 7-ELEVEn Lions',
+                    '台': 'TSG Hawks',
+                    '中': 'CTBC Brothers',
+                    '味': 'Wei Chuan Dragons',
+                }
+                
+                # 取出球隊縮寫（第一個字）
+                team_code = team_cell[0] if team_cell else ''
+                team_en = team_code_map.get(team_code, '')
+                
+                # 球員姓名：通常在球隊縮寫和全名之間，需要解析 HTML
+                name_link = cells[1].find('a')
+                name = name_link.get_text(strip=True) if name_link else ''
+                
+                # 解析數據欄位
+                pa = cells[2].get_text(strip=True)
+                hits = cells[3].get_text(strip=True)
+                hr = cells[4].get_text(strip=True)
+                rbi = cells[5].get_text(strip=True)
+                bb = cells[6].get_text(strip=True)
+                avg = cells[7].get_text(strip=True)
+                obp = cells[8].get_text(strip=True)
+                slg = cells[9].get_text(strip=True)
+                ops = cells[10].get_text(strip=True) if len(cells) > 10 else None
+
+                # 轉換為數值
+                def to_float(val):
+                    try:
+                        return float(val) if val else None
+                    except:
+                        return None
+
+                def to_int(val):
+                    try:
+                        return int(val) if val else None
+                    except:
+                        return None
+
+                hitters.append({
+                    'name': name,
+                    'team_en': team_en,
+                    'pa': to_int(pa),
+                    'hits': to_int(hits),
+                    'hr': to_int(hr),
+                    'rbi': to_int(rbi),
+                    'bb': to_int(bb),
+                    'avg': to_float(avg),
+                    'obp': to_float(obp),
+                    'slg': to_float(slg),
+                    'ops': to_float(ops),
+                })
+
+            return hitters
+
+        except Exception as e:
+            print(f"  ⚠ sportify.tw fetch error: {e}")
+            return None
+
+    def get_top_batters(self, team_en, top_n=5):
+        """取得 CPBL 指定球隊前 N 名主力打者（依 RBI 排序）
+
+        預設使用 cpbl.com.tw（Railway 相容），
+        若需 OPS/OBP/SLG 等進階數據，可手動啟用 sportify.tw 數據源。
+
+        Args:
+            team_en: 球隊英文名（如 'CTBC Brothers'）
+            top_n: 取前 N 名（預設 5）
+
+        Returns:
+            list of dict: [{name, avg, obp, slg, ops, hr, rbi, hits, ab}, ...]
+            若抓取失敗回傳空陣列
+        """
+        # 預設使用 cpbl.com.tw（Railway 相容）
+        # sportify.tw 需要 TLS 1.2+，在舊版 LibreSSL 環境會失敗
+        hitters = self.get_hitting_leaderboard()
+        source = 'cpbl.com.tw'
+        
+        # 嘗試 sportify.tw（若需要進階數據）
+        # 註：在本地 macOS 可能成功，但在 Railway 會因 SSL 限制失敗
+        # if not hitters or source == 'cpbl.com.tw':
+        #     sportify_hitters = self.get_hitting_leaderboard_from_sportify()
+        #     if sportify_hitters:
+        #         hitters = sportify_hitters
+        #         source = 'sportify.tw'
+        
+        if not hitters:
+            return []
+
+        # 過濾指定球隊
+        team_hitters = [h for h in hitters if h.get('team_en') == team_en]
+
+        # 依 RBI 排序（降冪）
+        team_hitters.sort(key=lambda x: int(x.get('rbi', 0) or 0), reverse=True)
+
+        # 取前 N 名，格式化成與 MLB 一致的結構
+        result = []
+        for h in team_hitters[:top_n]:
+            name = h.get('name', '')
+            avg = h.get('avg')
+            obp = h.get('obp')
+            slg = h.get('slg')
+            ops = h.get('ops')
+            hr = int(h.get('hr', 0) or 0)
+            rbi = int(h.get('rbi', 0) or 0)
+            hits = int(h.get('hits', 0) or 0)
+            
+            # 計算 AB（打數）= PA - BB - HBP（粗略估算）
+            pa = int(h.get('pa', 0) or 0)
+            bb = int(h.get('bb', 0) or 0)
+            ab = max(0, pa - bb)  # 粗略估算
+
+            result.append({
+                'name': name,
+                'position': '',  # cpbl.com.tw 無守備位置
+                'avg': avg,
+                'obp': obp,
+                'slg': slg,
+                'ops': ops,
+                'hr': hr,
+                'rbi': rbi,
+                'hits': hits,
+                'ab': ab,
+            })
+
+        self.fetched_sources.append(source)
+        return result
 
     def get_team_standings(self):
         resp = self.session.get("https://www.cpbl.com.tw/standings/season", timeout=15)
@@ -245,11 +413,16 @@ class CPBLDataFetcher:
         home_bat = (team_data or {}).get('batting', {}).get(home_team_name, {})
         away_bat = (team_data or {}).get('batting', {}).get(away_team_name, {})
 
+        # 🆕 主力打者數據（依 RBI 取前 5 名）
+        home_top5 = self.get_top_batters(home_team_name, top_n=5) or []
+        away_top5 = self.get_top_batters(away_team_name, top_n=5) or []
+
         return {
             "home_team_name": home_team_name,
             "away_team_name": away_team_name,
             "players": {"home": home_ps, "away": away_ps},
             "hitting_leaders": {"home": home_hitters[:5], "away": away_hitters[:5]},
+            "top_batters": {"home": home_top5, "away": away_top5},  # 🆕 新增
             "standings": {"home": home_stand, "away": away_stand},
             "pitching": {"home": home_pitch, "away": away_pitch},
             "batting": {"home": home_bat, "away": away_bat},

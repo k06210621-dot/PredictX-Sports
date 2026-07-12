@@ -54,6 +54,72 @@ class NBADataFetcher:
             return row['team_id'], row['english_name']
         return None, None
 
+    def get_top_players(self, team_name, top_n=5):
+        """取得 NBA 指定球隊前 N 名球員（依 PTS 排序）
+
+        Args:
+            team_name: NBA 官方隊名（如 'Los Angeles Lakers'）
+            top_n: 取前 N 名（預設 5）
+
+        Returns:
+            list of dict: [{name, pts, reb, ast, fg_pct, fg3_pct, games_played}, ...]
+            若抓取失敗回傳空陣列
+        """
+        try:
+            from nba_api.stats.endpoints import leaguedashplayerstats
+            from nba_api.stats.static import teams
+            
+            # 先找到球隊 ID
+            nba_teams = teams.get_teams()
+            team_id = None
+            for t in nba_teams:
+                if team_name.lower() in t['full_name'].lower():
+                    team_id = t['id']
+                    break
+            
+            if not team_id:
+                return []
+            
+            # 抓取球員數據（只抓指定球隊）
+            players = leaguedashplayerstats.LeagueDashPlayerStats(
+                season='2025-26',
+                team_id_nullable=team_id,
+                per_mode_detailed='PerGame'
+            )
+            
+            df = players.get_data_frames()[0]
+            self.fetched_sources.append("stats.nba.com")
+            
+            result = []
+            for _, row in df.iterrows():
+                player_name = row.get('PLAYER_NAME', '')
+                pts = float(row.get('PTS', 0) or 0)
+                reb = float(row.get('REB', 0) or 0)
+                ast = float(row.get('AST', 0) or 0)
+                fg_pct = float(row.get('FG_PCT', 0) or 0)
+                fg3_pct = float(row.get('FG3_PCT', 0) or 0)
+                games_played = int(row.get('GP', 0) or 0)
+                
+                result.append({
+                    'name': player_name,
+                    'position': row.get('POSITION', ''),  # 可能為空
+                    'pts': round(pts, 1),
+                    'reb': round(reb, 1),
+                    'ast': round(ast, 1),
+                    'fg_pct': round(fg_pct, 3) if fg_pct > 0 else None,
+                    'fg3_pct': round(fg3_pct, 3) if fg3_pct > 0 else None,
+                    'games_played': games_played,
+                })
+            
+            # 依 PTS 排序（降冪）
+            result.sort(key=lambda x: x['pts'], reverse=True)
+            
+            return result[:top_n]
+            
+        except Exception as e:
+            print(f"  ⚠ NBA get_top_players error: {e}")
+            return []
+
     def fetch_all_team_advanced_stats(self):
         """透過 nba_api 取得全聯盟進階數據"""
         try:
@@ -135,6 +201,10 @@ class NBADataFetcher:
         home_stats = all_stats[home_key]
         away_stats = all_stats[away_key]
 
+        # 🆕 主力球員數據（前 5 名得分手）
+        home_top5 = self.get_top_players(home_key, top_n=5) or []
+        away_top5 = self.get_top_players(away_key, top_n=5) or []
+
         # 存入資料庫
         self._store_team_stats(game_id, home_team_name, home_stats)
         self._store_team_stats(game_id, away_team_name, away_stats)
@@ -143,6 +213,7 @@ class NBADataFetcher:
             "home_team_name": home_team_name,
             "away_team_name": away_team_name,
             "team_stats": {"home": home_stats, "away": away_stats},
+            "top_players": {"home": home_top5, "away": away_top5},  # 🆕 新增
             "sources": list(set(self.fetched_sources))
         }
 
