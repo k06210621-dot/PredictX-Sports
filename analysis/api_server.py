@@ -472,7 +472,9 @@ def get_accuracy_rolling():
 @app.route('/analytics/settle', methods=['POST'])
 def trigger_settlement():
     try:
-        count = _get_settler().settle_games()
+        body = request.get_json(silent=True) or {}
+        re_settle = body.get('re_settle_all', False)
+        count = _get_settler().settle_games(re_settle_all=re_settle)
         return jsonify({"status": "success", "settled_count": count}), 200
     except Exception as e:
         logger.error(f"Settlement failed: {e}")
