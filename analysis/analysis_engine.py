@@ -801,15 +801,23 @@ class AnalysisEngine:
                                 key1 = f"{home_name}_vs_{away_name}"
                                 key2 = f"{away_name}_vs_{home_name}"
                                 sp = lottonavi_starters.get(key1)
+                                # 🆕 [2026-07-13] 過濾掉 lottonavi 「尚未公布」之類的佔位字串
+                                def _lot_pitcher_name(raw_name, fallback):
+                                    if not raw_name:
+                                        return fallback
+                                    stripped = str(raw_name).strip()
+                                    if stripped in ('', '尚未公布', '未定', 'TBD', '-', '--', '---'):
+                                        return fallback
+                                    return raw_name
                                 if sp:
-                                    today_sp_home = sp.get('home_pitcher', {}).get('name') or today_sp_home
-                                    today_sp_away = sp.get('away_pitcher', {}).get('name') or today_sp_away
+                                    today_sp_home = _lot_pitcher_name(sp.get('home_pitcher', {}).get('name'), today_sp_home)
+                                    today_sp_away = _lot_pitcher_name(sp.get('away_pitcher', {}).get('name'), today_sp_away)
                                     lottonavi_home_era = sp.get('home_pitcher', {}).get('era')
                                     lottonavi_away_era = sp.get('away_pitcher', {}).get('era')
                                 elif key2 in lottonavi_starters:
                                     sp = lottonavi_starters[key2]
-                                    today_sp_home = sp.get('away_pitcher', {}).get('name') or today_sp_home
-                                    today_sp_away = sp.get('home_pitcher', {}).get('name') or today_sp_away
+                                    today_sp_home = _lot_pitcher_name(sp.get('away_pitcher', {}).get('name'), today_sp_home)
+                                    today_sp_away = _lot_pitcher_name(sp.get('home_pitcher', {}).get('name'), today_sp_away)
                                     lottonavi_home_era = sp.get('away_pitcher', {}).get('era')
                                     lottonavi_away_era = sp.get('home_pitcher', {}).get('era')
                                 print(f"  🏯 NPB lottonavi 即時先發: {home_name}={today_sp_home}, {away_name}={today_sp_away}")
