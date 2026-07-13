@@ -2335,8 +2335,17 @@ Park Factor: {pf:.2f} ({park_interp})
                         recent = p.get('recent_stats') or {}
                         recent_summary = recent.get('summary') or {}
 
-                        season_era = float(season_stats.get('era', 0) or 0)
-                        recent_era = float(recent_summary.get('era', 0) or 0)
+                        # 🆕 [2026-07-13] ERA 可能是字串 '---'，需 try/except
+                        def _safe_era_local(stats_dict):
+                            raw = (stats_dict or {}).get('era', 0)
+                            if raw in (None, '', '---', '--'):
+                                return 0.0
+                            try:
+                                return float(raw)
+                            except (ValueError, TypeError):
+                                return 0.0
+                        season_era = _safe_era_local(season_stats)
+                        recent_era = _safe_era_local(recent_summary)
                         recent_count = int(recent_summary.get('count', 0) or 0)
 
                         # 至少需要 2 場 recent data 才調整（避免 1 場爆量誤判）
