@@ -2490,8 +2490,17 @@ Park Factor: {pf:.2f} ({park_interp})
                     pitcher_data_check = features.get('mlb_pitchers') or features.get('npb_pitchers') or features.get('cpbl_pitchers') or features.get('pitchers') or {}
                     home_p = pitcher_data_check.get('home_pitcher') or {}
                     away_p = pitcher_data_check.get('away_pitcher') or {}
-                    h_era = float((home_p.get('stats') or {}).get('era', 0) or 0)
-                    a_era = float((away_p.get('stats') or {}).get('era', 0) or 0)
+                    # 🆕 [2026-07-13] ERA 可能是字串 '---'（尚未公布），需 try/except
+                    def _safe_era(stats_dict):
+                        raw = (stats_dict or {}).get('era', 0)
+                        if raw in (None, '', '---', '--'):
+                            return 0.0
+                        try:
+                            return float(raw)
+                        except (ValueError, TypeError):
+                            return 0.0
+                    h_era = _safe_era(home_p.get('stats'))
+                    a_era = _safe_era(away_p.get('stats'))
                     if h_era > 0 and a_era > 0:
                         era_diff = abs(h_era - a_era)
                         if era_diff > 1.5:
