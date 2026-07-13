@@ -1,6 +1,7 @@
 """
 Push Notification Service for PredictX Sports
 使用 Apple Push Notification service (APNs) HTTP/2 協議發送推播通知
+🆕 [Phase 4] 雙平台支援：APNs（iOS）+ FCM（Android）
 
 設計目標：當 run_analysis 完成新分析時，立即觸發推播給所有
 啟用推播的 Premium 用戶（信心度 >= 8 的賽事）。
@@ -52,6 +53,147 @@ APNS_HOST = (
 
 # 信心度門檻：>= 8 才推播
 CONFIDENCE_THRESHOLD = 8
+
+# ==========================================
+# 🆕 FCM (Android) 配置
+# ==========================================
+
+FCM_SERVICE_ACCOUNT_JSON = os.environ.get("FCM_SERVICE_ACCOUNT_JSON", "")
+_fcm_app = None
+
+def _get_fcm_app():
+    """懶載入 Firebase Admin SDK（只在需要發送 Android FCM 推播時才初始化）
+    
+    需要 Railway 環境變數 FCM_SERVICE_ACCOUNT_JSON（Firebase 私鑰的完整 JSON 字串）。
+    如果未設定，Android 推播會被跳過。
+    """
+    global _fcm_app
+    if _fcm_app is not None:
+        return _fcm_app
+    if not FCM_SERVICE_ACCOUNT_JSON:
+        logger.warning("[FCM] FCM_SERVICE_ACCOUNT_JSON 環境變數未設定，Android 推播將跳過")
+        return None
+    try:
+        import firebase_admin
+        from firebase_admin import credentials
+        service_account = json.loads(FCM_SERVICE_ACCOUNT_JSON)
+        cred = credentials.Certificate(service_account)
+        _fcm_app = firebase_admin.initialize_app(cred, name="predictx-fcm")
+        logger.info("[FCM] Firebase Admin SDK 初始化成功")
+        return _fcm_app
+    except Exception as e:
+        logger.error(f"[FCM] Firebase Admin SDK 初始化失敗: {e}")
+        return None
+
+
+async def send_fcm_notification(
+    device_token: str,
+    title: str,
+    body: str,
+    data: Optional[dict] = None,
+) -> dict:
+    """發送 FCM 推播通知到指定 Android 裝置
+    
+    Returns:
+        dict: {"token": str, "ok": bool, "remove": bool}
+              remove=True 表示 token 永久失效（NotRegistered），應從 DB 清除。
+    """
+    if not device_token:
+        return {"token": device_token, "ok": False, "remove": False}
+    
+    app = await asyncio.to_thread(_get_fcm_app)
+    if app is None:
+        return {"token": device_token, "ok": False, "remove": False}
+    
+    try:
+        from firebase_admin import messaging
+        
+        fcm_data = data or {}
+        message = messaging.Message(
+            notification=messaging.Notification(title=title, body=body),
+            data={k: str(v) for k, v in fcm_data.items()},
+            token=device_token,
+            android=messaging.AndroidConfig(
+                priority="high",
+                notification=messaging.AndroidNotification(
+                    channel_id="predictx_analytics",
+                    priority="HIGH",
+                ),
+            ),
+        )
+        
+        # firebase_admin.messaging.send 是同步，需要 thread-offload
+        response = await asyncio.to_thread(messaging.send, message)
+        logger.info(f"[FCM] 推播成功 → {device_token[:16]}... (msg_id={response[:12]}...)")
+        return {"token": device_token, "ok": True, "remove": False}
+        
+    except messaging.UnregisteredError:
+        logger.warning(f"[FCM] token 永久失效: {device_token[:16]}...")
+        return {"token": device_token, "ok": False, "remove": True}
+    except Exception as e:
+        error_str = str(e)
+        is_invalid = (
+            "NotRegistered" in error_str
+            or "InvalidRegistration" in error_str
+            or "MismatchSenderId" in error_str
+        )
+        logger.warning(f"[FCM] 推播失敗: {e} (token={device_token[:16]}...)")
+        return {"token": device_token, "ok": False, "remove": is_invalid}
+
+
+async def send_fcm_match_notification(
+    device_tokens: List[str],
+    match_info: dict,
+    confidence: float,
+) -> dict:
+    """發送比賽推播通知給 Android 裝置（FCM）"""
+    if confidence < CONFIDENCE_THRESHOLD:
+        return {"success_count": 0, "failed_count": 0, "results": []}
+    if not device_tokens:
+        return {"success_count": 0, "failed_count": 0, "results": []}
+    
+    home_team = match_info.get("home_team", "主隊")
+    away_team = match_info.get("away_team", "客隊")
+    
+    title = "⚾ PredictX 重點觀察賽事"
+    body = f"{home_team} vs {away_team}\nAI 信心度 {confidence:.0f}/10"
+    
+    custom_data = {
+        "type": "match_alert",
+        "game_id": str(match_info.get("game_id", "")),
+        "match_date": str(match_info.get("match_date", "")),
+        "confidence": float(confidence),
+        "home_team": home_team,
+        "away_team": away_team,
+    }
+    
+    tasks = [
+        send_fcm_notification(device_token=token, title=title, body=body, data=custom_data)
+        for token in device_tokens
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    success_count = 0
+    invalid_tokens = []
+    for r in results:
+        if isinstance(r, dict):
+            if r.get("ok"):
+                success_count += 1
+            elif r.get("remove"):
+                invalid_tokens.append(r.get("token"))
+    
+    logger.info(
+        f"[FCM] 推播完成：{home_team} vs {away_team} "
+        f"(conf={confidence:.1f}) → {success_count}/{len(device_tokens)} 成功"
+        + (f"，{len(invalid_tokens)} 個失效 token 待清除" if invalid_tokens else "")
+    )
+    
+    return {
+        "success_count": success_count,
+        "failed_count": len(device_tokens) - success_count,
+        "results": results,
+        "invalid_tokens": invalid_tokens,
+    }
 
 
 # ==========================================
@@ -302,19 +444,19 @@ def _get_push_db_conn():
     return psycopg2.connect(database_url, cursor_factory=RealDictCursor)
 
 
-def _fetch_premium_devices_sync(min_tier: str = "premium", conn=None) -> List[str]:
-    """從 DB 查詢符合資格的 device tokens（可傳入共用連線）"""
+def _fetch_premium_devices_sync(min_tier: str = "premium", conn=None) -> List[dict]:
+    """從 DB 查詢符合資格的裝置（🆕 回傳包含 platform 資訊）"""
     own_conn = conn is None
     if conn is None:
         conn = _get_push_db_conn()
         if conn is None:
-            logger.error("[APNs] DATABASE_URL 未設定，無法查詢 device_tokens")
+            logger.error("[Push] DATABASE_URL 未設定，無法查詢 device_tokens")
             return []
     try:
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT device_token
+            SELECT device_token, platform
             FROM predictx.device_tokens
             WHERE tier = %s
               AND push_enabled = TRUE
@@ -325,7 +467,7 @@ def _fetch_premium_devices_sync(min_tier: str = "premium", conn=None) -> List[st
         )
         rows = cur.fetchall()
         cur.close()
-        return [r["device_token"] for r in rows if r]
+        return [{"token": r["device_token"], "platform": r.get("platform", "ios")} for r in rows if r]
     finally:
         if own_conn:
             conn.close()
@@ -518,47 +660,76 @@ async def trigger_match_push(
             except Exception as dedup_err:
                 logger.error(f"[APNs] 去重檢查失敗（繼續推播）: {dedup_err}")
 
-        # 查詢符合資格的裝置
-        device_tokens = await asyncio.to_thread(_fetch_premium_devices_sync, min_tier, conn)
+        # 查詢符合資格的裝置（現在回傳含 platform 的 dict）
+        devices = await asyncio.to_thread(_fetch_premium_devices_sync, min_tier, conn)
 
-        if not device_tokens:
-            logger.info(f"[APNs] 無 {min_tier} 用戶啟用推播（match: {match_info.get('game_id')}）")
+        if not devices:
+            logger.info(f"[Push] 無 {min_tier} 用戶啟用推播（match: {match_info.get('game_id')}）")
             return {"devices_found": 0, "success_count": 0, "failed_count": 0}
 
-        result = await send_match_notification(
-            device_tokens=device_tokens,
-            match_info=match_info,
-            confidence=confidence,
-        )
+        # 🆕 分離 iOS 與 Android tokens
+        ios_tokens = [d["token"] for d in devices if d.get("platform", "ios") == "ios"]
+        android_tokens = [d["token"] for d in devices if d.get("platform") == "android"]
+
+        total_success = 0
+        total_failed = 0
+        all_invalid = []
+
+        # iOS → APNs
+        if ios_tokens:
+            ios_result = await send_match_notification(
+                device_tokens=ios_tokens,
+                match_info=match_info,
+                confidence=confidence,
+            )
+            total_success += ios_result.get("success_count", 0)
+            total_failed += ios_result.get("failed_count", 0)
+            all_invalid.extend(ios_result.get("invalid_tokens", []))
+        else:
+            ios_result = {"success_count": 0, "failed_count": 0, "invalid_tokens": []}
+
+        # Android → FCM
+        if android_tokens:
+            fcm_result = await send_fcm_match_notification(
+                device_tokens=android_tokens,
+                match_info=match_info,
+                confidence=confidence,
+            )
+            total_success += fcm_result.get("success_count", 0)
+            total_failed += fcm_result.get("failed_count", 0)
+            all_invalid.extend(fcm_result.get("invalid_tokens", []))
+        else:
+            fcm_result = {"success_count": 0, "failed_count": 0, "invalid_tokens": []}
 
         # 推播完成 → 記錄到 push_log（供下次去重）
-        if game_id and result.get("success_count", 0) > 0:
+        if game_id and total_success > 0:
             try:
                 await asyncio.to_thread(
                     _record_push_sync,
                     str(game_id),
-                    len(device_tokens),
-                    result["success_count"],
+                    len(devices),
+                    total_success,
                     conn,
                 )
             except Exception as rec_err:
-                logger.error(f"[APNs] push_log 記錄失敗（不影響本次推播）: {rec_err}")
+                logger.error(f"[Push] push_log 記錄失敗（不影響本次推播）: {rec_err}")
 
-        # 清除永久失效的 device token（410 Unregistered / 400 BadDeviceToken）
-        invalid_tokens = result.get("invalid_tokens") or []
+        # 清除永久失效的 tokens（410 Unregistered / NotRegistered）
         removed_count = 0
-        if invalid_tokens:
+        if all_invalid:
             try:
                 removed_count = await asyncio.to_thread(
-                    _remove_invalid_tokens_sync, invalid_tokens, conn
+                    _remove_invalid_tokens_sync, all_invalid, conn
                 )
             except Exception as rm_err:
-                logger.error(f"[APNs] 清除失效 token 失敗（不影響本次推播）: {rm_err}")
+                logger.error(f"[Push] 清除失效 token 失敗（不影響本次推播）: {rm_err}")
 
         return {
-            "devices_found": len(device_tokens),
-            "success_count": result["success_count"],
-            "failed_count": result["failed_count"],
+            "devices_found": len(devices),
+            "ios_devices": len(ios_tokens),
+            "android_devices": len(android_tokens),
+            "success_count": total_success,
+            "failed_count": total_failed,
             "removed_invalid": removed_count,
         }
     finally:

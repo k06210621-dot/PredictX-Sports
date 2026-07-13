@@ -184,6 +184,7 @@ def register_device():
         token = data.get('token')
         tier = data.get('tier', 'free')
         push_enabled = data.get('push_enabled', False)
+        platform = data.get('platform', 'ios')  # 🆕 'ios' | 'android'
 
         if not token or not isinstance(token, str):
             return jsonify({"error": "Missing or invalid token"}), 400
@@ -191,13 +192,14 @@ def register_device():
         conn = get_db()
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO predictx.device_tokens (device_token, tier, push_enabled, updated_at)
-            VALUES (%s, %s, %s, NOW())
+            INSERT INTO predictx.device_tokens (device_token, tier, push_enabled, platform, updated_at)
+            VALUES (%s, %s, %s, %s, NOW())
             ON CONFLICT (device_token) DO UPDATE
             SET tier = EXCLUDED.tier,
                 push_enabled = EXCLUDED.push_enabled,
+                platform = EXCLUDED.platform,
                 updated_at = NOW()
-        """, (token, tier, bool(push_enabled)))
+        """, (token, tier, bool(push_enabled), platform))
         conn.commit()
         cur.close()
         return jsonify({"status": "ok"}), 200
