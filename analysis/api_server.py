@@ -669,11 +669,17 @@ def insert_games():
                 away_pitcher_raw.get('name') if isinstance(away_pitcher_raw, dict)
                 else away_pitcher_raw
             ) if away_pitcher_raw else None
-            # 過濾 TBD/空字串
-            if home_pitcher_name in ('', 'TBD', 'tbd'):
-                home_pitcher_name = None
-            if away_pitcher_name in ('', 'TBD', 'tbd'):
-                away_pitcher_name = None
+            # 🆕 [2026-07-14] 過濾佔位字串（與 analysis_engine._lot_pitcher_name 對齊）
+            # 防止 lottonavi/ingester 回傳「尚未公布」之類的 placeholder 覆寫 DB 中手動匯入的正確投手名
+            def _clean_pitcher_name(raw):
+                if not raw:
+                    return None
+                stripped = str(raw).strip()
+                if stripped in ('', '尚未公布', '未定', 'TBD', 'tbd', '-', '--', '---'):
+                    return None
+                return stripped
+            home_pitcher_name = _clean_pitcher_name(home_pitcher_name)
+            away_pitcher_name = _clean_pitcher_name(away_pitcher_name)
 
             if not home_name or not away_name:
                 skipped += 1
