@@ -129,6 +129,20 @@ class NPBDataFetcher:
         })
         self.fetched_sources = []
 
+    def _get_team_id_by_name(self, team_name):
+        """透過英文隊名查詢 predictx.teams 的 team_id"""
+        if not self.cur:
+            return None
+        try:
+            self.cur.execute(
+                "SELECT team_id FROM predictx.teams WHERE english_name ILIKE %s AND league = 'NPB'",
+                (f'%{team_name}%',)
+            )
+            row = self.cur.fetchone()
+            return row['team_id'] if row else None
+        except Exception:
+            return None
+
     def get_standings(self):
         """取得 NPB 聯盟排名"""
         resp = self.session.get("https://baseball-data.com/", timeout=15)
@@ -160,10 +174,40 @@ class NPBDataFetcher:
         return standings
 
     def get_team_batting_stats(self, team_name):
-        """取得 NPB 球隊打擊數據（從球員數據加總）"""
-        code = TEAM_URL_CODES.get(team_name)
-        if not code:
-            return None
+        """取得 NPB 球隊打擊數據
+        優先從 npb_team_batting 表取（含 OPS/SLG/OBP 等進階指標），
+        找不到再回退 baseball-data.com 爬蟲（僅 AVG/HR）。
+        """
+        # 1) 先嘗試從 npb_team_batting 表取 2026 賽季數據
+        team_id = self._get_team_id_by_name(team_name)
+        if team_id:
+            self.cur.execute("""
+                SELECT games, at_bats, runs, hits, doubles, triples, home_runs, rbi,
+                       walks, strikeouts, total_bases, obp, slg, avg
+                FROM predictx.npb_team_batting
+                WHERE team_id = %s AND season = 2026
+            """, (team_id,))
+            row = self.cur.fetchone()
+            if row:
+                self.fetched_sources.append("npb_team_batting (official verified)")
+                return {
+                    'games': row['games'],
+                    'at_bats': row['at_bats'],
+                    'runs': row['runs'],
+                    'hits': row['hits'],
+                    'doubles': row['doubles'],
+                    'triples': row['triples'],
+                    'home_runs': row['home_runs'],
+                    'rbi': row['rbi'],
+                    'walks': row['walks'],
+                    'strikeouts': row['strikeouts'],
+                    'total_bases': row['total_bases'],
+                    'obp': float(row['obp']) if row['obp'] is not None else None,
+                    'slg': float(row['slg']) if row['slg'] is not None else None,
+                    'avg': float(row['avg']) if row['avg'] is not None else None,
+                    'hr': row['home_runs'],
+                    'avg': float(row['avg']) if row['avg'] is not None else None,
+                }
         
         url = f"https://baseball-data.com/stats/hitter-{code}/"
         resp = self.session.get(url, timeout=15)

@@ -1376,6 +1376,12 @@ class AnalysisEngine:
             
             h_avg = h_bat.get('avg', 0)
             a_avg = a_bat.get('avg', 0)
+            h_obp = h_bat.get('obp')
+            a_obp = a_bat.get('obp')
+            h_slg = h_bat.get('slg')
+            a_slg = a_bat.get('slg')
+            h_ops = (float(h_obp) + float(h_slg)) if (h_obp is not None and h_slg is not None) else None
+            a_ops = (float(a_obp) + float(a_slg)) if (a_obp is not None and a_slg is not None) else None
             h_hr = h_bat.get('hr', 0)
             a_hr = a_bat.get('hr', 0)
             h_wpct = h_stand.get('win_pct', '.500')
@@ -1383,15 +1389,25 @@ class AnalysisEngine:
             h_pwpct = h_pitch.get('win_pct', 0.5)
             a_pwpct = a_pitch.get('win_pct', 0.5)
             
-            npb_section = f"""===== NPB 即時數據（來源：baseball-data.com）=====
+            # 構建打擊資訊行
+            h_bat_info = f"AVG={h_avg:.3f}" if isinstance(h_avg, float) else f"AVG={h_avg}"
+            a_bat_info = f"AVG={a_avg:.3f}" if isinstance(a_avg, float) else f"AVG={a_avg}"
+            if h_obp is not None and h_slg is not None:
+                h_bat_info += f", OBP={h_obp:.3f}, SLG={h_slg:.3f}, OPS={h_ops:.3f}"
+            if a_obp is not None and a_slg is not None:
+                a_bat_info += f", OBP={a_obp:.3f}, SLG={a_slg:.3f}, OPS={a_ops:.3f}"
+            h_bat_info += f", HR={h_hr}"
+            a_bat_info += f", HR={a_hr}"
+            
+            npb_section = f"""===== NPB 即時數據（來源：官方驗證數據 + baseball-data.com）=====
 主隊 {home_team}:
   排名: {h_stand.get('rank', '?')}位, 戰績: {h_stand.get('wins', '0')}W-{h_stand.get('losses', '0')}L-{h_stand.get('ties', '0')}D
-  團隊打擊: AVG={h_avg}, HR={h_hr}
+  團隊打擊: {h_bat_info}
   團隊投球: {h_pitch.get('wins', 0)}W-{h_pitch.get('losses', 0)}L, Win%={h_pwpct:.3f}
 
 客隊 {away_team}:
   排名: {a_stand.get('rank', '?')}位, 戰績: {a_stand.get('wins', '0')}W-{a_stand.get('losses', '0')}L-{a_stand.get('ties', '0')}D
-  團隊打擊: AVG={a_avg}, HR={a_hr}
+  團隊打擊: {a_bat_info}
   團隊投球: {a_pitch.get('wins', 0)}W-{a_pitch.get('losses', 0)}L, Win%={a_pwpct:.3f}"""
 
             # 🆕 加入主力打者 Top 5（從 2026-07-12 開始）
