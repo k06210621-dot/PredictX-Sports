@@ -1568,6 +1568,45 @@ Park Factor: {pf:.2f} ({park_interp})
                     a_names = ", ".join([p['name'] for p in a_ps[:8]])
                     cpbl_spec += f"\n玩家名單 — 主隊 {home_team}（{len(h_ps)}人）: {h_names} | 客隊 {away_team}（{len(a_ps)}人）: {a_names}"
 
+                # 🆕 [2026-07-14] CPBL 球員 PR 進階打擊數據（PR percentile：99 為最高、0 為最低）
+                pr = cpbl_data.get('player_pr') or {}
+                h_pr_list = pr.get('home') or []
+                a_pr_list = pr.get('away') or []
+                if h_pr_list or a_pr_list:
+                    cpbl_spec += "\n\n===== CPBL 球員 PR 進階打擊數據（來源：用戶官方驗證資料）====="
+                    cpbl_spec += "\nPR 為百分位排名（99=聯盟頂尖、50=中位、0=落後），包含 wRC+、打擊率、長打率、上壘率、ISO、擊球初速、強擊球%、出色擊球(Barrel)、三振/保送/揮空/追打率"
+                    for side, label in [('home', '主隊'), ('away', '客隊')]:
+                        pr_list = h_pr_list if side == 'home' else a_pr_list
+                        team_label = f"{label} {home_team if side == 'home' else away_team}"
+                        if not pr_list:
+                            continue
+                        # 取前 8 名主力打者（PR 排名越高越好）
+                        cpbl_spec += f"\n{team_label} 主力打者（PR Top {len(pr_list)}）:"
+                        for i, p in enumerate(pr_list[:8], 1):
+                            name = p.get('player_name', '?')
+                            rank = p.get('ranking', '?')
+                            wrc = p.get('wrc_plus', '?')
+                            avg = p.get('avg_percentile', '?')
+                            slg = p.get('slg_percentile', '?')
+                            obp = p.get('obp_percentile', '?')
+                            iso = p.get('iso_percentile', '?')
+                            ev = p.get('exit_velo_max_percentile', '?')
+                            hard = p.get('hard_hit_pct_percentile', '?')
+                            barrel = p.get('barrel_pct_percentile', '?')
+                            k_pct = p.get('k_pct_percentile', '?')
+                            bb_pct = p.get('bb_pct_percentile', '?')
+                            cpbl_spec += (
+                                f"\n  #{i} {name} (PR排名#{rank}): "
+                                f"wRC+={wrc}, AVG={avg}, SLG={slg}, OBP={obp}, ISO={iso}, "
+                                f"EVmax={ev}, Hard%={hard}, Barrel%={barrel}, K%={k_pct}, BB%={bb_pct}"
+                            )
+                        # 計算團隊平均 wRC+ 與 OBp
+                        if pr_list:
+                            avg_wrc = sum(p.get('wrc_plus') or 0 for p in pr_list) / max(len([p for p in pr_list if p.get('wrc_plus') is not None]), 1)
+                            avg_obp = sum(p.get('obp_percentile') or 0 for p in pr_list) / max(len([p for p in pr_list if p.get('obp_percentile') is not None]), 1)
+                            avg_ev = sum(p.get('exit_velo_max_percentile') or 0 for p in pr_list) / max(len([p for p in pr_list if p.get('exit_velo_max_percentile') is not None]), 1)
+                            cpbl_spec += f"\n  → 球隊主力平均: wRC+={avg_wrc:.1f}, OBP={avg_obp:.1f}, EVmax={avg_ev:.1f}"
+
                 h_stand = cpbl_data.get('standings', {}).get('home', {})
                 a_stand = cpbl_data.get('standings', {}).get('away', {})
                 h_pitch = cpbl_data.get('pitching', {}).get('home', {})
