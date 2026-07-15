@@ -149,7 +149,7 @@ class NPBDataFetcher:
         if resp.status_code != 200:
             return None
         
-        soup = BeautifulSoup(resp.text, 'lxml')
+        soup = BeautifulSoup(resp.text, 'xml')
         self.fetched_sources.append("baseball-data.com")
         
         standings = {}
@@ -257,7 +257,7 @@ class NPBDataFetcher:
         if resp.status_code != 200:
             return None
         
-        soup = BeautifulSoup(resp.text, "lxml")
+        soup = BeautifulSoup(resp.text, "xml")
         self.fetched_sources.append("baseball-data.com")
         
         totals = {}
@@ -300,7 +300,7 @@ class NPBDataFetcher:
         if resp.status_code != 200:
             return None
         
-        soup = BeautifulSoup(resp.text, "lxml")
+        soup = BeautifulSoup(resp.text, "xml")
         self.fetched_sources.append("baseball-data.com")
         
         pitchers = []
@@ -375,9 +375,9 @@ class NPBDataFetcher:
         if resp.status_code != 200:
             return []
 
-        soup = BeautifulSoup(resp.text, 'lxml')
+        soup = BeautifulSoup(resp.text, 'xml')
         self.fetched_sources.append("baseball-data.com")
-
+        
         batters = []
         tables = soup.find_all('table')
         for table in tables:
