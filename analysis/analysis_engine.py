@@ -2321,6 +2321,11 @@ Park Factor: {pf:.2f} ({park_interp})
                     "score": source_score,
                     "sources": list(self.used_sources)
                 }
+
+                # 🆕 [2026-07-17] 將 features 合併到 result，持久化到 DB 的 analysis_data JSONB
+                # 目的：Recipe 6/7 後處理需 npb_pitchers/mlb_pitchers 等 enrich data，
+                #       之前 features 只在 memory 使用，未序列化 → DB 查詢永遠為空
+                result["features"] = features
                 
                 # Step 4: 數值範圍驗證與正規化
                 home_prob = float(result.get("home_win_probability", 0.0))
