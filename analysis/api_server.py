@@ -1343,18 +1343,21 @@ def import_npb_player_stats():
                 skipped += 1
                 continue
 
+            # 🆕 [2026-07-18] 清理 name_en 中的 "(DB)" 後綴污染（如 "Azuma, Katsuki(DB)"）
+            clean_name = name_en.replace('(DB)', '').strip()
+
             # 找 DB 內對應球員（DB 格式 "Given Family" vs JSON "Family, Given"）
-            db_player = existing_players.get(name_en)
+            db_player = existing_players.get(clean_name)
             if not db_player:
                 # 嘗試 1：把 "Family, Given" 反轉成 "Given Family"
-                if ',' in name_en:
-                    parts = name_en.split(',', 1)
+                if ',' in clean_name:
+                    parts = clean_name.split(',', 1)
                     reversed_name = f"{parts[1].strip()} {parts[0].strip()}"
                     db_player = existing_players.get(reversed_name)
             if not db_player:
                 # 嘗試 2：忽略逗號/空白
-                if ',' in name_en:
-                    parts = name_en.split(',', 1)
+                if ',' in clean_name:
+                    parts = clean_name.split(',', 1)
                     reversed_name = f"{parts[1].strip()} {parts[0].strip()}"
                     target = reversed_name.lower().replace(',', '').replace(' ', '')
                     for db_name, db_info in existing_players.items():
@@ -1363,7 +1366,7 @@ def import_npb_player_stats():
                             break
             if not db_player:
                 # 嘗試 3：直接忽略比對
-                target = name_en.lower().replace(',', '').replace(' ', '')
+                target = clean_name.lower().replace(',', '').replace(' ', '')
                 for db_name, db_info in existing_players.items():
                     if db_name.lower().replace(',', '').replace(' ', '') == target:
                         db_player = db_info
