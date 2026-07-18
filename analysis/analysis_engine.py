@@ -1552,11 +1552,19 @@ Park Factor: {pf:.2f} ({park_interp})
         home_sp = game.get('home_pitcher_name')
         away_sp = game.get('away_pitcher_name')
         if home_sp or away_sp:
+            # 🆕 [2026-07-18] 從 features['npb_pitchers'] 讀 DB 撈到的先發完整數據（ERA/K9/BB9）
+            npb_pitchers_block = features.get('npb_pitchers', {}) or {}
+            h_sp_stats = (npb_pitchers_block.get('home_pitcher', {}) or {}).get('stats', {}) or {}
+            a_sp_stats = (npb_pitchers_block.get('away_pitcher', {}) or {}).get('stats', {}) or {}
+            h_sp_line = f"ERA={h_sp_stats.get('era', '?')}, K/9={h_sp_stats.get('k_per_9', '?')}, BB/9={h_sp_stats.get('bb_per_9', '?')}, IP={h_sp_stats.get('ip', '?')}" if h_sp_stats else "（DB 無數據）"
+            a_sp_line = f"ERA={a_sp_stats.get('era', '?')}, K/9={a_sp_stats.get('k_per_9', '?')}, BB/9={a_sp_stats.get('bb_per_9', '?')}, IP={a_sp_stats.get('ip', '?')}" if a_sp_stats else "（DB 無數據）"
             npb_section += f"""
 
-===== 今日先發投手（來源：lottonavi）=====
+===== 今日先發投手（來源：lottonavi + player_season_stats DB）=====
 主隊 {home_team} 今日先發：{home_sp or '尚未公布'}
+  └ 本季數據：{h_sp_line}
 客隊 {away_team} 今日先發：{away_sp or '尚未公布'}
+  └ 本季數據：{a_sp_line}
 
 💡 NPB 分析指引【強制規則】：
 - **先發投手的三振能力(K/9)與保送控制(BB/9、K/BB)是 NPB 低得分比賽的「勝負關鍵指標」，權重應明顯高於團隊戰績/排名。**
