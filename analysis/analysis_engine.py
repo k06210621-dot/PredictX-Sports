@@ -824,12 +824,47 @@ class AnalysisEngine:
                     except Exception as lot_err:
                         print(f"  ⚠ NPB lottonavi re-fetch error: {lot_err}")
 
-                    # 🆕 直接使用 lottonavi 先發投手數據（不再比對 baseball-data.com）
-                    # lottonavi 已提供先發名字 + ERA，比對常因日文姓名寫法差異失敗
-                    home_sp_stats = {'era': lottonavi_home_era} if lottonavi_home_era else None
-                    away_sp_stats = {'era': lottonavi_away_era} if lottonavi_away_era else None
+                    # 🆕 [2026-07-18] 優先從 player_season_stats DB 讀先發投手完整數據（ERA/K9/BB9）
+                    # 爬蟲 baseball-data.com 常失敗（被擋/結構變），DB 作為穩定備援
+                    def _get_db_pitcher_stats(sp_name, team_id):
+                        if not sp_name or sp_name in ('TBD', '尚未公布', '未定', '-', '--', '---'):
+                            return None
+                        try:
+                            self.cur.execute("""
+                                SELECT s.era, s.ip, s.p_so, s.p_bb
+                                FROM predictx.player_season_stats s
+                                JOIN predictx.players p ON s.player_id = p.player_id
+                                JOIN predictx.player_teams pt ON p.player_id = pt.player_id
+                                WHERE pt.team_id = %s AND p.player_name = %s
+                                  AND s.kind = 'pitcher' AND s.era IS NOT NULL
+                                ORDER BY s.ip DESC NULLS LAST
+                                LIMIT 1
+                            """, (team_id, sp_name))
+                            row = self.cur.fetchone()
+                            if row:
+                                era = float(row['era']) if row['era'] is not None else None
+                                ip = float(row['ip']) if row['ip'] else 0
+                                so = int(row['p_so']) if row['p_so'] else 0
+                                bb = int(row['p_bb']) if row['p_bb'] else 0
+                                k9 = round(so * 9 / ip, 1) if ip > 0 else 0
+                                bb9 = round(bb * 9 / ip, 1) if ip > 0 else 0
+                                return {'era': era, 'k_per_9': k9, 'bb_per_9': bb9, 'ip': round(ip, 1),
+                                        'source': 'db'}
+                        except Exception as db_err:
+                            print(f"  ⚠ DB pitcher stats query error: {db_err}")
+                        return None
 
-                    if home_pitchers or away_pitchers:
+                    # 讀取兩隊 team_id
+                    home_tid = game.get('home_team_id')
+                    away_tid = game.get('away_team_id')
+
+                    # 優先順序：DB 完整數據 > lottonavi ERA > 爬蟲
+                    home_db_stats = _get_db_pitcher_stats(today_sp_home, home_tid)
+                    away_db_stats = _get_db_pitcher_stats(today_sp_away, away_tid)
+                    home_sp_stats = home_db_stats or ({'era': lottonavi_home_era, 'source': 'lottonavi'} if lottonavi_home_era else None)
+                    away_sp_stats = away_db_stats or ({'era': lottonavi_away_era, 'source': 'lottonavi'} if lottonavi_away_era else None)
+
+                    if home_pitchers or away_pitchers or home_sp_stats or away_sp_stats:
                         features['npb_pitchers'] = {
                             'home_team': home_name,
                             'away_team': away_name,
