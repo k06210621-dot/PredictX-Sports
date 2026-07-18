@@ -872,6 +872,14 @@ class AnalysisEngine:
                                         'source': 'db'}
                         except Exception as db_err:
                             print(f"  ⚠ DB pitcher stats query error: {db_err}")
+                        # 🆕 [2026-07-18] DB 未命中時，用 lot_era 估算 K9/BB9 作為Fallback
+                        if lot_era is not None:
+                            try:
+                                est_k9 = round(float(lot_era) * 1.1, 1)
+                                est_bb9 = round(float(lot_era) * 0.35, 1)
+                                return {'era': float(lot_era), 'k_per_9': est_k9, 'bb_per_9': est_bb9, 'source': 'lottonavi_estimated'}
+                            except:
+                                pass
                         return None
 
                     # 讀取兩隊 team_id
