@@ -6,7 +6,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 import requests
-from scripts.blowout_bonus import compute_blowout_bonus
+from blowout_bonus import compute_blowout_bonus
 
 # --- LLM 呼叫速率限制（token bucket）---
 # 避免 container 起動初期多場並發打爆 NVIDIA 免費層額度。
