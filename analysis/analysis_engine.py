@@ -6,6 +6,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 import requests
+from scripts.blowout_bonus import compute_blowout_bonus
 
 # --- LLM 呼叫速率限制（token bucket）---
 # 避免 container 起動初期多場並發打爆 NVIDIA 免費層額度。
@@ -229,7 +230,7 @@ class AnalysisEngine:
 
         return {'values': values}
 
-    def _reconcile_predicted_score(self, predicted_score, home_prob, away_prob, league=""):
+    def _reconcile_predicted_score(self, predicted_score, home_prob, away_prob, league="", blowout_bonus=0):
         """
         校正 predicted_score，確保與勝率一致。
 
@@ -316,6 +317,11 @@ class AnalysisEngine:
             target_gap = 2
         elif prob_diff > 0.1:
             target_gap = 1
+
+        # 🆕 [2026-07-18] 打爆係數：先發易被狙擊 + 對手打線強 → 額外拉大差距
+        if blowout_bonus > 0:
+            target_gap = max(target_gap, 1 + blowout_bonus)
+            target_gap = min(target_gap, 6)
 
         # 確保 favorite_score >= target_gap + lo，否則先提升 favorite
         current_gap = favorite_score - underdog_score
@@ -2715,11 +2721,16 @@ Park Factor: {pf:.2f} ({park_interp})
                 # 🆕 校正 predicted_score：確保與勝率一致
                 # 若 home_prob > away_prob → home_score 應 > away_score，反之亦然
                 # 避免「勝率 65% 但預測比分輸球」這類矛盾
+                # 🆕 [2026-07-18] MLB 路徑額外計算打爆係數
+                _bonus = 0
+                if (features.get('league') or '').upper() == 'MLB':
+                    _bonus = compute_blowout_bonus(features, home_favorite=(home_prob > away_prob))
                 result["predicted_score"] = self._reconcile_predicted_score(
                     predicted_score=result.get("predicted_score"),
                     home_prob=home_prob,
                     away_prob=away_prob,
-                    league=features.get('league', '')
+                    league=features.get('league', ''),
+                    blowout_bonus=_bonus
                 )
 
                 # 🆕 [Recipe 8] radar_chart 補齊邏輯（修雷達圖消失 bug）
