@@ -157,7 +157,7 @@ def save_analysis(conn, game_id, analysis_result):
                    analysis_data = EXCLUDED.analysis_data,
                    updated_at = CURRENT_TIMESTAMP,
                    last_analyzed_pitcher_update = EXCLUDED.last_analyzed_pitcher_update""",
-            (game_id, json.dumps(analysis_result), current_pitcher_update)
+            (game_id, json.dumps(analysis_result, default=str), current_pitcher_update)
         )
         conn.commit()
         cur.close()
