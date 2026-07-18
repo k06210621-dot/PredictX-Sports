@@ -826,10 +826,13 @@ class AnalysisEngine:
 
                     # 🆕 [2026-07-18] 優先從 player_season_stats DB 讀先發投手完整數據（ERA/K9/BB9）
                     # 爬蟲 baseball-data.com 常失敗（被擋/結構變），DB 作為穩定備援
-                    def _get_db_pitcher_stats(sp_name, team_id):
+                    # 匹配策略：1) 名字精確匹配（含日文名→英文名對照未來可擴充）
+                    #           2) team_id + ERA 近似反查（同隊先發 ERA 通常不重複，靠 ERA+球隊定位）
+                    def _get_db_pitcher_stats(sp_name, team_id, lot_era=None):
                         if not sp_name or sp_name in ('TBD', '尚未公布', '未定', '-', '--', '---'):
                             return None
                         try:
+                            # 策略 1：名字精確匹配（日文名/英文名均可）
                             self.cur.execute("""
                                 SELECT s.era, s.ip, s.p_so, s.p_bb
                                 FROM predictx.player_season_stats s
@@ -841,6 +844,23 @@ class AnalysisEngine:
                                 LIMIT 1
                             """, (team_id, sp_name))
                             row = self.cur.fetchone()
+                            # 策略 2：team_id + ERA 近似反查（lottonavi 給的 ERA 當錨點）
+                            if not row and lot_era is not None:
+                                try:
+                                    anchor = float(lot_era)
+                                    self.cur.execute("""
+                                        SELECT s.era, s.ip, s.p_so, s.p_bb
+                                        FROM predictx.player_season_stats s
+                                        JOIN predictx.players p ON s.player_id = p.player_id
+                                        JOIN predictx.player_teams pt ON p.player_id = pt.player_id
+                                        WHERE pt.team_id = %s
+                                          AND s.kind = 'pitcher' AND s.era IS NOT NULL
+                                        ORDER BY ABS(s.era - %s) ASC, s.ip DESC NULLS LAST
+                                        LIMIT 1
+                                    """, (team_id, anchor))
+                                    row = self.cur.fetchone()
+                                except (ValueError, TypeError):
+                                    row = None
                             if row:
                                 era = float(row['era']) if row['era'] is not None else None
                                 ip = float(row['ip']) if row['ip'] else 0
@@ -858,9 +878,9 @@ class AnalysisEngine:
                     home_tid = game.get('home_team_id')
                     away_tid = game.get('away_team_id')
 
-                    # 優先順序：DB 完整數據 > lottonavi ERA > 爬蟲
-                    home_db_stats = _get_db_pitcher_stats(today_sp_home, home_tid)
-                    away_db_stats = _get_db_pitcher_stats(today_sp_away, away_tid)
+                    # 優先順序：DB 完整數據（名字或 ERA 反查）> lottonavi ERA > 爬蟲
+                    home_db_stats = _get_db_pitcher_stats(today_sp_home, home_tid, lottonavi_home_era)
+                    away_db_stats = _get_db_pitcher_stats(today_sp_away, away_tid, lottonavi_away_era)
                     home_sp_stats = home_db_stats or ({'era': lottonavi_home_era, 'source': 'lottonavi'} if lottonavi_home_era else None)
                     away_sp_stats = away_db_stats or ({'era': lottonavi_away_era, 'source': 'lottonavi'} if lottonavi_away_era else None)
 
@@ -883,8 +903,12 @@ class AnalysisEngine:
                         a_disp = away_sp_stats or (away_pitchers[0] if away_pitchers else {})
                         h_name = features['npb_pitchers']['home_pitcher']['name']
                         a_name = features['npb_pitchers']['away_pitcher']['name']
-                        print(f"  ⚾ Home SP: {h_name} (ERA={h_disp.get('era', 0)}) [lottonavi{' ✓' if home_sp_stats else ' fallback'}]")
-                        print(f"  ⚾ Away SP: {a_name} (ERA={a_disp.get('era', 0)}) [lottonavi{' ✓' if away_sp_stats else ' fallback'}]")
+                        h_src = (home_sp_stats or {}).get('source', 'fallback')
+                        a_src = (away_sp_stats or {}).get('source', 'fallback')
+                        h_k9 = (home_sp_stats or {}).get('k_per_9')
+                        a_k9 = (away_sp_stats or {}).get('k_per_9')
+                        print(f"  ⚾ Home SP: {h_name} (ERA={h_disp.get('era', 0)}{', K/9='+str(h_k9) if h_k9 else ''}) [{h_src}]")
+                        print(f"  ⚾ Away SP: {a_name} (ERA={a_disp.get('era', 0)}{', K/9='+str(a_k9) if a_k9 else ''}) [{a_src}]")
                 except Exception as pitcher_err:
                     print(f"  ⚠ NPB top starters fetch error: {pitcher_err}")
 
