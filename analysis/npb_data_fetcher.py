@@ -334,7 +334,7 @@ class NPBDataFetcher:
                         whip = float(whip_text) if whip_text else 0
                         
                         # 過濾：至少先發過3場（近似：局數 > 15）才視為先發投手
-                        if ip >= 15:
+                        if ip >= 5:  # 🆕 2026-07-18 放寬門檻
                             pitchers.append({
                                 "name": name,
                                 "era": era,
