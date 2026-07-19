@@ -55,6 +55,11 @@ def get_pending_games(conn, target_dates: list):
         LEFT JOIN predictx.game_analysis ga ON g.game_id = ga.game_id
         WHERE g.status ILIKE 'scheduled'
           AND g.match_date::date IN ({placeholders})
+          -- 🆕 [2026-07-19] 防護：排除已開打/已結束的賽事，避免 settlement 更新
+          -- updated_at 後因 12hr 逾時條件意外重新觸發 AI 分析
+          AND g.status NOT ILIKE 'FINAL'
+          AND g.status NOT ILIKE 'LIVE'
+          AND g.status NOT ILIKE 'IN_PROGRESS'
           AND (
             ga.analysis_id IS NULL
             OR ga.updated_at < NOW() - INTERVAL '12 hours'
