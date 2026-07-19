@@ -2820,6 +2820,92 @@ Park Factor: {pf:.2f} ({park_interp})
                     home_prob = max(0.30, min(0.85, home_prob + kb_adj_fb))
                     print(f"  ⚾ [fallback] NPB SP K/BB: 主 K/9={h_k9_fb}(BB/9={h_bb9_fb}) vs 客 K/9={a_k9_fb}(BB/9={a_bb9_fb}) → 勝率調整 {kb_adj_fb:+.4f}")
 
+        # 🆕 [2026-07-19] Fallback 進階數據強化：先發投手 + 團隊打擊/投球
+        lg_fb = (features.get('league') or '').upper()
+        try:
+            if lg_fb in ('MLB', 'NPB', 'CPBL'):
+                pitcher_block = features.get('mlb_pitchers') or features.get('npb_pitchers') or features.get('cpbl_pitchers') or features.get('pitchers') or {}
+                h_sp = (pitcher_block.get('home_pitcher') or {}).get('stats') or {}
+                a_sp = (pitcher_block.get('away_pitcher') or {}).get('stats') or {}
+
+                def safe_float(v):
+                    try:
+                        return float(v or 0)
+                    except (TypeError, ValueError):
+                        return 0.0
+
+                h_era = safe_float(h_sp.get('era'))
+                a_era = safe_float(a_sp.get('era'))
+                h_k9 = safe_float(h_sp.get('k_per_9'))
+                a_k9 = safe_float(a_sp.get('k_per_9'))
+                h_bb9 = safe_float(h_sp.get('bb_per_9'))
+                a_bb9 = safe_float(a_sp.get('bb_per_9'))
+                h_whip = safe_float(h_sp.get('whip'))
+                a_whip = safe_float(a_sp.get('whip'))
+
+                if h_era > 0 and a_era > 0:
+                    era_adj = (a_era - h_era) * 0.02
+                    home_prob = max(0.30, min(0.85, home_prob + era_adj))
+                    print(f"  ⚾ [fallback進階] SP ERA: 主={h_era:.2f} vs 客={a_era:.2f} → 勝率調整 {era_adj:+.4f}")
+                if h_k9 and a_k9 and h_bb9 and a_bb9:
+                    adv = (h_k9 - a_k9) * 0.015 + (a_bb9 - h_bb9) * 0.02
+                    home_prob = max(0.30, min(0.85, home_prob + adv))
+                    print(f"  ⚾ [fallback進階] SP K/BB: 主={h_k9:.1f}/{h_bb9:.1f} vs 客={a_k9:.1f}/{a_bb9:.1f} → 勝率調整 {adv:+.4f}")
+                if h_whip and a_whip:
+                    whip_adj = (a_whip - h_whip) * 0.03
+                    home_prob = max(0.30, min(0.85, home_prob + whip_adj))
+                    print(f"  ⚾ [fallback進階] SP WHIP: 主={h_whip:.2f} vs 客={a_whip:.2f} → 勝率調整 {whip_adj:+.4f}")
+
+            if lg_fb == 'MLB':
+                mlb_adv = features.get('mlb_advanced') or {}
+                h_team = (mlb_adv.get('team_stats') or {}).get('home') or {}
+                a_team = (mlb_adv.get('team_stats') or {}).get('away') or {}
+
+                def calc_avg(hits, ab):
+                    return round(hits / ab, 3) if ab and ab > 0 else 0
+                def calc_ops_onbase(hits, bb, hbp, sf, ab):
+                    denom = ab + bb + hbp + sf
+                    return round((hits + bb + hbp) / denom, 3) if denom and denom > 0 else 0
+                def calc_team_era(er, outs):
+                    return round(er * 9 / (outs / 3), 2) if outs and outs > 0 else 0
+
+                h_avg = calc_avg(h_team.get('hitting_hits', 0), h_team.get('hitting_atbats', 0))
+                a_avg = calc_avg(a_team.get('hitting_hits', 0), a_team.get('hitting_atbats', 0))
+                h_obp = calc_ops_onbase(h_team.get('hitting_hits', 0), h_team.get('hitting_baseonballs', 0), h_team.get('hitting_hitbypitch', 0), h_team.get('hitting_sacflies', 0), h_team.get('hitting_atbats', 0))
+                a_obp = calc_ops_onbase(a_team.get('hitting_hits', 0), a_team.get('hitting_baseonballs', 0), a_team.get('hitting_hitbypitch', 0), a_team.get('hitting_sacflies', 0), a_team.get('hitting_atbats', 0))
+                h_era = calc_team_era(h_team.get('pitching_earnedruns', 0), h_team.get('pitching_outs', 0))
+                a_era = calc_team_era(a_team.get('pitching_earnedruns', 0), a_team.get('pitching_outs', 0))
+
+                if h_avg and a_avg and h_era and a_era:
+                    bat_adj = (h_avg - a_avg) * 0.6 + (a_era - h_era) * 0.02
+                    home_prob = max(0.30, min(0.85, home_prob + bat_adj))
+                    print(f"  ⚾ [fallback進階] MLB team AVG/ERA: 主={h_avg:.3f}/{h_era:.2f} vs 客={a_avg:.3f}/{a_era:.2f} → 勝率調整 {bat_adj:+.4f}")
+
+            if lg_fb in ('NBA', 'WNBA'):
+                nba_adv = features.get('nba_advanced') or features.get('wnba_advanced') or {}
+                h_team = (nba_adv.get('team_stats') or {}).get('home') or {}
+                a_team = (nba_adv.get('team_stats') or {}).get('away') or {}
+
+                h_off = float(h_team.get('off_rtg') or 0)
+                a_off = float(a_team.get('off_rtg') or 0)
+                h_def = float(h_team.get('def_rtg') or 0)
+                a_def = float(a_team.get('def_rtg') or 0)
+                h_pace = float(h_team.get('pace') or 0)
+                a_pace = float(a_team.get('pace') or 0)
+                h_efg = float(h_team.get('efg_pct') or 0)
+                a_efg = float(a_team.get('efg_pct') or 0)
+
+                if h_off and a_off:
+                    net = (h_off - a_off) + (a_def - h_def) * 0.5
+                    home_prob = max(0.30, min(0.85, home_prob + net * 0.01))
+                    print(f"  ⚾ [fallback進階] NBA/WNBA OffRtg/DefRtg: 主={h_off:.1f}/{h_def:.1f} vs 客={a_off:.1f}/{a_def:.1f} → 勝率調整 {net * 0.01:+.4f}")
+                if h_pace and a_pace and h_efg and a_efg:
+                    efg_adj = (h_efg - a_efg) * 0.03
+                    home_prob = max(0.30, min(0.85, home_prob + efg_adj))
+                    print(f"  ⚾ [fallback進階] NBA/WNBA eFG%: 主={h_efg:.3f} vs 客={a_efg:.3f} → 勝率調整 {efg_adj:+.4f}")
+        except Exception as adv_err:
+            print(f"  ⚠ Fallback 進階數據強化失敗：{adv_err}")
+
         # Radar chart 維度（用於 fallback 也保留 AI-style 6 維度）
         league = features.get('league', '')
         leauge_dims_map = {
