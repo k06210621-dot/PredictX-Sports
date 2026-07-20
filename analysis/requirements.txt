@@ -10,3 +10,4 @@ pytz>=2023.3
 aiohttp>=3.9
 httpx[http2]>=0.27
 pyjwt[crypto]>=2.8
+firebase-admin>=6.5
