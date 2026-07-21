@@ -2616,6 +2616,45 @@ Park Factor: {pf:.2f} ({park_interp})
                         print(f" ⚾ Recipe 6 投手參數調整: {pitcher_adjustment_reasons}")
 
 
+
+                        # 🆕 [Recipe 8] 傷兵權重調整（MLB/NBA/WNBA）- 2026-07-21 新增
+                        # 根據日誌分析：主隊傷兵 9-11 人 vs 客隊 3-7 人，但 AI 仍預測主隊贏，導致命中率偏低
+                        injury_data = features.get('injuries', {})
+                        if injury_data and league and league.upper() in ('MLB', 'NBA', 'WNBA'):
+                            home_injuries = len(injury_data.get('home', []))
+                            away_injuries = len(injury_data.get('away', []))
+                            injury_diff = home_injuries - away_injuries
+                            
+                            injury_adjustment = 0.0
+                            injury_log = []
+                            
+                            # 傷兵差距 > 3 人才調整（避免小差距過度干擾）
+                            if abs(injury_diff) > 3:
+                                # 每多 1 個傷兵，調整 2%（線性），最多調整 10%
+                                injury_adjustment = 0.02 * min(abs(injury_diff) - 3, 5)
+                                
+                                if injury_diff > 0:
+                                    # 主隊傷兵更多，下修主隊勝率
+                                    injury_adjustment = -injury_adjustment
+                                    injury_log.append(f"主隊傷兵多{injury_diff}人 → 勝率調整 {injury_adjustment:+.2f}")
+                                else:
+                                    # 客隊傷兵更多，上修主隊勝率
+                                    injury_log.append(f"客隊傷兵多{abs(injury_diff)}人 → 勝率調整 {injury_adjustment:+.2f}")
+                                
+                                # 應用調整
+                                if injury_adjustment != 0.0:
+                                    home_prob = max(0.30, min(0.85, home_prob + injury_adjustment))
+                                    away_prob = 1.0 - home_prob
+                                    result["home_win_probability"] = round(home_prob, 4)
+                                    result["away_win_probability"] = round(away_prob, 4)
+                                    
+                                    existing_summary = result.get("summary", "") or ""
+                                    adjustment_note = "\n\n[傷兵校正] " + "; ".join(injury_log)
+                                    if "[傷兵校正]" not in existing_summary:
+                                        result["summary"] = existing_summary + adjustment_note
+                                    print(f" 🏥 Recipe 8 傷兵調整：{injury_log}")
+
+
                 # 信心指數標準化: 若 Ollama 回傳 0~1 分數則轉換為 1~10 評分
                 raw_conf = float(result.get("confidence", 0.0))
                 if raw_conf <= 1.0:
