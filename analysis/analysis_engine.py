@@ -2073,7 +2073,7 @@ Park Factor: {pf:.2f} ({park_interp})
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.5,
-            "max_tokens": 11796,  # 9830 * 1.2 = 11796（再提高 20% 避免 reasoning 過長導致 JSON 截斷）
+            "max_tokens": 16000,  # 9830 * 1.6 ≈ 16000（再提高緩衝，從根本減少 reasoning 過長導致 JSON 截斷；主模型與 fallback 共用）
             "stream": False
         }
         headers = {
