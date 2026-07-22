@@ -577,6 +577,49 @@ class MLBDataFetcher:
             print(f"  ⚠ Store team stats error: {e}")
             self.conn.rollback()
 
+    def get_bullpen_stats(self, team_name):
+        """取得 MLB 球隊牛棚（reliever-only）整季統計
+        使用 MLB Stats API /teams/{id}/stats 的 situationCodes=R 參數
+        （R = Relief Pitcher）
+
+        回傳：{'era': float, 'whip': float, 'k_per_9': float, 'bb_per_9': float, 'games': int, 'ip': float}
+        若失敗回傳 None"""
+        try:
+            mlb_id = self.get_mlb_team_id_by_name(team_name)
+            if not mlb_id:
+                return None
+            url = f"{MLB_API_BASE}/teams/{mlb_id}/stats?stats=season&season=2026&group=pitching&sportId=1&situationCodes=R"
+            resp = self.session.get(url, timeout=10)
+            if resp.status_code != 200:
+                return None
+            data = resp.json()
+            splits = data.get('stats', [{}])[0].get('splits', [])
+            if not splits:
+                return None
+            s = splits[0].get('stat', {})
+            er = s.get('earnedRuns', 0) or 0
+            outs = s.get('outs', 0) or 0
+            ip = outs / 3
+            h = s.get('hits', 0) or 0
+            bb = s.get('baseOnBalls', 0) or 0
+            k = s.get('strikeOuts', 0) or 0
+            bf = s.get('battersFaced', 0) or 0
+            games = s.get('gamesPlayed', 0) or 0
+            era = round(er * 9 / ip, 2) if ip > 0 else 0
+            whip = round((bb + h) / ip, 3) if ip > 0 else 0
+            self.fetched_sources.append("statsapi.mlb.com")
+            return {
+                'era': era,
+                'whip': whip,
+                'k_per_9': round(k * 9 / ip, 1) if ip > 0 else 0,
+                'bb_per_9': round(bb * 9 / ip, 1) if ip > 0 else 0,
+                'games': games,
+                'ip': round(ip, 1),
+            }
+        except Exception as e:
+            print(f"  ⚠ get_bullpen_stats error ({team_name}): {e}")
+            return None
+
     def close(self):
         if hasattr(self, 'cur') and self.cur and not self.cur.closed:
             self.cur.close()

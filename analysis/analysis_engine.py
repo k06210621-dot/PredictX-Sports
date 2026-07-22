@@ -698,6 +698,27 @@ class AnalysisEngine:
                     elif ap.get('name'):
                         print(f"  ⚾ Away SP: {ap['name']} (stats 尚未公布)")
                 fetcher.close()
+
+                # 🆕 P0#2: MLB 牛棚 ERA（從 MLB Stats API /teams/{id}/stats?stats=season&group=pitching&situationCodes=R）
+                try:
+                    from mlb_data_fetcher import MLBDataFetcher as MLBDF
+                    bp_fetcher = MLBDF(conn=self.conn)
+                    home_bullpen = bp_fetcher.get_bullpen_stats(home_name)
+                    away_bullpen = bp_fetcher.get_bullpen_stats(away_name)
+                    if home_bullpen or away_bullpen:
+                        features['bullpen'] = {
+                            'home': home_bullpen or {},
+                            'away': away_bullpen or {},
+                        }
+                        h_era = home_bullpen.get('era', '?') if home_bullpen else '?'
+                        a_era = away_bullpen.get('era', '?') if away_bullpen else '?'
+                        h_ip = home_bullpen.get('ip', 0) if home_bullpen else 0
+                        a_ip = away_bullpen.get('ip', 0) if away_bullpen else 0
+                        print(f"  🐂 Bullpen: {home_name} RP ERA={h_era} ({h_ip} IP), {away_name} RP ERA={a_era} ({a_ip} IP)")
+                    bp_fetcher.close()
+                except Exception as bp_err:
+                    print(f"  ⚠ Bullpen stats fetch error: {bp_err}")
+
             except Exception as e:
                 print(f"  ⚠ MLB data fetch error: {e}")
                 self.conn.rollback()
@@ -1029,6 +1050,83 @@ class AnalysisEngine:
                 fetcher2.close()
             except Exception as e:
                 print(f"  ⚠ CPBL starting pitcher fetch error: {e}")
+
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # P0#1: 休息天數 / 背靠背分析（NBA/MLB 影響最大）
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # 從 games 表計算兩隊在前 N 天的出賽紀錄
+        # NBA 背靠背勝率降 ~39%，MLB 也有牛棚消耗效應
+        try:
+            match_date = game.get('match_date')
+            if match_date and league in ('MLB', 'NBA', 'WNBA', 'NPB', 'CPBL'):
+                def _get_team_rest_days(team_id, match_date, league):
+                    """計算一支球隊在 match_date 之前的連續出賽天數和休息天數"""
+                    import datetime as _dt
+                    if isinstance(match_date, str):
+                        target = _dt.datetime.strptime(match_date[:10], '%Y-%m-%d').date()
+                    else:
+                        target = match_date.date() if hasattr(match_date, 'date') else match_date
+
+                    # 查前 N 天的比賽情況
+                    lookback = 10  # 往前看10天
+                    start = (target - _dt.timedelta(days=lookback)).isoformat()
+                    end = (target - _dt.timedelta(days=1)).isoformat()
+
+                    self.cur.execute("""
+                        SELECT match_date, home_team_score IS NOT NULL as played
+                        FROM predictx.games
+                        WHERE (home_team_id = %(tid)s OR away_team_id = %(tid)s)
+                          AND match_date::date BETWEEN %(start)s AND %(end)s
+                          AND status = 'FINAL'
+                        ORDER BY match_date DESC
+                    """, {"tid": team_id, "start": start, "end": end})
+
+                    days = self.cur.fetchall() or []
+                    # 算連續出賽天數（從 target-1 開始往前算）
+                    consecutive_played = 0
+                    for d in days:
+                        if d['played']:
+                            consecutive_played += 1
+                        else:
+                            break
+
+                    # 最後一次出賽的日期
+                    last_game_date = None
+                    rest_days = None
+                    for d in days:
+                        if d['played']:
+                            last_game_date = d['match_date'].date() if hasattr(d['match_date'], 'date') else _dt.datetime.strptime(str(d['match_date'])[:10], '%Y-%m-%d').date()
+                            rest_days = (target - last_game_date).days - 1
+                            break
+
+                    if last_game_date is None:
+                        rest_days = None  # 本季首次出賽或資料不足
+
+                    return {
+                        'rest_days': rest_days,
+                        'consecutive_games': consecutive_played,
+                        'last_game_date': last_game_date.isoformat() if last_game_date else None,
+                    }
+
+                home_rest = _get_team_rest_days(game['home_team_id'], match_date, league)
+                away_rest = _get_team_rest_days(game['away_team_id'], match_date, league)
+
+                features['rest'] = {
+                    'home': home_rest,
+                    'away': away_rest,
+                }
+
+                # 計算差值：正值=主隊休息多
+                if home_rest.get('rest_days') is not None and away_rest.get('rest_days') is not None:
+                    rest_diff = home_rest['rest_days'] - away_rest['rest_days']
+                    features['rest']['diff'] = rest_diff
+                    h_label = f"休{home_rest['rest_days']}天" if home_rest['rest_days'] > 0 else ("背靠背" if home_rest['rest_days'] == 0 else f"休?天")
+                    a_label = f"休{away_rest['rest_days']}天" if away_rest['rest_days'] > 0 else ("背靠背" if away_rest['rest_days'] == 0 else f"休?天")
+                    print(f"  🕐 Rest days: {game['home_team_en']}={h_label}, {game['away_team_en']}={a_label}, diff={rest_diff:+d}")
+
+        except Exception as e:
+            print(f"  ⚠ Rest days computation error: {e}")
+            features['rest'] = {}
         
         return features
 
@@ -1407,7 +1505,81 @@ class AnalysisEngine:
 降雨: {weather_data['precip_mm']}mm"""
         else:
             weather_section = ""
-        
+
+        # 🕐 休息天數分析段落（所有聯盟）
+        rest_data = features.get('rest', {})
+        if rest_data and (rest_data.get('home') or rest_data.get('away')):
+            h_rest = rest_data.get('home', {})
+            a_rest = rest_data.get('away', {})
+            rest_diff = rest_data.get('diff')
+
+            h_rest_days = h_rest.get('rest_days')
+            a_rest_days = a_rest.get('rest_days')
+
+            def _rest_label(days):
+                if days is None:
+                    return "資料不足"
+                if days == 0:
+                    return "背靠背（昨日剛出賽）"
+                if days == 1:
+                    return "休1天"
+                return f"休{days}天"
+
+            rest_section = "===== 休息天數（來源：games 表計算）=====\n"
+            rest_section += f"主隊 {home_team}: {_rest_label(h_rest_days)}\n"
+            rest_section += f"客隊 {away_team}: {_rest_label(a_rest_days)}\n"
+
+            if rest_diff is not None:
+                rest_section += f"休息天數差: {rest_diff:+d}（正=主隊多休）\n"
+
+            rest_section += """
+💡 分析指引：
+- 背靠背（連續兩天出賽）對體能與專注力影響極大：NBA 背靠背勝率僅 ~39%，MLB後段牛棚容易崩盤
+- 休1天 vs 背靠背：休息方有明顯體能優勢，勝率差距約 5-8%（NBA）或 3-5%（MLB）
+- 休3天以上：球員可能手感生疏，不一定比休1-2天更好
+- 若雙方休息狀況懸殊（差 ≥3天），請將此納入 Step 2 的體能因子
+"""
+        else:
+            rest_section = ""
+
+        # 🐂 MLB 牛棚 ERA（從 features['bullpen'] 讀取 reliever-only整季數據）
+        bullpen_data = features.get('bullpen', {})
+        if bullpen_data and (bullpen_data.get('home') or bullpen_data.get('away')):
+            h_bp = bullpen_data.get('home', {})
+            a_bp = bullpen_data.get('away', {})
+            h_era = h_bp.get('era')
+            a_era = a_bp.get('era')
+            h_k9 = h_bp.get('k_per_9')
+            a_k9 = a_bp.get('k_per_9')
+            h_bb9 = h_bp.get('bb_per_9')
+            a_bb9 = a_bp.get('bb_per_9')
+            h_ip = h_bp.get('ip')
+            a_ip = a_bp.get('ip')
+
+            bullpen_lines = [f"===== MLB 牛棚數據（後援投手整季統計 | NBA/其盟無此段落）====="]
+            bullpen_lines.append(f"主隊 {home_team} 牛棚: ERA={h_era}, K/9={h_k9}, BB/9={h_bb9}, 投球局數={h_ip}" if h_era else f"主隊 {home_team}: 牛棚數據不足")
+            bullpen_lines.append(f"客隊 {away_team} 牛棚: ERA={a_era}, K/9={a_k9}, BB/9={a_bb9}, IP={a_ip}" if a_era else f"客隊 {away_team}: 牛棚數據不足")
+
+            if h_era is not None and a_era is not None:
+                era_diff = round(float(h_era) - float(a_era), 2)
+                h_better = era_diff < 0  # 負=主隊 era 較低（較好）
+                bullpen_lines.append(f"牛棚 ERA 差: {era_diff:+.2f}（負=主隊牛棚較好）")
+
+                if abs(era_diff) > 0.50:
+                    direction = "主隊" if h_better else "客隊"
+                    magnitude = "明顯優勢" if abs(era_diff) > 1.0 else "小幅優勢"
+                    bullpen_lines.append(f"牛棚影響: {direction}後段有{magnitude}（差距 {abs(era_diff):.1f} ERA）")
+
+            bullpen_lines.append("")
+            bullpen_lines.append("💡 分析指引：")
+            bullpen_lines.append("- 牛棚 ERA 差距達 0.50 以上即有意義，1.00 以上為顯著優勢")
+            bullpen_lines.append("- 牛棚 K/9 高者能在關鍵時刻三振化解危機，封鎖對方後段攻勢")
+            bullpen_lines.append("- 牛棚 BB/9 高者（保送多）在緊張局面容易自爆")
+            bullpen_lines.append("- 若牛棚差距明顯（ERA > 1.0），此因素對勝率影響應高於先發投手")
+            bullpen_section = "\n".join(bullpen_lines)
+        else:
+            bullpen_section = ""
+
         # 🏥 傷兵名單段落
         injury_data = features.get('injuries', {})
         if injury_data and (injury_data.get('home') or injury_data.get('away')):
@@ -1971,6 +2143,8 @@ Park Factor: {pf:.2f} ({park_interp})
 {wnba_advanced_section}
 {npb_section}
 {weather_section}
+{rest_section}
+{bullpen_section}
 {injury_section}
 {cpbl_analysis_guide}
 {home_advantage_note}
