@@ -2619,8 +2619,10 @@ Park Factor: {pf:.2f} ({park_interp})
 
                         # 🆕 [Recipe 8] 傷兵權重調整（MLB/NBA/WNBA）- 2026-07-21 新增
                         # 根據日誌分析：主隊傷兵 9-11 人 vs 客隊 3-7 人，但 AI 仍預測主隊贏，導致命中率偏低
+                        # 注意：用 features.get('league','') 而非外層 league 變數，避免 UnboundLocalError
                         injury_data = features.get('injuries', {})
-                        if injury_data and league and league.upper() in ('MLB', 'NBA', 'WNBA'):
+                        _lg = (features.get('league') or '').upper()
+                        if injury_data and _lg in ('MLB', 'NBA', 'WNBA'):
                             home_injuries = len(injury_data.get('home', []))
                             away_injuries = len(injury_data.get('away', []))
                             injury_diff = home_injuries - away_injuries
