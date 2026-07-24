@@ -459,6 +459,106 @@ class CPBLDataFetcher:
             print(f"  ⚠ get_player_pr_data error: {e}")
             return []
 
+    def _get_ptt_starting_pitchers(self, date_str):
+        """
+        PTT Baseball 板備援 fallback — CPBL 官網 API 掛掉時使用。
+        搜尋 wewe0403 每日發布的 [情報] CPBL M/D 先發投手預告 文章。
+
+        Args:
+            date_str: "yyyy/MM/dd"（如 "2026/07/24"）
+
+        Returns:
+            dict 同 get_today_starting_pitchers 格式，或 None
+        """
+        try:
+            from datetime import datetime as _dt
+            # date_str → 可用於 PTT 搜尋的 "M/D"
+            # 從 "2026/07/24" 提取 "7/24"
+            parts = date_str.split('/')
+            if len(parts) == 3:
+                month = str(int(parts[1]))  # 去掉 leading zero → "7"
+                day = str(int(parts[2]))    # "24"
+                search_md = f"{month}/{day}"
+            else:
+                return None
+
+            print(f"  [CPBL SP fallback] PTT search for CPBL {search_md} 先發投手...", flush=True)
+            # 搜尋 PTT Baseball 板
+            import urllib.parse
+            query = urllib.parse.quote(f"CPBL {search_md} 先發投手")
+            search_url = f"https://www.ptt.cc/bbs/Baseball/search?q={query}"
+            search_resp = self.session.get(search_url, timeout=10)
+            if search_resp.status_code != 200:
+                print(f"  [CPBL SP fallback] PTT search HTTP {search_resp.status_code}", flush=True)
+                return None
+
+            # 提取第一個搜尋結果的文章連結
+            link_m = re.search(
+                r'<a href="(/bbs/Baseball/M\.\d+\.A\.\w+\.html)">\[情報\]\s*CPBL\s*\d+/\d+\s*先發投手',
+                search_resp.text
+            )
+            if not link_m:
+                print(f"  [CPBL SP fallback] No CPBL starter article found on PTT", flush=True)
+                return None
+
+            article_url = "https://www.ptt.cc" + link_m.group(1)
+            print(f"  [CPBL SP fallback] Found article: {article_url}", flush=True)
+            article_resp = self.session.get(article_url, timeout=10)
+            if article_resp.status_code != 200:
+                print(f"  [CPBL SP fallback] Article HTTP {article_resp.status_code}", flush=True)
+                return None
+
+            # 解析文章內文（同 get_today_starting_pitchers 結構）
+            m = re.search(
+                r'<div id="main-content"[^>]*>(.*?)<div class="push"',
+                article_resp.text, re.DOTALL
+            )
+            if not m:
+                print(f"  [CPBL SP fallback] Cannot extract article body", flush=True)
+                return None
+
+            content = m.group(1)
+            # 用 regex 抓所有 team+pitcher+stats 區塊
+            pattern = re.compile(
+                r'<span[^>]*>([^<]+)</span>\s*([^<\n]+)\n\n'
+                r'([\s\S]*?)(?=\n\n\n|\n\n<span|$)'
+            )
+            starters = {}
+            for m2 in pattern.finditer(content):
+                team_html = m2.group(1).strip()
+                pitcher = m2.group(2).strip()
+                stats_block = m2.group(3).strip()
+
+                team_cn = re.sub(r'<[^>]+>', '', team_html).strip()
+                team_en = TEAM_MAP.get(team_cn)
+                if not team_en or not pitcher:
+                    continue
+
+                # 提取 ERA，不一定有（例如 TBD 時）
+                era_m = re.search(r'ERA:(\d+\.?\d*)', stats_block)
+                win_m = re.search(r'(\d+)勝', stats_block)
+                loss_m = re.search(r'(\d+)敗', stats_block)
+
+                entry = {'name': pitcher}
+                if era_m:
+                    entry['era'] = era_m.group(1)
+                if win_m:
+                    entry['wins'] = win_m.group(1)
+                if loss_m:
+                    entry['losses'] = loss_m.group(1)
+                starters[team_en] = entry
+
+            if starters:
+                print(f"  [CPBL SP fallback] PTT parsed {len(starters)} starters", flush=True)
+                return starters
+            else:
+                print(f"  [CPBL SP fallback] Parsed 0 starters from article", flush=True)
+                return None
+
+        except Exception as e:
+            print(f"  [CPBL SP fallback] Error: {e}", flush=True)
+            return None
+
     def get_today_starting_pitchers(self, match_date=None):
         """
         從 CPBL 官網 API 取得當日比賽的先發投手名單
@@ -494,8 +594,8 @@ class CPBLDataFetcher:
                 home_resp.text
             )
             if not token_match:
-                print(f"  [CPBL SP] Token not found in homepage HTML", flush=True)
-                return None
+                print(f"  [CPBL SP] Token not found in homepage HTML, fallback to PTT...", flush=True)
+                return self._get_ptt_starting_pitchers(date_str)
             token = token_match.group(1)
             print(f"  [CPBL SP] Token found, calling API for date={date_str}", flush=True)
 
@@ -538,13 +638,15 @@ class CPBLDataFetcher:
                             headers={"Referer": "https://www.cpbl.com.tw/"},
                         )
                         if resp.status_code != 200:
-                            print(f"  [CPBL SP] Retry still HTTP {resp.status_code}", flush=True)
-                            return None
+                            print(f"  [CPBL SP] Retry still HTTP {resp.status_code}, fallback to PTT...", flush=True)
+                            return self._get_ptt_starting_pitchers(date_str)
                         print(f"  [CPBL SP] Retry succeeded with HTTP {resp.status_code}", flush=True)
                     else:
-                        return None
+                        print(f"  [CPBL SP] Token lost on retry, fallback to PTT...", flush=True)
+                        return self._get_ptt_starting_pitchers(date_str)
                 else:
-                    return None
+                    print(f"  [CPBL SP] API HTTP {resp.status_code}, fallback to PTT...", flush=True)
+                    return self._get_ptt_starting_pitchers(date_str)
 
             result = resp.json()
             if not result.get('Success'):
