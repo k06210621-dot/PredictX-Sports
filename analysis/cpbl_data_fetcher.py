@@ -508,6 +508,25 @@ class CPBLDataFetcher:
                 print(f"  [CPBL SP fallback] Article HTTP {article_resp.status_code}", flush=True)
                 return None
 
+            # 🆕 [2026-07-24] 年份驗證：避免跨年抓到去年同日的舊文章
+            # PTT 搜尋結果會列出所有同名文章，若當年文章尚未發布，
+            # 第一筆結果可能是去年的，會污染資料。
+            # 解析 article meta 的時間戳，確保年份 = 當前年份
+            from datetime import datetime as _dt
+            current_year = _dt.now().year
+            time_m = re.search(
+                r'<span class="article-meta-value">([A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+\d+:\d+:\d+\s+(\d{4}))</span>',
+                article_resp.text
+            )
+            if time_m:
+                article_year = int(time_m.group(2))
+                if article_year != current_year:
+                    print(f"  [CPBL SP fallback] Article year {article_year} != {current_year}, ignoring stale data", flush=True)
+                    return None
+            else:
+                # 若無法解析年份，保守起見放行（避免因 meta 格式變化而完全失效）
+                print(f"  [CPBL SP fallback] Could not parse article year, proceeding cautiously", flush=True)
+
             # 解析文章內文（同 get_today_starting_pitchers 結構）
             m = re.search(
                 r'<div id="main-content"[^>]*>(.*?)<div class="push"',

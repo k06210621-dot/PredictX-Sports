@@ -47,7 +47,8 @@ def _normalize_team_name(english_name: str) -> str:
 
 class CPBLIngester(BaseIngester):
     league_code = "CPBL"
-    league_days_ahead = 2
+    league_days_ahead = 1  # CPBL 先發投手通常在開打前 1.5 天發布（PTT wewe0403 預告）；
+                            # 抓今天 + 明天（day+0, day+1）即可，day+2 的 SP 還未公布。
     source_name = "thesportsdb_api"
 
     def __init__(self):
