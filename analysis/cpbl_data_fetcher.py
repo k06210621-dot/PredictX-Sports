@@ -421,6 +421,10 @@ class CPBLDataFetcher:
         home_pr = self.get_player_pr_data(home_team_name, top_n=10) or []
         away_pr = self.get_player_pr_data(away_team_name, top_n=10) or []
 
+        # 🆕 [2026-07-25] 投手被打 PR 數據（從 cpbl_pitcher_against_pr 表，越低 = 投手表現越好）
+        home_pa_pr = self.get_pitcher_against_pr_data(home_team_name, top_n=10) or []
+        away_pa_pr = self.get_pitcher_against_pr_data(away_team_name, top_n=10) or []
+
         return {
             "home_team_name": home_team_name,
             "away_team_name": away_team_name,
@@ -428,6 +432,7 @@ class CPBLDataFetcher:
             "hitting_leaders": {"home": home_hitters[:5], "away": away_hitters[:5]},
             "top_batters": {"home": home_top5, "away": away_top5},  # 🆕 新增
             "player_pr": {"home": home_pr, "away": away_pr},  # 🆕 PR 進階數據
+            "pitcher_against_pr": {"home": home_pa_pr, "away": away_pa_pr},  # 🆕 投手被打 PR
             "standings": {"home": home_stand, "away": away_stand},
             "pitching": {"home": home_pitch, "away": away_pitch},
             "batting": {"home": home_bat, "away": away_bat},
@@ -457,6 +462,33 @@ class CPBLDataFetcher:
             return list(self.cur.fetchall())
         except Exception as e:
             print(f"  ⚠ get_player_pr_data error: {e}")
+            return []
+
+    def get_pitcher_against_pr_data(self, team_name, top_n=10):
+        """
+        從 predictx.cpbl_pitcher_against_pr 表取球隊的投手被打 PR 數據
+        （越低 = 投手壓制力越強）
+
+        Returns: list of dict，含 player_name, ranking, opponent_avg, opponent_woba, etc.
+        """
+        team_id = self.get_local_team_id(team_name)
+        if not team_id:
+            return []
+        try:
+            self.cur.execute("""
+                SELECT player_name, ranking,
+                       opponent_avg, opponent_obp, opponent_slg, opponent_woba,
+                       exit_velo_avg_kmh, exit_velo_max_kmh, hard_hit_pct,
+                       barrel_count, barrel_pct,
+                       k_pct, bb_pct, whiff_pct, chase_pct
+                FROM predictx.cpbl_pitcher_against_pr
+                WHERE team_id = %s AND season = 2026
+                ORDER BY ranking ASC
+                LIMIT %s
+            """, (team_id, top_n))
+            return list(self.cur.fetchall())
+        except Exception as e:
+            print(f"  ⚠ get_pitcher_against_pr_data error: {e}")
             return []
 
     def _get_ptt_starting_pitchers(self, date_str):

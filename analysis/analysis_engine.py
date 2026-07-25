@@ -1860,6 +1860,49 @@ Park Factor: {pf:.2f} ({park_interp})
                             avg_ev = sum(p.get('exit_velo_max_percentile') or 0 for p in pr_list) / max(len([p for p in pr_list if p.get('exit_velo_max_percentile') is not None]), 1)
                             cpbl_spec += f"\n  → 球隊主力平均: wRC+={avg_wrc:.1f}, OBP={avg_obp:.1f}, EVmax={avg_ev:.1f}"
 
+                # 🆕 [2026-07-25] 投手被打進階數據（Pitcher Batting Against PR，越低越好）
+                pa_pr = cpbl_data.get('pitcher_against_pr') or {}
+                h_pa_list = pa_pr.get('home') or []
+                a_pa_list = pa_pr.get('away') or []
+                if h_pa_list or a_pa_list:
+                    cpbl_spec += "\n\n===== 投手被打進階數據（P打 B-attacking Statcast；數值_越低越好_）====="
+                    cpbl_spec += "\n欄位：對手BA（被打擊率）、對手OBP（被上壘率）、對手SLG（被長打率）、對手wOBA（被打加權上壘率）、被打擊球初速、被打強擊球%、被打出色擊球、被打三振/保送/揮空/追打率"
+                    cpbl_spec += "\n**重要**：這些是「投手被打數據」—— 數值低代表對手難打數據高 = 投手壓制力強。_與打者 PR 方向相反！_"
+                    for side, label in [('home', '主隊'), ('away', '客隊')]:
+                        pa_list = h_pa_list if side == 'home' else a_pa_list
+                        team_label = f"{label} {home_team if side == 'home' else away_team}"
+                        if not pa_list:
+                            continue
+                        cpbl_spec += f"\n{team_label} 投手被打 PR（依排名由高至低）:"
+                        for i, p in enumerate(pa_list[:5], 1):
+                            name = p.get('player_name', '?')
+                            rank = p.get('ranking', '?')
+                            avg = p.get('opponent_avg', '?')
+                            obp = p.get('opponent_obp', '?')
+                            slg = p.get('opponent_slg', '?')
+                            woba = p.get('opponent_woba', '?')
+                            ev_max = p.get('exit_velo_max_kmh', '?')
+                            hard = p.get('hard_hit_pct', '?')
+                            barrel = p.get('barrel_pct', '?')
+                            k = p.get('k_pct', '?')
+                            bb = p.get('bb_pct', '?')
+                            whiff = p.get('whiff_pct', '?')
+                            cpbl_spec += (
+                                f"\n  #{i} {name} (P壓制排名 #{rank}): "
+                                f"對手BA={avg}, 對手OBP={obp}, 對手SLG={slg}, 對手wOBA={woba}, "
+                                f"被打EVmax={ev_max}km/h, 被打Hard%={hard}, 被打Barrel%={barrel}, "
+                                f"K%={k}, BB%={bb}, Whiff%={whiff} （越好）"
+                            )
+                        # 計算團隊投手被打平均壓制力（wOBA 越低越佳）
+                        woba_vals = [float(p['opponent_woba']) for p in pa_list if p.get('opponent_woba') and p['opponent_woba'] != '?']
+                        ev_vals = [float(p['exit_velo_max_kmh']) for p in pa_list if p.get('exit_velo_max_kmh') and p['exit_velo_max_kmh'] != '?']
+                        k_vals = [float(p['k_pct'].rstrip('%')) for p in pa_list if p.get('k_pct') and p['k_pct'] != '?']
+                        if woba_vals:
+                            avg_woba = sum(woba_vals)/len(woba_vals)
+                            avg_ev = sum(ev_vals)/len(ev_vals) if ev_vals else 0
+                            avg_k = sum(k_vals)/len(k_vals) if k_vals else 0
+                            cpbl_spec += f"\n  → 投手被打平均: 對手wOBA={avg_woba:.3f} (越低越好), 被打EVmax={avg_ev:.1f}, K%={avg_k:.1f}%"
+
                 h_stand = cpbl_data.get('standings', {}).get('home', {})
                 a_stand = cpbl_data.get('standings', {}).get('away', {})
                 h_pitch = cpbl_data.get('pitching', {}).get('home', {})
