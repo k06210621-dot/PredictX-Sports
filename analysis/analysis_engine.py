@@ -3277,6 +3277,8 @@ Park Factor: {pf:.2f} ({park_interp})
             "away_win_probability": round(1 - home_prob, 4),
             "confidence": max(1, min(10, round(max(home_prob, 1 - home_prob) * 10))),
             "key_factors": factors[:4],
+            # 🆕 [2026-07-25] Fallback path 也將 features 持久化，避免後續 Prompt injection 失敗
+            "features": features,
             "summary": (
                 f"{features['game_info']['home_team_name']} vs {features['game_info']['away_team_name']}："
                 f"{home_form.get('win_loss', '近期數據不足')}，"
