@@ -382,21 +382,21 @@ class CPBLDataFetcher:
         return {'standings': standings, 'pitching': pitching, 'batting': batting}
 
     def get_local_team_id(self, team_name):
-        # 先用英文名查找 (TheSportsDB 傳入的是英文隊名)
-        self.cur.execute(
-            "SELECT team_id FROM predictx.teams WHERE english_name ILIKE %s AND league='CPBL'",
-            (f'%{team_name}%',)
-        )
-        row = self.cur.fetchone()
-        if row:
-            return row['team_id']
-        # 如果英文名找不到，再用中文名查找
-        self.cur.execute(
-            "SELECT team_id FROM predictx.teams WHERE chinese_name ILIKE %s AND league='CPBL'",
-            (f'%{team_name}%',)
-        )
-        row = self.cur.fetchone()
-        return row['team_id'] if row else None
+            # Try English name first (games use English names like "CTBC Brothers", "Rakuten Monkeys")
+            self.cur.execute(
+                "SELECT team_id FROM predictx.teams WHERE english_name ILIKE %s AND league='CPBL'",
+                (f'%{team_name}%',)
+            )
+            row = self.cur.fetchone()
+            if row:
+                return row['team_id']
+            # Fallback: try Chinese name (for any future Chinese name support)
+            self.cur.execute(
+                "SELECT team_id FROM predictx.teams WHERE chinese_name ILIKE %s AND league='CPBL'",
+                (f'%{team_name}%',)
+            )
+            row = self.cur.fetchone()
+            return row['team_id'] if row else None
 
     def fetch_and_store_game_data(self, game_id, home_team_name, away_team_name):
         players = self.get_players_from_rankings()
