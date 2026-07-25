@@ -382,13 +382,15 @@ class CPBLDataFetcher:
         return {'standings': standings, 'pitching': pitching, 'batting': batting}
 
     def get_local_team_id(self, team_name):
+        # Try Chinese name first, then English name
         self.cur.execute(
-            "SELECT team_id FROM predictx.teams WHERE english_name ILIKE %s AND league='CPBL'",
-            (f'%{team_name.split()[-1]}%',)
+            "SELECT team_id FROM predictx.teams WHERE chinese_name ILIKE %s AND league='CPBL'",
+            (f'%{team_name}%',)
         )
         row = self.cur.fetchone()
         if row:
             return row['team_id']
+        # Fallback: try English name
         self.cur.execute(
             "SELECT team_id FROM predictx.teams WHERE english_name ILIKE %s AND league='CPBL'",
             (f'%{team_name}%',)
