@@ -1945,6 +1945,10 @@ Park Factor: {pf:.2f} ({park_interp})
                         cpbl_spec += line
 
             # 🆕 [2026-07-06] CPBL 當日 SP 個人 stats（從 predictx.player_season_stats）
+            # 🆕 [2026-07-25] 外籍投手/洋將 fallback：若不在 player_season_stats 中，
+            #   從 cpbl_pitcher_against_pr 取 Statcast（對手打擊）數據替代
+            sp_found_names = set()  # 已取到數據的 SP 名稱
+            cpbl_sp_section = ""  # 所有來源的 SP 數據區塊
             if (game.get('home_pitcher_name') or game.get('away_pitcher_name')):
                 cpbl_sp_names = [game.get('home_pitcher_name'), game.get('away_pitcher_name')]
                 cpbl_sp_names = [n for n in cpbl_sp_names if n and n != '尚未公布' and n != 'TBD']
@@ -1995,6 +1999,7 @@ Park Factor: {pf:.2f} ({park_interp})
                                             f"IP={ip}, SO={p_so}, BB={p_bb}, HR={p_hr}, "
                                             f"K/9={k9:.1f}, BB/9={bb9:.1f}, WHIP={whip:.2f}"
                                         )
+                                        sp_found_names.add(pname)
                                     else:
                                         avg = r.get('avg', 0) or 0
                                         obp = r.get('obp', 0) or 0
@@ -2006,11 +2011,50 @@ Park Factor: {pf:.2f} ({park_interp})
                                             f"HR={b_hr}, RBI={b_rbi}"
                                         )
                             if sp_lines:
-                                cpbl_spec += "\n\n===== CPBL 球員個人數據（來源：sportify.tw）=====\n" + "\n".join(sp_lines)
-                                self.log_source("official_api")
-                                print(f"  📊 CPBL SP stats: {len(sp_lines)} players from DB")
+                                cpbl_sp_section = "\n\n===== CPBL 先發投手數據（來源：sportify.tw）=====\n" + "\n".join(sp_lines)
+                        else:
+                            cpbl_sp_section = ""
                     except Exception as e:
                         print(f"  ⚠ CPBL player stats fetch error: {e}")
+                        cpbl_sp_section = ""
+
+                    # 🆕 [2026-07-25] Fallback：不在 sportify_tw 的 SP，從 cpbl_pitcher_against_pr 取 Statcast
+                    missing_sp = [n for n in cpbl_sp_names if n not in sp_found_names]
+                    if missing_sp:
+                        try:
+                            self.cur.execute("""
+                                SELECT player_name, ranking, opponent_avg, opponent_obp, opponent_slg,
+                                       opponent_woba, k_pct, bb_pct, whiff_pct, hard_hit_pct,
+                                       exit_velo_avg_kmh, exit_velo_max_kmh
+                                FROM predictx.cpbl_pitcher_against_pr
+                                WHERE season = 2026
+                                  AND player_name IN %s
+                            """, (tuple(missing_sp),))
+                            pa_rows = self.cur.fetchall() or []
+                            if pa_rows:
+                                pa_lines = []
+                                for r in pa_rows:
+                                    if isinstance(r, dict):
+                                        pa_lines.append(
+                                            f"  [Statcast] {r['player_name']}: "
+                                            f"對手wOBA={r['opponent_woba']}, 對手AVG={r['opponent_avg']}, "
+                                            f"對手SLG={r['opponent_slg']}, K%={r['k_pct']}, BB%={r['bb_pct']}, "
+                                            f"Whiff%={r['whiff_pct']}, Hard%={r['hard_hit_pct']}, "
+                                            f"被打EVmax={r['exit_velo_max_kmh']}km/h"
+                                        )
+                                    else:
+                                        pa_lines.append(
+                                            f"  [Statcast] {r[0]}: 對手wOBA={r[4]}, K%={r[5]}, Whiff%={r[7]}"
+                                        )
+                                if pa_lines:
+                                    cpbl_sp_section = (cpbl_sp_section or "") + "\n\n===== CPBL先發投手 Statcast（來源：cpbl_pitcher_against_pr；數值越低越好）=====\n" + "\n".join(pa_lines)
+                                    self.log_source("official_api")
+                                    print(f"  📊 CPBL SP Statcast fallback: {len(pa_lines)} players")
+                        except Exception as e:
+                            print(f"  ⚠ CPBL SP Statcast fallback error: {e}")
+
+                    if cpbl_sp_section:
+                        cpbl_spec += cpbl_sp_section
 
             # CPBL 今日先發投手（優先用 game 字典的 lottonavi/手動資料，其次用 cpbl.com.tw 抓取資料）
             cpbl_starters = features.get('cpbl_starting_pitchers', {}) or {}
