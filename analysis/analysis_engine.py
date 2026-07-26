@@ -2144,18 +2144,12 @@ Park Factor: {pf:.2f} ({park_interp})
 - 請根據「數據差距的實際幅度」評分，不要預設立場偏向保守
 """
 
-        # 🆕 [2026-06-24] 主場優勢說明（豐富版，含數字）
-        home_advantage_full = f"""
-| 聯盟 | 歷史主場勝率 | 換算係數 | 本場幅度 |
-|------|-------------|---------|---------|
-| MLB  | ~53-54%      | +{league_home_adv_const['MLB']:.3f} | 實力接近時主隊 0.51-0.55 |
-| NPB  | ~53-55%      | +{league_home_adv_const['NPB']:.3f} | 接近性同上  |
-| CPBL | ~55-60%      | +{league_home_adv_const['CPBL']:.3f} | 主隊優勢更明顯 |
-| NBA  | ~60%         | +{league_home_adv_const['NBA']:.3f} | NBA 主場優勢最顯著 |
+        # 🆕 [2026-07-26] 主場優勢說明（簡化版 — 移除機械式係數加法，避免與 Step 4 衝突）
+        # 只給歷史對照，實際判斷交由 Step 4 條件式指引
+        home_advantage_full = f"""⚾ 各聯盟歷史主場勝率參考（僅供對照，不用於機率計算）：
+- MLB: ~53-54%  |  NPB: ~53-55%  |  CPBL: ~55-60%  |  NBA: ~60%
 
-**用法**：在 Step 4 計算 home_win_probability 時，加上一個基準 0.50 後，須額外加上該聯盟的主場係數（{league_home_adv:.3f}）。
-範例：若加權平均後是 0.50 + 0.05 (主場優勢) = 0.55，最終值為 0.55（若接近則微調至 0.52-0.58 區間）。
-禁止：忽視主場優勢導致客隊勝率 > 主隊勝率 (五五波對戰時)。
+請在 **Step 4** 的條件式主場指引中依實際對比調整，勿機械式加法。
 """
 
         prompt = f'''
@@ -2862,12 +2856,9 @@ Park Factor: {pf:.2f} ({park_interp})
 
                     if pitcher_adjustment != 0.0:
                         pitcher_adjustment = max(-0.05, min(0.05, pitcher_adjustment))
-                        if home_prob > away_prob:
-                            home_prob = max(0.30, min(0.85, home_prob + pitcher_adjustment))
-                            away_prob = 1.0 - home_prob
-                        else:
-                            away_prob = max(0.30, min(0.85, away_prob - pitcher_adjustment))
-                            home_prob = 1.0 - away_prob
+                        # 🆕 [2026-07-26] 統一操作 home_prob（之前分支對客隊領先時方向混淆）
+                        home_prob = max(0.30, min(0.85, home_prob + pitcher_adjustment))
+                        away_prob = 1.0 - home_prob
                         result["home_win_probability"] = round(home_prob, 4)
                         result["away_win_probability"] = round(away_prob, 4)
                         existing_summary = result.get("summary", "") or ""
@@ -2891,10 +2882,10 @@ Park Factor: {pf:.2f} ({park_interp})
                             injury_adjustment = 0.0
                             injury_log = []
                             
-                            # 傷兵差距 > 3 人才調整（避免小差距過度干擾）
-                            if abs(injury_diff) > 3:
-                                # 每多 1 個傷兵，調整 2%（線性），最多調整 10%
-                                injury_adjustment = 0.02 * min(abs(injury_diff) - 3, 5)
+                            # 🆕 [2026-07-26] 門檻提升至 5 人，每多 1 人調整 1%（原 2% 過猛）
+                            if abs(injury_diff) > 5:
+                                # 每多 1 個傷兵，調整 1%（線性），最多調整 10%
+                                injury_adjustment = 0.01 * min(abs(injury_diff) - 5, 10)
                                 
                                 if injury_diff > 0:
                                     # 主隊傷兵更多，下修主隊勝率
