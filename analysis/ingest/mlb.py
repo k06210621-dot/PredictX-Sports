@@ -30,6 +30,14 @@ class MLBIngester(BaseIngester):
         """從 MLB Stats API 抓指定日期賽程 + 先發投手
         日期格式 YYYY-MM-DD, 回傳 schedule 內所有 games
         """
+        # 🆕 [2026-07-28] 未來日期防護（與 CPBL 一致）：
+        # 雖然 statsapi.mlb.com 對未來賽事只給 Preview 狀態，理論上安全
+        # 但若 ingest 未來修改來源或對應邏輯變化，仍可能誤標 FINAL
+        # 在 normalize 前先過濾：未來日期一律視為 SCHEDULED 且清空比分
+        from datetime import date
+        target_dt = datetime.strptime(target_date, "%Y-%m-%d").date()
+        is_future = target_dt > date.today()
+
         params = {
             "sportId": 1,
             "startDate": target_date,
@@ -61,6 +69,13 @@ class MLBIngester(BaseIngester):
 
                 home_score = teams.get("home", {}).get("score")
                 away_score = teams.get("away", {}).get("score")
+
+                # 🆕 [2026-07-28] 未來日期防護：若 target_date 是未來日期
+                # 一律強制 SCHEDULED 並清空比分，避免 settlement 提早結算
+                if is_future:
+                    status = "SCHEDULED"
+                    home_score = None
+                    away_score = None
 
                 # 先發投手（MLB API 用 hydrate=probablePitcher）
                 home_pitcher = self._parse_pitcher(teams.get("home", {}).get("probablePitcher"))

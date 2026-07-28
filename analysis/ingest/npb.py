@@ -229,6 +229,14 @@ class NPBIngester(BaseIngester):
         else:
             status = "SCHEDULED"
 
+        # 🆕 [2026-07-28] 未來日期防護：若 dt 是未來日期
+        # 一律強制 SCHEDULED 並清空比分
+        from datetime import date
+        if dt.date() > date.today():
+            status = "SCHEDULED"
+            home_score = None
+            away_score = None
+
         return {
             "season": dt.year,
             "match_date": dt.strftime("%Y-%m-%d"),

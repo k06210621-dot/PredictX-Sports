@@ -27,6 +27,9 @@ class WNBAIngester(BaseIngester):
     def fetch_games(self, target_date: str) -> List[Dict[str, Any]]:
         """ESPN scoreboard 用 YYYYMMDD 格式"""
         dt = datetime.strptime(target_date, "%Y-%m-%d")
+        # 🆕 [2026-07-28] 未來日期防護（與 CPBL 一致）
+        from datetime import date
+        is_future = dt.date() > date.today()
         date_param = dt.strftime("%Y%m%d")
         url = f"{ESPN_WNBA_SCOREBOARD}?dates={date_param}"
         resp = self.session.get(url, timeout=20)
@@ -68,6 +71,12 @@ class WNBAIngester(BaseIngester):
                             away_score = score_val
                     except (ValueError, TypeError):
                         pass
+
+            # 🆕 [2026-07-28] 未來日期防護：未來日期一律 SCHEDULED 且清空比分
+            if is_future:
+                mapped = "SCHEDULED"
+                home_score = None
+                away_score = None
 
             games.append({
                 "season": dt.year,

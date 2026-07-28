@@ -50,6 +50,7 @@ class SettlementEngine:
                   AND (ga.analysis_data->'actual_result' IS NULL)
                   AND g.home_team_score IS NOT NULL
                   AND g.away_team_score IS NOT NULL
+                  AND g.match_date <= CURRENT_DATE
             """
         
         self.cur.execute(query)
@@ -177,8 +178,7 @@ class SettlementEngine:
             JOIN predictx.teams ht ON g.home_team_id = ht.team_id
             WHERE LOWER(g.status) IN ('postponed', 'cancelled', 'suspended')
               AND (ga.analysis_data->'actual_result' IS NULL
-                   OR (ga.analysis_data->'actual_result'->>'is_hit') IS NULL
-                   OR (ga.analysis_data->'actual_result'->>'is_hit')::text = 'null')
+                   OR (ga.analysis_data->'actual_result'->>'is_hit') IS NULL)
         """
         try:
             self.cur.execute(query)
