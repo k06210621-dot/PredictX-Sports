@@ -653,6 +653,12 @@ class CPBLDataFetcher:
             print(f"  [CPBL SP] Token found, calling API for date={date_str}", flush=True)
 
             # 2. 呼叫 API 取得當日賽程 + 先發投手
+            # 重要：CPBL 官網對這個 endpoint 要求 Referer + X-Requested-With header，
+            # 否則會回 308 redirect / 404。同時 allow_redirects=True 處理 308。
+            api_headers = {
+                "Referer": "https://www.cpbl.com.tw/",
+                "X-Requested-With": "XMLHttpRequest",
+            }
             resp = self.session.post(
                 "https://www.cpbl.com.tw/home/getdetaillist",
                 data={
@@ -661,17 +667,19 @@ class CPBLDataFetcher:
                     "GameSno": "",
                     "__RequestVerificationToken": token,
                 },
+                headers=api_headers,
                 timeout=15,
                 verify=False,
+                allow_redirects=True,
             )
             if resp.status_code != 200:
                 print(f"  [CPBL SP] API returned HTTP {resp.status_code}", flush=True)
                 # 印出部分 body 方便 Railway 診斷
                 body_preview = (resp.text or '')[:200].replace('\n', ' ')
                 print(f"  [CPBL SP] Body preview: {body_preview}", flush=True)
-                # Retry 一次：重新拿 token 再試
-                if resp.status_code == 404:
-                    print(f"  [CPBL SP] Retrying with fresh token...", flush=True)
+                # Retry 一次：重新拿 token + 完整 header
+                if resp.status_code in (404, 403):
+                    print(f"  [CPBL SP] Retrying with fresh token + AJAX headers...", flush=True)
                     home2 = self.session.get("https://www.cpbl.com.tw/", timeout=10)
                     token_match2 = re.search(
                         r'__RequestVerificationToken"\s*type="hidden"\s*value="([^"]+)"',
@@ -686,9 +694,10 @@ class CPBLDataFetcher:
                                 "GameSno": "",
                                 "__RequestVerificationToken": token_match2.group(1),
                             },
+                            headers=api_headers,
                             timeout=15,
                             verify=False,
-                            headers={"Referer": "https://www.cpbl.com.tw/"},
+                            allow_redirects=True,
                         )
                         if resp.status_code != 200:
                             print(f"  [CPBL SP] Retry still HTTP {resp.status_code}, fallback to PTT...", flush=True)
