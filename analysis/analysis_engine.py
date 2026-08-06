@@ -1018,7 +1018,7 @@ class AnalysisEngine:
             except Exception as e:
                 print(f"  ⚠ CPBL data fetch error: {e}")
 
-            # CPBL 今日先發投手（從 cpbl.com.tw 官網 API）— 獨立區塊，不受上方 try 影響
+            # CPBL 今日先發投手（從 stats.cpbl.com.tw + cpbl.com.tw gamedetail）— 獨立區塊，不受上方 try 影響
             try:
                 from cpbl_data_fetcher import CPBLDataFetcher
                 fetcher2 = CPBLDataFetcher()
@@ -1029,8 +1029,17 @@ class AnalysisEngine:
                 cpbl_starters = fetcher2.get_today_starting_pitchers(match_date)
                 if cpbl_starters:
                     features['cpbl_starting_pitchers'] = cpbl_starters
-                    h_sp = cpbl_starters.get(sp_home_name, {})
-                    a_sp = cpbl_starters.get(sp_away_name, {})
+
+                    # 【2026-08-06 更新】CPBL starter keys 現在是中文隊名（ex: "味全龍"），
+                    # 而 game dict 給的是英文隊名（ex: "Wei Chuan Dragons"），
+                    # 用 cpbl_data_fetcher.TEAM_MAP 反查做對應
+                    from cpbl_data_fetcher import TEAM_MAP as _CPBL_TEAM_MAP
+                    en_to_cn = {v: k for k, v in _CPBL_TEAM_MAP.items()}
+                    home_cn = en_to_cn.get(sp_home_name, sp_home_name)
+                    away_cn = en_to_cn.get(sp_away_name, sp_away_name)
+
+                    h_sp = cpbl_starters.get(home_cn, {})
+                    a_sp = cpbl_starters.get(away_cn, {})
                     h_name = h_sp.get('name', 'TBD') if h_sp else 'TBD'
                     a_name = a_sp.get('name', 'TBD') if a_sp else 'TBD'
                     print(f"  🏆 CPBL starting pitchers: {sp_home_name}={h_name}, {sp_away_name}={a_name}")

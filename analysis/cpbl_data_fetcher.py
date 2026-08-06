@@ -614,147 +614,172 @@ class CPBLDataFetcher:
 
     def get_today_starting_pitchers(self, match_date=None):
         """
-        從 CPBL 官網 API 取得當日比賽的先發投手名單
+        取得 CPBL 今日一軍先發投手（含 acnt 代碼）
+
+        【2026-08-06 更新】CPBL 官網 /home/getdetaillist API 已廢除（回 404）。
+        改為兩步驟：
+          1) stats.cpbl.com.tw/schedule/{YYYY-MM-DD} 取得當日所有比賽 (含 gameSno、KindCode)
+          2) 對每場一軍比賽呼叫 cpbl.com.tw/home/gamedetail (Year+GameSno+KindCode)
+             取得 CurtGameDetailJson，內含 VisitingPitcherData / HomePitcherData[0].Name
+             以及 VisitingFirstAcnt / HomeFirstAcnt。
+        若 stats.cpbl.com.tw 抓不到、或 gamedetail 全失敗，fallback 到 PTT。
 
         Args:
             match_date: datetime.date 或 "yyyy/MM/dd" 格式字串（預設為今天台北時間）
 
         Returns:
-            dict: { "home_team_en": {"name": "投手名", "acnt": "..."},
-                    "away_team_en": {"name": "投手名", "acnt": "..."} }
+            dict: { "中文隊名": {"name": "投手中文名", "acnt": "10位字串"}, ... }
             若無資料或失敗回傳 None
         """
         from datetime import date
 
         if match_date is None:
             match_date = date.today()
+        # 統一成 YYYY-MM-DD（stats.cpbl.com.tw 用這個格式）
         if hasattr(match_date, 'strftime'):
-            date_str = match_date.strftime('%Y/%m/%d')
+            date_str = match_date.strftime('%Y-%m-%d')
         else:
-            date_str = str(match_date).replace('-', '/')
+            date_str = str(match_date).replace('/', '-')
 
         try:
-            # 1. 重新取得首頁以獲取最新的 __RequestVerificationToken
-            # 使用 requests + verify=False 繞過 Railway SSL 限制
-            print(f"  [CPBL SP] Fetching cpbl.com.tw homepage for token...", flush=True)
-            home_resp = self.session.get("https://www.cpbl.com.tw/", timeout=10)
-            if home_resp.status_code != 200:
-                print(f"  [CPBL SP] Homepage returned HTTP {home_resp.status_code}", flush=True)
-                return None
+            # 1. 從 stats.cpbl.com.tw 取得當日所有比賽列表
+            print(f"  [CPBL SP] Fetching stats.cpbl.com.tw/schedule/{date_str}...", flush=True)
+            sched_resp = self.session.get(
+                f'https://stats.cpbl.com.tw/schedule/{date_str}',
+                timeout=10,
+            )
+            if sched_resp.status_code != 200 or len(sched_resp.text) < 1000:
+                print(f"  [CPBL SP] stats schedule HTTP {sched_resp.status_code}, fallback to PTT...", flush=True)
+                return self._get_ptt_starting_pitchers(date_str.replace('-', '/'))
 
+            text = sched_resp.text
+            games_idx = text.find('games')
+            array_start = text.find('[{', games_idx)
+            if array_start < 0:
+                print(f"  [CPBL SP] No games array in schedule page, fallback to PTT...", flush=True)
+                return self._get_ptt_starting_pitchers(date_str.replace('-', '/'))
+
+            # 找匹配的 ] 結束位置
+            bracket = 0
+            end_idx = array_start
+            for i, c in enumerate(text[array_start:]):
+                if c == '[':
+                    bracket += 1
+                elif c == ']':
+                    bracket -= 1
+                    if bracket == 0:
+                        end_idx = array_start + i + 1
+                        break
+
+            # 反轉義並 parse JSON
+            games_raw = text[array_start:end_idx].replace('\\"', '"')
+            try:
+                games = json.loads(games_raw)
+            except json.JSONDecodeError as e:
+                print(f"  [CPBL SP] JSON parse error: {e}, fallback to PTT...", flush=True)
+                return self._get_ptt_starting_pitchers(date_str.replace('-', '/'))
+
+            # 2. 取得 CPBL 官網 __RequestVerificationToken
+            home_resp = self.session.get('https://www.cpbl.com.tw/', timeout=10)
             token_match = re.search(
-                r'__RequestVerificationToken"\s*type="hidden"\s*value="([^"]+)"',
+                r'__RequestVerificationToken[^>]*value="([^"]+)"',
                 home_resp.text
             )
-            if not token_match:
-                print(f"  [CPBL SP] Token not found in homepage HTML, fallback to PTT...", flush=True)
-                return self._get_ptt_starting_pitchers(date_str)
-            token = token_match.group(1)
-            print(f"  [CPBL SP] Token found, calling API for date={date_str}", flush=True)
+            token = token_match.group(1) if token_match else ''
+            if not token:
+                print(f"  [CPBL SP] Token not found, fallback to PTT...", flush=True)
+                return self._get_ptt_starting_pitchers(date_str.replace('-', '/'))
 
-            # 2. 呼叫 API 取得當日賽程 + 先發投手
-            # 重要：CPBL 官網對這個 endpoint 要求 Referer + X-Requested-With header，
-            # 否則會回 308 redirect / 404。同時 allow_redirects=True 處理 308。
-            api_headers = {
-                "Referer": "https://www.cpbl.com.tw/",
-                "X-Requested-With": "XMLHttpRequest",
-            }
-            resp = self.session.post(
-                "https://www.cpbl.com.tw/home/getdetaillist",
-                data={
-                    "GameDate": date_str,
-                    "KindCode": "A",
-                    "GameSno": "",
-                    "__RequestVerificationToken": token,
-                },
-                headers=api_headers,
-                timeout=15,
-                verify=False,
-                allow_redirects=True,
-            )
-            if resp.status_code != 200:
-                print(f"  [CPBL SP] API returned HTTP {resp.status_code}", flush=True)
-                # 印出部分 body 方便 Railway 診斷
-                body_preview = (resp.text or '')[:200].replace('\n', ' ')
-                print(f"  [CPBL SP] Body preview: {body_preview}", flush=True)
-                # Retry 一次：重新拿 token + 完整 header
-                if resp.status_code in (404, 403):
-                    print(f"  [CPBL SP] Retrying with fresh token + AJAX headers...", flush=True)
-                    home2 = self.session.get("https://www.cpbl.com.tw/", timeout=10)
-                    token_match2 = re.search(
-                        r'__RequestVerificationToken"\s*type="hidden"\s*value="([^"]+)"',
-                        home2.text
-                    )
-                    if token_match2:
-                        resp = self.session.post(
-                            "https://www.cpbl.com.tw/home/getdetaillist",
-                            data={
-                                "GameDate": date_str,
-                                "KindCode": "A",
-                                "GameSno": "",
-                                "__RequestVerificationToken": token_match2.group(1),
-                            },
-                            headers=api_headers,
-                            timeout=15,
-                            verify=False,
-                            allow_redirects=True,
-                        )
-                        if resp.status_code != 200:
-                            print(f"  [CPBL SP] Retry still HTTP {resp.status_code}, fallback to PTT...", flush=True)
-                            return self._get_ptt_starting_pitchers(date_str)
-                        print(f"  [CPBL SP] Retry succeeded with HTTP {resp.status_code}", flush=True)
-                    else:
-                        print(f"  [CPBL SP] Token lost on retry, fallback to PTT...", flush=True)
-                        return self._get_ptt_starting_pitchers(date_str)
-                else:
-                    print(f"  [CPBL SP] API HTTP {resp.status_code}, fallback to PTT...", flush=True)
-                    return self._get_ptt_starting_pitchers(date_str)
-
-            result = resp.json()
-            if not result.get('Success'):
-                print(f"  [CPBL SP] API returned Success=False", flush=True)
-                return None
-
-            games_raw = result.get('GameADetailJson')
-            if not games_raw:
-                print(f"  [CPBL SP] No GameADetailJson in response", flush=True)
-                return None
-            games = json.loads(games_raw)
-            if not games:
-                print(f"  [CPBL SP] Empty games array", flush=True)
-                return None
-
-            print(f"  [CPBL SP] Got {len(games)} games from API", flush=True)
-
-            # 3. 解析每場比賽的先發投手
+            # 3. 對每場一軍 (KindCode=A) 比賽呼叫 gamedetail
             starters = {}
-            for g in games:
-                home_cn = g.get('HomeTeamName', '')
-                away_cn = g.get('VisitingTeamName', '')
-                home_en = TEAM_MAP.get(home_cn, home_cn)
-                away_en = TEAM_MAP.get(away_cn, away_cn)
+            games_a = [g for g in games if g.get('kindCode') == 'A']
+            print(f"  [CPBL SP] Found {len(games_a)} 一軍 games on {date_str}", flush=True)
 
-                home_pitcher = g.get('HomeFirstMover', '')
-                away_pitcher = g.get('VisitingFirstMover', '')
-                home_acnt = g.get('HomeFirstAcnt', '')
-                away_acnt = g.get('VisitingFirstAcnt', '')
+            for g in games_a:
+                gamesno = g.get('gameSno')
+                if not gamesno:
+                    continue
+                params = {
+                    'Year': str(g.get('Year', 2026)),
+                    'GameSno': str(gamesno),
+                    'KindCode': 'A',
+                    '__RequestVerificationToken': token,
+                }
+                api_headers = {
+                    'Referer': 'https://www.cpbl.com.tw/',
+                    'X-Requested-With': 'XMLHttpRequest',
+                }
+                gd_resp = self.session.post(
+                    'https://www.cpbl.com.tw/home/gamedetail',
+                    data=params,
+                    headers=api_headers,
+                    timeout=10,
+                    verify=False,
+                )
+                if gd_resp.status_code != 200:
+                    print(f"  [CPBL SP] gamedetail HTTP {gd_resp.status_code} for gameSno={gamesno}", flush=True)
+                    continue
+                try:
+                    gd_data = gd_resp.json()
+                except Exception:
+                    continue
+                if not gd_data.get('Success'):
+                    continue
 
-                if home_pitcher:
-                    starters[home_en] = {
-                        'name': home_pitcher,
-                        'acnt': home_acnt,
-                    }
-                if away_pitcher:
-                    starters[away_en] = {
-                        'name': away_pitcher,
-                        'acnt': away_acnt,
-                    }
+                detail_json = gd_data.get('CurtGameDetailJson', '{}')
+                try:
+                    detail = json.loads(detail_json)
+                except json.JSONDecodeError:
+                    continue
 
-            return starters if starters else None
+                home_team = detail.get('HomeTeamName') or ''
+                away_team = detail.get('VisitingTeamName') or ''
+
+                home_pitchers = detail.get('HomePitcherData') or []
+                away_pitchers = detail.get('VisitingPitcherData') or []
+
+                # CPBL gamedetail 在未開打時 HomeTeamName/VisitingTeamName 為 None，
+                # 改從 PitcherData[0].TeamAbbrName 取得中文隊名
+                home_pname = home_pitchers[0].get('Name', '') if home_pitchers else ''
+                away_pname = away_pitchers[0].get('Name', '') if away_pitchers else ''
+
+                if not home_team and home_pitchers:
+                    home_team = home_pitchers[0].get('TeamAbbrName', '')
+                if not away_team and away_pitchers:
+                    away_team = away_pitchers[0].get('TeamAbbrName', '')
+
+                home_acnt = (detail.get('HomeFirstAcnt') or '').strip()
+                away_acnt = (detail.get('VisitingFirstAcnt') or '').strip()
+
+                # 若 FirstAcnt 空但 PitcherData 有 acnt，用 PitcherData 的
+                if not home_acnt and home_pitchers:
+                    home_acnt = home_pitchers[0].get('Acnt', '')
+                if not away_acnt and away_pitchers:
+                    away_acnt = away_pitchers[0].get('Acnt', '')
+
+                if home_team and home_pname:
+                    starters[home_team] = {'name': home_pname, 'acnt': home_acnt}
+                if away_team and away_pname:
+                    starters[away_team] = {'name': away_pname, 'acnt': away_acnt}
+
+            if starters:
+                print(f"  [CPBL SP] Got {len(starters)} starters via stats.cpbl.com.tw + gamedetail", flush=True)
+                for team, sp in starters.items():
+                    print(f"    {team}: {sp['name']} (acnt={sp['acnt']})", flush=True)
+                return starters
+
+            print(f"  [CPBL SP] No starters found, fallback to PTT...", flush=True)
+            return self._get_ptt_starting_pitchers(date_str.replace('-', '/'))
 
         except Exception as e:
-            print(f"  ⚠ CPBL starting pitcher fetch error: {e}")
-            return None
+            print(f"  ⚠ CPBL starting pitcher fetch error: {e}", flush=True)
+            try:
+                return self._get_ptt_starting_pitchers(
+                    match_date.strftime('%Y/%m/%d') if hasattr(match_date, 'strftime')
+                    else str(match_date).replace('-', '/')
+                )
+            except Exception:
+                return None
 
     def close(self):
         try:
