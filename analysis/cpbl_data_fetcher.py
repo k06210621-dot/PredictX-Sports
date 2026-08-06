@@ -622,6 +622,10 @@ class CPBLDataFetcher:
           2) 對每場一軍比賽呼叫 cpbl.com.tw/home/gamedetail (Year+GameSno+KindCode)
              取得 CurtGameDetailJson，內含 VisitingPitcherData / HomePitcherData[0].Name
              以及 VisitingFirstAcnt / HomeFirstAcnt。
+
+        【2026-08-06 v2】PredictX-Sports (gunicorn) 連出 CPBL 會被 HiNetCDN 阻擋 (404)，
+        若環境變數 CPBL_PROXY_URL 有設定，優先透過內部代理服務（例如 PredictX-All-Ingest
+        內的 serve_cpbl.py）呼叫，利用 cron 容器的 egress IP。
         若 stats.cpbl.com.tw 抓不到、或 gamedetail 全失敗，fallback 到 PTT。
 
         Args:
@@ -640,6 +644,15 @@ class CPBLDataFetcher:
             date_str = match_date.strftime('%Y-%m-%d')
         else:
             date_str = str(match_date).replace('/', '-')
+
+        # 【2026-08-06】若設定 CPBL_PROXY_URL，優先透過內部代理服務呼叫
+        # PredictX-Sports (gunicorn) 連 CPBL 會被阻擋 404，需借用 All-Ingest 的 IP
+        proxy_url = os.environ.get('CPBL_PROXY_URL', '').strip()
+        if proxy_url:
+            internal_secret = os.environ.get('INTERNAL_SECRET', '')
+            return self._get_today_starting_pitchers_via_proxy(
+                proxy_url, internal_secret, date_str
+            )
 
         try:
             # 1. 從 stats.cpbl.com.tw 取得當日所有比賽列表
@@ -800,6 +813,37 @@ class CPBLDataFetcher:
                 )
             except Exception:
                 return None
+
+    def _get_today_starting_pitchers_via_proxy(self, proxy_url, internal_secret, date_str):
+        """透過內部 CPBL proxy 抓取先發（PredictX-All-Ingest 容器內的 serve_cpbl.py）
+
+        Args:
+            proxy_url: 例如 http://predictx-all-ingest.railway.internal/cpbl/sp
+            internal_secret: INTERNAL_SECRET 環境變數值
+
+        Returns:
+            dict: 同 get_today_starting_pitchers 格式
+        """
+        print(f"  [CPBL SP] Using proxy at {proxy_url}", flush=True)
+        try:
+            url = proxy_url.rstrip('/') + f'?date={date_str}'
+            headers = {}
+            if internal_secret:
+                headers['X-Internal-Secret'] = internal_secret
+            r = self.session.get(url, headers=headers, timeout=15)
+            if r.status_code != 200:
+                print(f"  [CPBL SP] Proxy HTTP {r.status_code}", flush=True)
+                return None
+            data = r.json()
+            if data.get('status') != 'ok':
+                print(f"  [CPBL SP] Proxy returned status={data.get('status')}: {data.get('error')}", flush=True)
+                return None
+            starters = data.get('starters', {})
+            print(f"  [CPBL SP] Proxy returned {data.get('count', 0)} starters", flush=True)
+            return starters if starters else None
+        except Exception as e:
+            print(f"  ⚠ CPBL proxy error: {e}", flush=True)
+            return None
 
     def close(self):
         try:
