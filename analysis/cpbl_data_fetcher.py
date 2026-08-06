@@ -679,7 +679,7 @@ class CPBLDataFetcher:
                 print(f"  [CPBL SP] JSON parse error: {e}, fallback to PTT...", flush=True)
                 return self._get_ptt_starting_pitchers(date_str.replace('-', '/'))
 
-            # 2. 取得 CPBL 官網 __RequestVerificationToken
+            # 1. 取得 CPBL 官網 __RequestVerificationToken
             home_resp = self.session.get('https://www.cpbl.com.tw/', timeout=10)
             token_match = re.search(
                 r'__RequestVerificationToken[^>]*value="([^"]+)"',
@@ -695,6 +695,11 @@ class CPBLDataFetcher:
             games_a = [g for g in games if g.get('kindCode') == 'A']
             print(f"  [CPBL SP] Found {len(games_a)} 一軍 games on {date_str}", flush=True)
 
+            # 【2026-08-06】CPBL CDN 對單一 session 連續請求會有 race condition
+            # schedule 抓完馬上打 gamedetail 容易拿到 404，加 sleep + retry 提升成功率
+            import time as _t
+            _t.sleep(1.5)
+
             for g in games_a:
                 gamesno = g.get('gameSno')
                 if not gamesno:
@@ -709,15 +714,30 @@ class CPBLDataFetcher:
                     'Referer': 'https://www.cpbl.com.tw/',
                     'X-Requested-With': 'XMLHttpRequest',
                 }
-                gd_resp = self.session.post(
-                    'https://www.cpbl.com.tw/home/gamedetail',
-                    data=params,
-                    headers=api_headers,
-                    timeout=10,
-                    verify=False,
-                )
-                if gd_resp.status_code != 200:
-                    print(f"  [CPBL SP] gamedetail HTTP {gd_resp.status_code} for gameSno={gamesno}", flush=True)
+                # Retry 機制：最多 3 次 (404/500/連線錯誤都重試)
+                gd_resp = None
+                for attempt in range(3):
+                    try:
+                        gd_resp = self.session.post(
+                            'https://www.cpbl.com.tw/home/gamedetail',
+                            data=params,
+                            headers=api_headers,
+                            timeout=10,
+                            verify=False,
+                        )
+                        if gd_resp.status_code == 200:
+                            break
+                        # 404/5xx: 重試前 sleep 2s (backoff)
+                        print(f"  [CPBL SP] gamedetail HTTP {gd_resp.status_code} for gameSno={gamesno} attempt {attempt+1}/3", flush=True)
+                        if attempt < 2:
+                            _t.sleep(2 + attempt * 2)
+                    except Exception as e:
+                        print(f"  [CPBL SP] gamedetail connection error: {type(e).__name__} attempt {attempt+1}/3", flush=True)
+                        if attempt < 2:
+                            _t.sleep(2 + attempt * 2)
+
+                if gd_resp is None or gd_resp.status_code != 200:
+                    print(f"  [CPBL SP] gamedetail failed for gameSno={gamesno} after 3 attempts", flush=True)
                     continue
                 try:
                     gd_data = gd_resp.json()
