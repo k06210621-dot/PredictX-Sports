@@ -2637,8 +2637,9 @@ Park Factor: {pf:.2f} ({park_interp})
                 )
                 # 🆕 [fix] 摘要太短（< 150 字）視為不完整，走 fallback
                 is_too_short = len(summary) < 150
-                # 🆕 [fix] 摘要太長（> 600 字）截斷為 600 字以內（避免使用者閱讀疲勞）
-                is_too_long = len(summary) > 600
+                # 🆕 [雙語] 摘要太長截斷 — 雙語版本（中+英）合理長度 2000-3000 字，
+                # 上限放寬到 2500 字（從原本 600 提升），避免截斷英文段
+                is_too_long = len(summary) > 2500
                 if is_template:
                     print("  AI returned template, using computed fallback")
                     return None  # 走 fallback 路徑
@@ -2646,9 +2647,9 @@ Park Factor: {pf:.2f} ({park_interp})
                     print(f"  ⚠ AI summary too short ({len(summary)} chars < 150), using fallback for richer analysis")
                     return None  # 走 fallback 路徑（fallback 會被替換為更好的摘要）
                 if is_too_long:
-                    print(f"  ⚠ AI summary too long ({len(summary)} chars > 600), truncating to fit UX limit")
-                    # 截斷到 600 字以內，盡量在句號處切斷
-                    truncated = summary[:600]
+                    print(f"  ⚠ AI summary too long ({len(summary)} chars > 2500), truncating to fit UX limit")
+                    # 截斷到 2500 字以內，盡量在句號處切斷
+                    truncated = summary[:2500]
                     last_period = max(
                         truncated.rfind("。"),
                         truncated.rfind("！"),
