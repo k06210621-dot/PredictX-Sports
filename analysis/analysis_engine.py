@@ -2292,10 +2292,10 @@ Park Factor: {pf:.2f} ({park_interp})
   "away_win_probability": 1 - home_win_probability,
   "confidence": 1-10 整數,
   "key_factors": [
-    "因子1（必須含具體數字/球員名）",
+    "因子1中文（必須含具體數字/球員名）\n因子1英文（same content in English with specific numbers/player names）",
     ...
   ],
-  "summary": "深度分析摘要（180-400字，引用具體球員與數據）",
+  "summary": "【中文分析】深度分析摘要（180-400字，引用具體球員與數據）\n\n【English Analysis】In-depth analysis summary (180-400 words, cite specific players and stats)",
   "predicted_score": "X-Y",
   "radar_chart": {{
     "categories": {json.dumps(current_dims, ensure_ascii=False)},
@@ -2334,11 +2334,11 @@ Park Factor: {pf:.2f} ({park_interp})
         payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": "你是一位頂尖的運動賽事分析師，擁有 20 年球評經驗，為 ESPN/NHK/Sportify 等知名媒體擔任過賽事評論員。你的風格是深入淺出、引用具體數據、語氣專業且有熱情，分析如同電視轉播的賽前分析節目。請根據提供的數據進行深度分析，並嚴格按照要求的 JSON 格式輸出。只輸出 JSON，不要有任何其他文字。"},
+                {"role": "system", "content": "你是一位頂尖的運動賽事分析師，擁有 20 年球評經驗，為 ESPN/NHK/Sportify 等知名媒體擔任過賽事評論員。你的風格是深入淺出、引用具體數據、語氣專業且有熱情，分析如同電視轉播的賽前分析節目。請同時用繁體中文和英文撰寫分析摘要與關鍵因子，兩種語言的內容應涵蓋相同重點但各自獨立完整。請根據提供的數據進行深度分析，並嚴格按照要求的 JSON 格式輸出。只輸出 JSON，不要有任何其他文字。"},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.5,
-            "max_tokens": 16000,  # 9830 * 1.6 ≈ 16000（再提高緩衝，從根本減少 reasoning 過長導致 JSON 截斷；主模型與 fallback 共用）
+            "max_tokens": 20000,  # 雙語輸出（中+英 summary + key_factors）需更多 token，從 16000 提升到 20000
             "stream": False
         }
         headers = {
