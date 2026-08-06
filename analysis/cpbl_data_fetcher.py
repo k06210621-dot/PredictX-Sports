@@ -709,11 +709,19 @@ class CPBLDataFetcher:
             print(f"  [CPBL SP] Found {len(games_a)} 一軍 games on {date_str}", flush=True)
 
             # 【2026-08-06】CPBL CDN 對單一 session 連續請求會有 race condition
-            # schedule 抓完馬上打 gamedetail 容易拿到 404，加 sleep + retry 提升成功率
+            # schedule 抓完馬上打 gamedetail 容易拿到 404。
+            # 【2026-08-06 v2】自動 cron 仍 100% 失敗 → 提高 sleep 時長:
+            #   - schedule → gamedetail 預先 sleep 5s (從 1.5s 提升)
+            #   - 每場比賽間 sleep 3s (避免連續打同一個 endpoint)
+            #   - retry 失敗 backoff 改成 8s/12s (從 2s/4s 提升)
             import time as _t
-            _t.sleep(1.5)
+            _t.sleep(5.0)
 
-            for g in games_a:
+            for idx, g in enumerate(games_a):
+                # 每場比賽之間留 3s 緩衝（第一場不用）
+                if idx > 0:
+                    _t.sleep(3.0)
+
                 gamesno = g.get('gameSno')
                 if not gamesno:
                     continue
@@ -728,6 +736,7 @@ class CPBLDataFetcher:
                     'X-Requested-With': 'XMLHttpRequest',
                 }
                 # Retry 機制：最多 3 次 (404/500/連線錯誤都重試)
+                # 【2026-08-06 v2】backoff 改成 8s/12s (從 2s/4s 提升)
                 gd_resp = None
                 for attempt in range(3):
                     try:
@@ -740,14 +749,14 @@ class CPBLDataFetcher:
                         )
                         if gd_resp.status_code == 200:
                             break
-                        # 404/5xx: 重試前 sleep 2s (backoff)
+                        # 404/5xx: 重試前 sleep (更激進 backoff)
                         print(f"  [CPBL SP] gamedetail HTTP {gd_resp.status_code} for gameSno={gamesno} attempt {attempt+1}/3", flush=True)
                         if attempt < 2:
-                            _t.sleep(2 + attempt * 2)
+                            _t.sleep(8 + attempt * 4)  # 8s, 12s
                     except Exception as e:
                         print(f"  [CPBL SP] gamedetail connection error: {type(e).__name__} attempt {attempt+1}/3", flush=True)
                         if attempt < 2:
-                            _t.sleep(2 + attempt * 2)
+                            _t.sleep(8 + attempt * 4)  # 8s, 12s
 
                 if gd_resp is None or gd_resp.status_code != 200:
                     print(f"  [CPBL SP] gamedetail failed for gameSno={gamesno} after 3 attempts", flush=True)
