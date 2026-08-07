@@ -732,7 +732,8 @@ class CPBLDataFetcher:
                     '__RequestVerificationToken': token,
                 }
                 api_headers = {
-                    'Referer': 'https://www.cpbl.com.tw/',
+                    'Origin': 'https://www.cpbl.com.tw',
+                    'Referer': f'https://www.cpbl.com.tw/box/index?year={g.get("Year", 2026)}&kindCode=A&gameSno={gamesno}',
                     'X-Requested-With': 'XMLHttpRequest',
                 }
                 # Retry 機制：最多 3 次 (404/500/連線錯誤都重試)
