@@ -1804,7 +1804,7 @@ Park Factor: {pf:.2f} ({park_interp})
             home_advantage_note = "\n- MLB 主場優勢約 53-54%。在五五波對戰中，主隊有統計上的小幅優勢，請勿系統性傾向客隊。"
         elif "NPB" in league_upper_check:
             home_advantage_note = "\n- NPB 主場優勢約 53%。對實力接近的對戰，主隊有小幅優勢。"
-        # CPBL 已在 cpbl_analysis_guide 中有「主場勝率約 55-60%」提示
+        # CPBL 已在 cpbl_analysis_guide 中有「主場勝率 ~41%（2026 實證，客隊略佔優）」提示
 
         # CPBL 專屬分析指引 + 球員/戰績數據
         cpbl_analysis_guide = ""
@@ -2156,7 +2156,7 @@ Park Factor: {pf:.2f} ({park_interp})
         # 🆕 [2026-07-26] 主場優勢說明（簡化版 — 移除機械式係數加法，避免與 Step 4 衝突）
         # 只給歷史對照，實際判斷交由 Step 4 條件式指引
         home_advantage_full = f"""⚾ 各聯盟歷史主場勝率參考（僅供對照，不用於機率計算）：
-- MLB: ~53-54%  |  NPB: ~53-55%  |  CPBL: ~55-60%  |  NBA: ~60%
+- MLB: ~53-54%  |  NPB: ~53-55%  |  CPBL: ~41%（2026 實證，客隊反而略佔優）  |  NBA: ~60%
 
 請在 **Step 4** 的條件式主場指引中依實際對比調整，勿機械式加法。
 """
@@ -2704,7 +2704,7 @@ Park Factor: {pf:.2f} ({park_interp})
                     home_advantage_map = {
                         'NBA': 0.58,   # NBA 主場勝率約 60%
                         'WNBA': 0.58,  # WNBA 主場勝率與 NBA 接近
-                        'CPBL': 0.55,  # CPBL 主場勝率約 55-60%
+                        'CPBL': 0.41,  # 2026 實證主場勝率僅約 41%，客隊反而略佔優（推翻舊 55-60% 假設）
                         'MLB': 0.54,   # MLB 主場勝率約 53-54%
                         'NPB': 0.54,   # NPB 主場勝率約 53%
                     }
