@@ -2338,7 +2338,7 @@ Park Factor: {pf:.2f} ({park_interp})
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.5,
-            "max_tokens": 20000,  # 雙語輸出（中+英 summary + key_factors）需更多 token，從 16000 提升到 20000
+            "max_tokens": 32000,  # 2026-08-07: 雙語輸出 + reasoning chain 需要更多 token；20000 仍導致 glm-5.2 JSON 頻繁截斷
             "stream": False
         }
         headers = {
@@ -2371,8 +2371,16 @@ Park Factor: {pf:.2f} ({park_interp})
     
     def _parse_json_response(self, text):
         """解析 AI 回傳的 JSON（包含嵌套結構與中文鍵名處理）"""
+        # 🆕 2026-08-07: 去除 ```json / ``` fence（glm-5.2 偶爾輸出 markdown code block）
+        _stripped = text.strip()
+        if _stripped.startswith('```'):
+            nl = _stripped.find('\n')
+            if nl > 0:
+                end_fence = _stripped.rfind('```')
+                if end_fence > nl:
+                    _stripped = _stripped[nl+1:end_fence].strip()
         try:
-            result = json.loads(text)
+            result = json.loads(_stripped)
         except json.JSONDecodeError:
             # 嘗試從文字中提取 JSON 區塊
             import re
