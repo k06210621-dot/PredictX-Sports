@@ -2338,7 +2338,7 @@ Park Factor: {pf:.2f} ({park_interp})
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.5,
-            "max_tokens": 32000,  # 2026-08-07: 雙語輸出 + reasoning chain 需要更多 token；20000 仍導致 glm-5.2 JSON 頻繁截斷
+            "max_tokens": 48000,  # 2026-08-07: 32000 仍 18% 截斷，提升至 48000 徹底解決 glm-5.2 reasoning chain 過長
             "stream": False
         }
         headers = {
