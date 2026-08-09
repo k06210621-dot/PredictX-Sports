@@ -2705,7 +2705,7 @@ Park Factor: {pf:.2f} ({park_interp})
                         'NBA': 0.58,   # NBA 主場勝率約 60%
                         'WNBA': 0.58,  # WNBA 主場勝率與 NBA 接近
                         'CPBL': 0.51,  # 2026 實證主場勝率約 51%（幾乎無主場優勢）
-                        'MLB': 0.54,   # MLB 主場勝率約 53-54%
+                        'MLB': 0.52,   # MLB 主場勝率約 53-54%（[2026-08-09] 校準下調至 0.52，預期命中率 +3pp）
                         'NPB': 0.54,   # NPB 主場勝率約 53%
                     }
                     home_prob = home_advantage_map.get(lg, 0.53)  # 預設 53% (一般主場優勢)
