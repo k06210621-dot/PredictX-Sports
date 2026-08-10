@@ -3079,6 +3079,33 @@ Park Factor: {pf:.2f} ({park_interp})
                     result["home_win_probability"] = round(home_prob, 4)
                     result["away_win_probability"] = round(away_prob, 4)
 
+                # 🆕 [2026-08-10] 強制一致性檢查：h_prob 與 AI 結語（reasoning.step4）的方向必須一致
+                # 問題：LLM 偶爾在 reasoning.step4_probability_calc 寫「客隊勝」但 h_prob > 0.5 看好主隊
+                # 解法：掃描 step4 reasoning，若偵測到與 h_prob 矛盾的結論，自動調整 h_prob
+                step4_text = ""
+                try:
+                    reasoning = result.get("reasoning")
+                    if isinstance(reasoning, dict):
+                        step4_text = reasoning.get("step4_probability_calc", "") or ""
+                except Exception:
+                    step4_text = ""
+                # 若 AI 在 step4 結論說「客隊勝」/「主隊敗」但 h_prob 看好主隊 → 修正
+                if step4_text and home_prob > 0.5:
+                    kw_negative = ['客隊勝', '客隊略佔', '客隊佔優', '主隊輸', '主隊敗', '客隊小勝', '客隊主推']
+                    if any(k in step4_text for k in kw_negative):
+                        # AI 結論與 h_prob 矛盾：以 AI 結語為準，下修 h_prob
+                        home_prob = max(0.20, 0.5 - 0.05)  # 0.45
+                        away_prob = 1.0 - home_prob
+                        result["home_win_probability"] = round(home_prob, 4)
+                        result["away_win_probability"] = round(away_prob, 4)
+                elif step4_text and home_prob < 0.5:
+                    kw_positive = ['主隊勝', '主隊略佔', '主隊佔優', '客隊輸', '客隊敗', '主隊小勝', '主隊主推']
+                    if any(k in step4_text for k in kw_positive):
+                        home_prob = min(0.80, 0.5 + 0.05)  # 0.55
+                        away_prob = 1.0 - home_prob
+                        result["home_win_probability"] = round(home_prob, 4)
+                        result["away_win_probability"] = round(away_prob, 4)
+
                 # 🆕 校正 predicted_score：確保與勝率一致
                 # 若 home_prob > away_prob → home_score 應 > away_score，反之亦然
                 # 避免「勝率 65% 但預測比分輸球」這類矛盾
