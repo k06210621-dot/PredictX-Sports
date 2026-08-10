@@ -1807,18 +1807,38 @@ Park Factor: {pf:.2f} ({park_interp})
                 current_dims = dims
                 break
 
-        # 🆕 通用主場優勢提示（CPBL 已有，補 MLB/NBA/NPB）
+        # 🆕 [2026-08-10 統一化] 各聯盟主場優勢提示 — 與對照表及 Step 4 完全一致
+        # 設計原則：每聯盟給單一數字 + 對決原則，避免 LLM 困惑
+        # 與 home_advantage_full 對照表及 step4 主場指引使用同一組數字
         league_upper_check = (league or "").upper()
         home_advantage_note = ""
-        if "NBA" in league_upper_check:
-            home_advantage_note = "\n- NBA 主場優勢極為顯著：歷史主場勝率約 60%。對實力接近的對戰，主場球隊勝率應明顯 > 0.5。"
-        elif "WNBA" in league_upper_check:
-            home_advantage_note = "\n- WNBA 主場優勢顯著：歷史主場勝率約 58-60%，與 NBA 接近。對實力接近的對戰，主場球隊勝率應明顯 > 0.5。"
-        elif "MLB" in league_upper_check:
-            home_advantage_note = "\n- MLB 主場優勢約 52%（實證無顯著優勢）。請勿因主場一詞就預設主隊有利——以雙方實際數據對比為準。五五波時主隊僅有極微幅 tiebreaker 優勢（+0.02）。"
+        if "MLB" in league_upper_check:
+            home_advantage_note = (
+                "\n- MLB 主場勝率 ~52%（實證無顯著優勢）。請勿因「主場」一詞就預設主隊有利——"
+                "以雙方實際數據對比為準。五五波時主隊僅有極微幅 tiebreaker（+0.01~+0.02）。"
+            )
         elif "NPB" in league_upper_check:
-            home_advantage_note = "\n- NPB 主場優勢約 53%。對實力接近的對戰，主隊有小幅優勢。"
-        # CPBL 已在 cpbl_analysis_guide 中有「主場勝率約 45%（客隊略佔優勢）」提示
+            home_advantage_note = (
+                "\n- NPB 主場勝率 ~53-55%（小幅優勢）。對實力接近的對戰，主隊有 +0.02~+0.04 微幅調整，"
+                "但勿過度依賴主場——投手差距仍是首要決定因素。"
+            )
+        elif "CPBL" in league_upper_check:
+            home_advantage_note = (
+                "\n- CPBL 主場勝率 ~45%（**客隊略佔優勢**）。請勿預設主隊有利——"
+                "中職實證主場加成不明顯，客隊戰績較佳時應直接給客隊較高勝率。"
+                "依實際對戰實力判斷，勿機械式加主場 tiebreaker。"
+            )
+        elif "NBA" in league_upper_check:
+            home_advantage_note = (
+                "\n- NBA 主場勝率 ~60%（顯著優勢）。對實力接近的對戰，主隊可加 +0.05~+0.08 的合理主場加成，"
+                "除非客隊有絕對數據優勢（戰績差距 > 15 場）。"
+            )
+        elif "WNBA" in league_upper_check:
+            home_advantage_note = (
+                "\n- WNBA 主場勝率 ~58-60%（與 NBA 接近，顯著優勢）。對實力接近的對戰，"
+                "主隊可加 +0.04~+0.07 的合理主場加成，但受傷兵/體能因素影響大，"
+                "請特別注意背靠背球隊。"
+            )
 
         # CPBL 專屬分析指引 + 球員/戰績數據
         cpbl_analysis_guide = ""
@@ -2206,10 +2226,17 @@ Park Factor: {pf:.2f} ({park_interp})
 - 請根據「數據差距的實際幅度」評分，不要預設立場偏向保守
 """
 
-        # 🆕 [2026-07-26] 主場優勢說明（簡化版 — 移除機械式係數加法，避免與 Step 4 衝突）
-        # 只給歷史對照，實際判斷交由 Step 4 條件式指引
-        home_advantage_full = f"""⚾ 各聯盟歷史主場勝率參考（僅供對照，不用於機率計算）：
-- MLB: ~52%（實證無顯著優勢）  |  NPB: ~53-55%  |  CPBL: ~45%（客隊略佔優勢）  |  NBA: ~60%
+        # 🆕 [2026-08-10 統一化] 各聯盟歷史主場勝率對照表（純數字，供對照不用於機械加法）
+        # 與上方 home_advantage_note 及 Step 4 主場指引使用同一組數字
+        home_advantage_full = f"""⚾ 各聯盟歷史主場勝率參考（純對照，不用於機率計算）：
+
+| 聯盟 | 歷史主場勝率 | 主場效應強度 | 五五波微調建議 |
+|------|------------|------------|---------------|
+| MLB  | ~52%       | 無顯著優勢  | 主隊 +0.01~+0.02 |
+| NPB  | ~53-55%    | 小幅優勢    | 主隊 +0.02~+0.04 |
+| CPBL | ~45%       | 客隊略佔優  | **不應主動加主場**，戰績佳者勝 |
+| NBA  | ~60%       | 顯著優勢    | 主隊 +0.05~+0.08 |
+| WNBA | ~58-60%    | 顯著優勢    | 主隊 +0.04~+0.07 |
 
 請在 **Step 4** 的條件式主場指引中依實際對比調整，勿機械式加法。
 """
@@ -2241,13 +2268,14 @@ Park Factor: {pf:.2f} ({park_interp})
 根據 Step 3 的因子權重**綜合判斷** home_win_probability：
 - **不要機械式套用任何公式**——請根據 Step 2 的實質數據對比與 Step 3 的因子權重，自行權衡
 - 起點 0.50（五五波基準）
-- **主場優勢請以 Step 2 的實際對比為主，不要因「主場」一詞就額外加分**
-  - 對手實力明顯較弱 → 主場效應可加 0.01-0.03（MLB 實證主場勝率僅 ~52%，勿過度加分）
-  - 對手實力明顯較強 → 主場效應可忽略甚至逆轉
-  - 雙方實力接近 → 主場效應 +0.01 ~ +0.02 微調
-  - **🆕 關鍵邊界規則**：MLB 實證主場勝率 ~52%。五五波對戰中，主場為合理的 tiebreaker，給主隊 +0.01 ~ +0.02 微調。但若客隊在多數維度（投手、打線、牛棚）確實略佔上風，則不適用此規則 — 此時 home_win_probability 在 0.45-0.50 是合理的。此規則僅在「雙方數據無法明確分出優劣」時啟動。
+- **主場加成請以「下方主場對照表」為唯一權威來源**，三個引用點（home_advantage_note、對照表、本 Step 4）數字必須一致
+- **🆕 通用主場加成指引**（不再因聯盟而異，所有規則以對照表為準）：
+  - 對手實力明顯較弱（差距 ≥ 15% 勝率或 ≥ 2.0 ERA 或三振能力差距明顯）→ 按對照表上限給主場加成（MLB ≤+0.02、NPB ≤+0.04、NBA ≤+0.08、WNBA ≤+0.07），CPBL 則不應主動加
+  - 對手實力明顯較強 → 主場加成可忽略甚至逆轉
+  - 雙方實力接近 → 按對照表「五五波微調」範圍給主場加成
+- **CPBL 特別規則**：因主隊加成不明顯，當主隊戰績或投手明顯較弱時，home_win_probability 應 < 0.45，**不要硬湊主場 tiebreaker**
 - 最終值限制在 [0.20, 0.80] 區間（避免極端）
-- **重要**：若 Step 2 顯示客隊明顯佔優（如對手戰績、投手、打線都更好），即使主隊有主場，home_win_probability 也應 < 0.45
+- 重要：若 Step 2 顯示客隊明顯佔優（如對手戰績、投手、打線都更好），即使主隊有主場，home_win_probability 也應 < 0.45
 - away_win_probability = 1 - home_win_probability
 
 **Step 5 — 信心理量 (Confidence Calibration)**
