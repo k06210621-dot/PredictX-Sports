@@ -2795,22 +2795,23 @@ Park Factor: {pf:.2f} ({park_interp})
                                 home_prob = 1.0 - away_prob
                             pitcher_adjustment_log.append(f"{reason} → 勝率調整 {adjustment:+.2f}")
 
-                    # 🆕 [P0-NPB] 先發投手三振能力(K/9)與四壞球控制(BB/9)確定性加成
-                    # 只對 NPB 生效：NPB 得分低、先發投手 K/BB 是勝負關鍵指標
+                    # 🆕 [P0-MLB/NPB/CPBL] 先發投手三振能力(K/9)與四壞球控制(BB/9)確定性加成
+                    # [2026-08-10] 從 NPB-only 擴大到 MLB/CPBL — 投手 K/BB 對所有棒球聯盟都是勝負關鍵
                     # 直接調整勝率（不依賴 LLM 感覺），與 Recipe 6 ERA 校正疊加
-                    if lg == 'NPB':
+                    if lg in ('MLB', 'NPB', 'CPBL'):
                         kb_adjust_log = []
                         h_sp = (pitcher_data.get('home_pitcher') or {}).get('stats') or {}
                         a_sp = (pitcher_data.get('away_pitcher') or {}).get('stats') or {}
                         
-                        # 🆕 [fix] lottonavi 只提供 ERA，缺少 K/9 BB/9 時從輪值 #1 借用
+                        # 🆕 [fix] 缺少 K/9 BB/9 時從輪值 #1 借用（league-aware）
+                        _pitcher_key = {'MLB': 'mlb_pitchers', 'NPB': 'npb_pitchers', 'CPBL': 'cpbl_pitchers'}.get(lg, 'pitchers')
                         if h_sp and 'k_per_9' not in h_sp:
-                            home_pitchers_list = features.get('npb_pitchers', {}).get('home_pitchers', [])
+                            home_pitchers_list = features.get(_pitcher_key, {}).get('home_pitchers', [])
                             if home_pitchers_list:
                                 h_sp['k_per_9'] = home_pitchers_list[0].get('k_per_9', 0)
                                 h_sp['bb_per_9'] = home_pitchers_list[0].get('bb_per_9', 0)
                         if a_sp and 'k_per_9' not in a_sp:
-                            away_pitchers_list = features.get('npb_pitchers', {}).get('away_pitchers', [])
+                            away_pitchers_list = features.get(_pitcher_key, {}).get('away_pitchers', [])
                             if away_pitchers_list:
                                 a_sp['k_per_9'] = away_pitchers_list[0].get('k_per_9', 0)
                                 a_sp['bb_per_9'] = away_pitchers_list[0].get('bb_per_9', 0)
@@ -2832,7 +2833,7 @@ Park Factor: {pf:.2f} ({park_interp})
                                 home_prob = max(0.30, min(0.85, home_prob + kb_adj))
                                 away_prob = 1.0 - home_prob
                                 kb_adjust_log.append(
-                                    f"NPB SP K/BB: 主K/9={h_k9}(BB/9={h_bb9}) vs 客K/9={a_k9}(BB/9={a_bb9}) "
+                                    f"{lg} SP K/BB: 主K/9={h_k9}(BB/9={h_bb9}) vs 客K/9={a_k9}(BB/9={a_bb9}) "
                                     f"→ 勝率調整 {kb_adj:+.4f}"
                                 )
                         if kb_adjust_log:
@@ -2977,14 +2978,14 @@ Park Factor: {pf:.2f} ({park_interp})
                             feature_boost += 1
                             boost_reasons.append(f"投手 ERA 差距 {era_diff:.2f}")
 
-                # 條件 3: 排名差距 > 10 名
-                home_rank = home_standings_raw.get('rank')
-                away_rank = away_standings_raw.get('rank')
-                if home_rank and away_rank:
-                    rank_diff = abs(int(home_rank) - int(away_rank))
-                    if rank_diff > 10:
-                        feature_boost += 1
-                        boost_reasons.append(f"排名差距 {rank_diff}")
+                # 條件 3: 排名差距 > 10 名 — [2026-08-10 移除] 實證有害（conf=7 命中率僅 41%），排名差距不具預測力
+                # home_rank = home_standings_raw.get('rank')
+                # away_rank = away_standings_raw.get('rank')
+                # if home_rank and away_rank:
+                #     rank_diff = abs(int(home_rank) - int(away_rank))
+                #     if rank_diff > 10:
+                #         feature_boost += 1
+                #         boost_reasons.append(f"排名差距 {rank_diff}")
 
                 if feature_boost > 0:
                     old_conf = normalized_conf
@@ -3100,22 +3101,24 @@ Park Factor: {pf:.2f} ({park_interp})
         away_avg_f = away_form.get('avg_goals_for', 0) or 0
         away_avg_a = away_form.get('avg_goals_against', 0) or 0
 
-        # 🆕 [P0-NPB fallback 同步] 先發投手 K/9 與 BB/9 確定性加成
+        # 🆕 [P0-MLB/NPB/CPBL fallback 同步] 先發投手 K/9 與 BB/9 確定性加成
+        # [2026-08-10] 從 NPB-only 擴大到 MLB/CPBL
         # 與正常路徑 Recipe 6 區塊使用完全一致公式，確保 fallback 也反映投手三振/保送優勢
         lg_fb = (features.get('league') or '').upper()
-        if lg_fb == 'NPB':
-            kb_pitcher = features.get('npb_pitchers') or features.get('mlb_pitchers') or features.get('pitchers') or {}
+        if lg_fb in ('MLB', 'NPB', 'CPBL'):
+            kb_pitcher = features.get('mlb_pitchers') or features.get('npb_pitchers') or features.get('cpbl_pitchers') or features.get('pitchers') or {}
             h_sp_fb = (kb_pitcher.get('home_pitcher') or {}).get('stats') or {}
             a_sp_fb = (kb_pitcher.get('away_pitcher') or {}).get('stats') or {}
             
-            # 🆕 [fix] lottonavi 只提供 ERA，缺少 K/9 BB/9 時從輪值 #1 借用
+            # 🆕 [fix] 缺少 K/9 BB/9 時從輪值 #1 借用（league-aware）
+            _fb_pitcher_key = {'MLB': 'mlb_pitchers', 'NPB': 'npb_pitchers', 'CPBL': 'cpbl_pitchers'}.get(lg_fb, 'pitchers')
             if h_sp_fb and 'k_per_9' not in h_sp_fb:
-                home_pitchers_fb = features.get('npb_pitchers', {}).get('home_pitchers', [])
+                home_pitchers_fb = features.get(_fb_pitcher_key, {}).get('home_pitchers', [])
                 if home_pitchers_fb:
                     h_sp_fb['k_per_9'] = home_pitchers_fb[0].get('k_per_9', 0)
                     h_sp_fb['bb_per_9'] = home_pitchers_fb[0].get('bb_per_9', 0)
             if a_sp_fb and 'k_per_9' not in a_sp_fb:
-                away_pitchers_fb = features.get('npb_pitchers', {}).get('away_pitchers', [])
+                away_pitchers_fb = features.get(_fb_pitcher_key, {}).get('away_pitchers', [])
                 if away_pitchers_fb:
                     a_sp_fb['k_per_9'] = away_pitchers_fb[0].get('k_per_9', 0)
                     a_sp_fb['bb_per_9'] = away_pitchers_fb[0].get('bb_per_9', 0)
@@ -3130,7 +3133,7 @@ Park Factor: {pf:.2f} ({park_interp})
                 kb_adj_fb = round(k9_adj_fb + bb9_adj_fb, 4)
                 if abs(kb_adj_fb) >= 0.005:
                     home_prob = max(0.30, min(0.85, home_prob + kb_adj_fb))
-                    print(f"  ⚾ [fallback] NPB SP K/BB: 主 K/9={h_k9_fb}(BB/9={h_bb9_fb}) vs 客 K/9={a_k9_fb}(BB/9={a_bb9_fb}) → 勝率調整 {kb_adj_fb:+.4f}")
+                    print(f"  ⚾ [fallback] {lg_fb} SP K/BB: 主 K/9={h_k9_fb}(BB/9={h_bb9_fb}) vs 客 K/9={a_k9_fb}(BB/9={a_bb9_fb}) → 勝率調整 {kb_adj_fb:+.4f}")
 
         # 🆕 [2026-07-19] Fallback 進階數據強化：先發投手 + 團隊打擊/投球
         lg_fb = (features.get('league') or '').upper()
