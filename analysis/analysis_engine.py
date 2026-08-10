@@ -1828,16 +1828,16 @@ Park Factor: {pf:.2f} ({park_interp})
                 "中職實證主場加成不明顯，客隊戰績較佳時應直接給客隊較高勝率。"
                 "依實際對戰實力判斷，勿機械式加主場 tiebreaker。"
             )
-        elif "NBA" in league_upper_check:
-            home_advantage_note = (
-                "\n- NBA 主場勝率 ~60%（顯著優勢）。對實力接近的對戰，主隊可加 +0.05~+0.08 的合理主場加成，"
-                "除非客隊有絕對數據優勢（戰績差距 > 15 場）。"
-            )
         elif "WNBA" in league_upper_check:
             home_advantage_note = (
                 "\n- WNBA 主場勝率 ~58-60%（與 NBA 接近，顯著優勢）。對實力接近的對戰，"
                 "主隊可加 +0.04~+0.07 的合理主場加成，但受傷兵/體能因素影響大，"
                 "請特別注意背靠背球隊。"
+            )
+        elif "NBA" in league_upper_check:
+            home_advantage_note = (
+                "\n- NBA 主場勝率 ~60%（顯著優勢）。對實力接近的對戰，主隊可加 +0.05~+0.08 的合理主場加成，"
+                "除非客隊有絕對數據優勢（戰績差距 > 15 場）。"
             )
 
         # CPBL 專屬分析指引 + 球員/戰績數據
