@@ -1935,6 +1935,55 @@ Park Factor: {pf:.2f} ({park_interp})
                     cpbl_spec += f"\n客隊 {away_team}: 第{a_stand['rank']}名, {a_stand['wl_record']}, 勝率{a_stand['win_pct']}"
                     cpbl_spec += f" | Team ERA={a_pitch.get('era','?')}, SO={a_pitch.get('so','?')}, HR={a_bat.get('hr','?')}"
 
+                # 🆕 [2026-08-10] CPBL 全年度團隊進階數據（從 cpbl_team_season_stats 表）
+                try:
+                    self.cur.execute("""
+                        SELECT t.english_name, t.chinese_name,
+                               s.wins, s.ties, s.losses, s.win_pct, s.games_behind,
+                               s.home_wins, s.home_losses, s.away_wins, s.away_losses,
+                               s.streak, s.last_10_wins, s.last_10_losses,
+                               s.era, s.whip, s.avg, s.obp, s.slg,
+                               s.runs_scored, s.runs_allowed, s.hr_hitting, s.hr_allowed,
+                               s.so_pitching, s.bb_allowed, s.so_batting, s.bb_batting, s.sb,
+                               s.fielding_pct, s.errors, s.double_plays,
+                               s.h2h
+                        FROM predictx.cpbl_team_season_stats s
+                        JOIN predictx.teams t ON s.team_id = t.team_id
+                        WHERE s.season = 2026
+                          AND t.english_name IN (%s, %s)
+                    """, (home_team, away_team))
+                    season_rows = {r['english_name']: r for r in (self.cur.fetchall() or [])}
+
+                    if season_rows:
+                        cpbl_spec += "\n\n===== CPBL 全年度團隊數據（來源：cpbl_team_season_stats，使用者提供官方資料）====="
+                        for side, team_name in [('home', home_team), ('away', away_team)]:
+                            r = season_rows.get(team_name)
+                            if not r:
+                                continue
+                            label = '主隊' if side == 'home' else '客隊'
+                            cpbl_spec += f"\n{label} {team_name}："
+                            cpbl_spec += f"\n  戰績：{r['wins']}勝-{r['ties']}和-{r['losses']}敗，勝率 {r['win_pct']}，勝差 {r['games_behind']}"
+                            cpbl_spec += f"\n  主場：{r['home_wins']}勝-{r['home_losses']}敗 | 客場：{r['away_wins']}勝-{r['away_losses']}敗"
+                            cpbl_spec += f"\n  近況：{r['streak']}，近10場 {r['last_10_wins']}勝-{r['last_10_losses']}敗"
+                            cpbl_spec += f"\n  投球：ERA={r['era']}，WHIP={r['whip']}，SO={r['so_pitching']}，BB={r['bb_allowed']}，被HR={r['hr_allowed']}"
+                            cpbl_spec += f"\n  打擊：AVG={r['avg']}，OBP={r['obp']}，SLG={r['slg']}，得分={r['runs_scored']}，HR={r['hr_hitting']}，SO={r['so_batting']}，BB={r['bb_batting']}，SB={r['sb']}"
+                            cpbl_spec += f"\n  守備：FPCT={r['fielding_pct']}，失誤={r['errors']}，雙殺={r['double_plays']}"
+                            # H2H vs opponent
+                            h2h = r.get('h2h') or {}
+                            opp_name = away_team if side == 'home' else home_team
+                            opp_h2h = h2h.get(opp_name) if isinstance(h2h, dict) else None
+                            if opp_h2h:
+                                cpbl_spec += f"\n  對戰 {opp_name}：{opp_h2h['wins']}勝-{opp_h2h['ties']}和-{opp_h2h['losses']}敗"
+                        cpbl_spec += "\n\n💡 全年度數據分析指引："
+                        cpbl_spec += "\n- 團隊 ERA/WHIP 反映整體投手戰力，差距 > 0.5 為有意義優勢"
+                        cpbl_spec += "\n- 團隊 AVG/OBP/SLG 反映打線深度，OPS 差距 > 0.05 為明顯優勢"
+                        cpbl_spec += "\n- 守備率與失誤數反映防守穩定度，差距 > 10 失誤為顯著差異"
+                        cpbl_spec += "\n- 對戰歷史（H2H）在中職有較高參考價值，請納入分析權重"
+                        cpbl_spec += "\n- 近10場戰績比全年度更具時效性，若兩者矛盾以近10場為準"
+                        self.log_source("official_api")
+                except Exception as e:
+                    print(f"  ⚠ CPBL season stats fetch error (non-fatal): {e}")
+
                 hitters = cpbl_data.get('hitting_leaders', {})
                 if hitters and hitters.get('home'):
                     top_h = hitters['home'][0]
