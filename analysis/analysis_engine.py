@@ -220,7 +220,12 @@ class AnalysisEngine:
             # 🏀 籃球六維邏輯（NBA + WNBA 共用）
             team_strength = clamp(win_pct * 10) if win_pct and win_pct > 0 else clamp(rank_to_score(rank))
             offense = clamp((avg_for - 100) * 0.2 + 5)
-            defense = clamp(10 - max(0, opp_avg_for - 110) * 0.2)
+            # [2026-08-10 fix] WNBA 場均 ~85-100，舊閾值 110 永遠達不到 → defense 永遠 10.0
+            # 改用聯盟自適應：NBA 用 110，WNBA 用 85（WNBA 場均得分基準）
+            if league == 'WNBA':
+                defense = clamp(10 - max(0, opp_avg_for - 85) * 0.2)
+            else:
+                defense = clamp(10 - max(0, opp_avg_for - 110) * 0.2)
             clutch = clamp(5 + (avg_for - avg_against) * 0.3)
             home_away = 6.5 if side == 'home' else 5.0
             venue_wr = standings.get('home_win_pct') if side == 'home' else standings.get('away_win_pct')
@@ -1810,7 +1815,7 @@ Park Factor: {pf:.2f} ({park_interp})
         elif "WNBA" in league_upper_check:
             home_advantage_note = "\n- WNBA 主場優勢顯著：歷史主場勝率約 58-60%，與 NBA 接近。對實力接近的對戰，主場球隊勝率應明顯 > 0.5。"
         elif "MLB" in league_upper_check:
-            home_advantage_note = "\n- MLB 主場優勢約 53-54%。在五五波對戰中，主隊有統計上的小幅優勢，請勿系統性傾向客隊。"
+            home_advantage_note = "\n- MLB 主場優勢約 52%（實證無顯著優勢）。請勿因主場一詞就預設主隊有利——以雙方實際數據對比為準。五五波時主隊僅有極微幅 tiebreaker 優勢（+0.02）。"
         elif "NPB" in league_upper_check:
             home_advantage_note = "\n- NPB 主場優勢約 53%。對實力接近的對戰，主隊有小幅優勢。"
         # CPBL 已在 cpbl_analysis_guide 中有「主場勝率約 45%（客隊略佔優勢）」提示
@@ -2239,7 +2244,8 @@ Park Factor: {pf:.2f} ({park_interp})
 **Step 3 — 關鍵因子識別 (Key Factor Identification)**
 從 Step 2 中挑出 4-6 個**決定性因子**，每個給「權重 0-1」。
 權重總和 = 1.0（強制）。
-例：投手對位 0.35 + 主場優勢 0.15 + 近期狀態 0.20 + ...
+例：投手對位 0.35 + 近期狀態 0.25 + 打線火力 0.20 + 牛棚表現 0.20
+（注意：主場因素權重應 ≤ 0.10，MLB 實證主場勝率僅 ~52%，無顯著優勢）
 
 **Step 4 — 機率綜合 (Probability Aggregation)**
 根據 Step 3 的因子權重**綜合判斷** home_win_probability：
