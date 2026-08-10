@@ -149,7 +149,7 @@ class AnalysisEngine:
         form = features.get(f'{side}_recent_form') or {}
         standings = features.get(f'{side}_standings') or {}
         opponent_form = features.get(f'{"away" if side == "home" else "home"}_recent_form') or {}
-        pitcher_data = features.get('mlb_pitchers') or features.get('pitchers') or {}
+        pitcher_data = features.get('mlb_pitchers') or features.get('npb_pitchers') or features.get('cpbl_pitchers') or features.get('pitchers') or {}
 
         avg_for = float(form.get('avg_goals_for') or 0)
         avg_against = float(form.get('avg_goals_against') or 0)
@@ -197,8 +197,17 @@ class AnalysisEngine:
                 pitcher_score = clamp(10 - (float(era) - 2.5) * 1.5)
             else:
                 pitcher_score = clamp(5 + (avg_for - avg_against) * 0.8)
-            # 牛棚：用對手場均得分推估（聯盟平均 ~4.5 為基準）
-            bullpen = clamp(10 - max(0, opp_avg_for - 4.0) * 1.2)
+            # 牛棚：優先使用真實 reliever ERA（MLB bullpen stats），否則用對手場均得分推估
+            bullpen_data = features.get('bullpen', {})
+            bp_side = bullpen_data.get(side, {}) if bullpen_data else {}
+            bp_era = bp_side.get('era')
+            if bp_era is not None:
+                try:
+                    bullpen = clamp(10 - (float(bp_era) - 2.5) * 1.5)
+                except (ValueError, TypeError):
+                    bullpen = clamp(10 - max(0, opp_avg_for - 4.0) * 1.2)
+            else:
+                bullpen = clamp(10 - max(0, opp_avg_for - 4.0) * 1.2)
             # 主客場因素
             home_away = 7.0 if side == 'home' else 5.0
             venue_wr = standings.get('home_win_pct') if side == 'home' else standings.get('away_win_pct')
@@ -2849,84 +2858,45 @@ Park Factor: {pf:.2f} ({park_interp})
                             result["summary"] = existing_summary + adjustment_note
                         print(f" ⚾ Recipe 6 投手調整: {pitcher_adjustment_log}")
 
-                    # 🆕 [Recipe NPB/MLB/CPBL 投手參數擴充] 先發投手 K/9 + BB/9 的確定性加成
-                    pitcher_param_delta = {
-                        'home_k9': home_k9,
-                        'away_k9': away_k9,
-                        'home_bb9': home_bb9,
-                        'away_bb9': away_bb9,
-                    }
-
-                    pitcher_adjustment = 0.0
-                    pitcher_adjustment_reasons = []
-
-                    k9_advantage = (home_k9 - away_k9)
-                    if k9_advantage >= 1.0:
-                        pitcher_adjustment += min(0.02 * (k9_advantage / 1.0), 0.04)
-                        pitcher_adjustment_reasons.append(f"主隊先發K/9優勢 +{k9_advantage:.1f}")
-
-                    bb9_gap = (away_bb9 - home_bb9)
-                    if bb9_gap >= 0.5:
-                        pitcher_adjustment += 0.01 * (bb9_gap / 0.5)
-                        pitcher_adjustment_reasons.append(f"客隊BB/9偏高 +{bb9_gap:.1f}")
-
-                    if home_kbb_ratio > 0 and away_kbb_ratio > 0 and (home_kbb_ratio - away_kbb_ratio) > 0.5:
-                        pitcher_adjustment += 0.02
-                        pitcher_adjustment_reasons.append(f"主隊K/BB比值優勢 +{(home_kbb_ratio - away_kbb_ratio):.2f}")
-
-                    if pitcher_adjustment != 0.0:
-                        pitcher_adjustment = max(-0.05, min(0.05, pitcher_adjustment))
-                        # 🆕 [2026-07-26] 統一操作 home_prob（之前分支對客隊領先時方向混淆）
-                        home_prob = max(0.30, min(0.85, home_prob + pitcher_adjustment))
-                        away_prob = 1.0 - home_prob
-                        result["home_win_probability"] = round(home_prob, 4)
-                        result["away_win_probability"] = round(away_prob, 4)
-                        existing_summary = result.get("summary", "") or ""
-                        adjustment_note = "\n\n[投手參數校正] " + "; ".join(pitcher_adjustment_reasons) + f" => 勝率調整 {pitcher_adjustment:+.2f}"
-                        if "[投手參數校正]" not in existing_summary:
-                            result["summary"] = existing_summary + adjustment_note
-                        print(f" ⚾ Recipe 6 投手參數調整: {pitcher_adjustment_reasons}")
-
-
-
-                        # 🆕 [Recipe 8] 傷兵權重調整（MLB/NBA/WNBA）- 2026-07-21 新增
-                        # 根據日誌分析：主隊傷兵 9-11 人 vs 客隊 3-7 人，但 AI 仍預測主隊贏，導致命中率偏低
-                        # 注意：用 features.get('league','') 而非外層 league 變數，避免 UnboundLocalError
-                        injury_data = features.get('injuries', {})
-                        _lg = (features.get('league') or '').upper()
-                        if injury_data and _lg in ('MLB', 'NBA', 'WNBA'):
-                            home_injuries = len(injury_data.get('home', []))
-                            away_injuries = len(injury_data.get('away', []))
-                            injury_diff = home_injuries - away_injuries
+                # 🆕 [Recipe 8] 傷兵權重調整（MLB/NBA/WNBA）- 2026-07-21 新增
+                # [2026-08-10] 從投手調整巢狀中移出，獨立執行（不再依賴投手 K/BB 觸發）
+                # 根據日誌分析：主隊傷兵 9-11 人 vs 客隊 3-7 人，但 AI 仍預測主隊贏，導致命中率偏低
+                # 注意：用 features.get('league','') 而非外層 league 變數，避免 UnboundLocalError
+                injury_data = features.get('injuries', {})
+                _lg = (features.get('league') or '').upper()
+                if injury_data and _lg in ('MLB', 'NBA', 'WNBA'):
+                    home_injuries = len(injury_data.get('home', []))
+                    away_injuries = len(injury_data.get('away', []))
+                    injury_diff = home_injuries - away_injuries
+                    
+                    injury_adjustment = 0.0
+                    injury_log = []
+                    
+                    # 🆕 [2026-07-26] 門檻提升至 5 人，每多 1 人調整 1%（原 2% 過猛）
+                    if abs(injury_diff) > 5:
+                        # 每多 1 個傷兵，調整 1%（線性），最多調整 10%
+                        injury_adjustment = 0.01 * min(abs(injury_diff) - 5, 10)
+                        
+                        if injury_diff > 0:
+                            # 主隊傷兵更多，下修主隊勝率
+                            injury_adjustment = -injury_adjustment
+                            injury_log.append(f"主隊傷兵多{injury_diff}人 → 勝率調整 {injury_adjustment:+.2f}")
+                        else:
+                            # 客隊傷兵更多，上修主隊勝率
+                            injury_log.append(f"客隊傷兵多{abs(injury_diff)}人 → 勝率調整 {injury_adjustment:+.2f}")
+                        
+                        # 應用調整
+                        if injury_adjustment != 0.0:
+                            home_prob = max(0.30, min(0.85, home_prob + injury_adjustment))
+                            away_prob = 1.0 - home_prob
+                            result["home_win_probability"] = round(home_prob, 4)
+                            result["away_win_probability"] = round(away_prob, 4)
                             
-                            injury_adjustment = 0.0
-                            injury_log = []
-                            
-                            # 🆕 [2026-07-26] 門檻提升至 5 人，每多 1 人調整 1%（原 2% 過猛）
-                            if abs(injury_diff) > 5:
-                                # 每多 1 個傷兵，調整 1%（線性），最多調整 10%
-                                injury_adjustment = 0.01 * min(abs(injury_diff) - 5, 10)
-                                
-                                if injury_diff > 0:
-                                    # 主隊傷兵更多，下修主隊勝率
-                                    injury_adjustment = -injury_adjustment
-                                    injury_log.append(f"主隊傷兵多{injury_diff}人 → 勝率調整 {injury_adjustment:+.2f}")
-                                else:
-                                    # 客隊傷兵更多，上修主隊勝率
-                                    injury_log.append(f"客隊傷兵多{abs(injury_diff)}人 → 勝率調整 {injury_adjustment:+.2f}")
-                                
-                                # 應用調整
-                                if injury_adjustment != 0.0:
-                                    home_prob = max(0.30, min(0.85, home_prob + injury_adjustment))
-                                    away_prob = 1.0 - home_prob
-                                    result["home_win_probability"] = round(home_prob, 4)
-                                    result["away_win_probability"] = round(away_prob, 4)
-                                    
-                                    existing_summary = result.get("summary", "") or ""
-                                    adjustment_note = "\n\n[傷兵校正] " + "; ".join(injury_log)
-                                    if "[傷兵校正]" not in existing_summary:
-                                        result["summary"] = existing_summary + adjustment_note
-                                    print(f" 🏥 Recipe 8 傷兵調整：{injury_log}")
+                            existing_summary = result.get("summary", "") or ""
+                            adjustment_note = "\n\n[傷兵校正] " + "; ".join(injury_log)
+                            if "[傷兵校正]" not in existing_summary:
+                                result["summary"] = existing_summary + adjustment_note
+                            print(f" 🏥 Recipe 8 傷兵調整：{injury_log}")
 
 
                 # 信心指數標準化: 若 Ollama 回傳 0~1 分數則轉換為 1~10 評分
