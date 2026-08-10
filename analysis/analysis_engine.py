@@ -1933,12 +1933,11 @@ Park Factor: {pf:.2f} ({park_interp})
                 h_bat = cpbl_data.get('batting', {}).get('home', {})
                 a_bat = cpbl_data.get('batting', {}).get('away', {})
 
-                if h_stand and h_stand.get('win_pct'):
-                    cpbl_spec += f"\n團隊數據（來源：cpbl.com.tw）:"
-                    cpbl_spec += f"\n主隊 {home_team}: 第{h_stand['rank']}名, {h_stand['wl_record']}, 勝率{h_stand['win_pct']}"
-                    cpbl_spec += f" | Team ERA={h_pitch.get('era','?')}, SO={h_pitch.get('so','?')}, HR={h_bat.get('hr','?')}"
-                    cpbl_spec += f"\n客隊 {away_team}: 第{a_stand['rank']}名, {a_stand['wl_record']}, 勝率{a_stand['win_pct']}"
-                    cpbl_spec += f" | Team ERA={a_pitch.get('era','?')}, SO={a_pitch.get('so','?')}, HR={a_bat.get('hr','?')}"
+                # CPBL 即時戰績排名（補充全年度數據表沒有的「本季排名」，
+                # 來源 cpbl.com.tw 即時爬蟲，全年度數據在下方段落）
+                if h_stand and h_stand.get('rank'):
+                    cpbl_spec += f"\n即時排名（cpbl.com.tw）: 主隊 {home_team} 第{h_stand['rank']}名 | 客隊 {away_team} 第{a_stand.get('rank','?')}名"
+                    # 注：不再注入 ERA/勝率/HR — 下方 cpbl_team_season_stats 段落已完整覆蓋
 
                 # 🆕 [2026-08-10] CPBL 全年度團隊進階數據（從 cpbl_team_season_stats 表）
                 try:
