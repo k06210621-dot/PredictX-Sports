@@ -2391,6 +2391,14 @@ Park Factor: {pf:.2f} ({park_interp})
   }}
 }}
 
+【🚨 內部一致性強制要求（必讀，輸出前自我檢查）】
+你輸出的 JSON 必須同時滿足以下三條不可違反的一致性規則：
+1. 勝率方向一致：若 home_win_probability > 0.5，summary 與 reasoning.step4_probability_calc 的結尾必須寫「主隊勝/主隊佔優/主隊小勝/主隊看好/主隊略佔」其中之一，**禁止**寫「客隊勝/客隊佔優/客隊小勝/客隊看好/客隊略佔/主隊敗/主隊輸/主隊勝率低於五成」等含客隊勝意思的詞。反之亦然（away_win_probability > 0.5 時同規則對調）。
+2. 比分方向一致：若 home_win_probability > 0.5，predicted_score 內 X-Y 中的 X 必須大於 Y。summary 與 reasoning.step6_score_rationale 結尾出現的「X-Y」比分，X、Y 的大小關係也必須與 home_win_probability > 0.5 一致（主隊分數 > 客隊分數）。反之亦然。
+3. 百分比精確：summary 與 reasoning.step4_probability_calc 結尾出現的「主隊/客隊勝率 N%」的 N，必須等於 home_win_probability 或 away_win_probability 四捨五入到整數後的百分比（例：home_win_probability=0.44 → N=44）。
+
+請在輸出前最後自我檢查這三條。如果任何一條不符，**修正後再輸出 JSON**。**禁止輸出結構欄位與文字結論矛盾的結果**。
+
 請只輸出這個 JSON object，不要有任何其他文字。
 '''
         return prompt
