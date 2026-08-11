@@ -85,11 +85,11 @@ else:
 
 # 備援 LLM 配置（當主要 LLM 失敗時使用）
 # 可透過 Railway 環境變數 FALLBACK_LLM_URL / FALLBACK_LLM_MODEL 覆寫
-# 預設：Ollama Cloud + minimax-m3:cloud（NVIDIA minimax-m3 常 401，Ollama Cloud 穩定）
-FALLBACK_LLM_URL = os.environ.get("FALLBACK_LLM_URL", "https://ollama.com/api/chat")
-FALLBACK_LLM_MODEL = os.environ.get("FALLBACK_LLM_MODEL", "minimax-m3:cloud")
+# 預設：Nous Portal + deepseek/deepseek-v4-flash（與主要模型相同供應商）
+FALLBACK_LLM_URL = os.environ.get("FALLBACK_LLM_URL", "https://inference-api.nousresearch.com/v1/chat/completions")
+FALLBACK_LLM_MODEL = os.environ.get("FALLBACK_LLM_MODEL", "deepseek/deepseek-v4-flash")
 # 備援 API Key 獨立設定，若沒設則沿用主要 NOUS_API_KEY
-FALLBACK_LLM_API_KEY = os.environ.get("FALLBACK_LLM_API_KEY", os.environ.get("OLLAMA_API_KEY", ""))
+FALLBACK_LLM_API_KEY = os.environ.get("FALLBACK_LLM_API_KEY", os.environ.get("NOUS_API_KEY", os.environ.get("NVIDIA_API_KEY", "")))
 
 # 可透過環境變數 PREDICTX_MODEL 切換模型
 # qwen:latest (4B, ~6s/場) | qwen3.5:9b (9B, ~200s/場，預設) | cloud (雲端 LLM)
@@ -149,7 +149,7 @@ class AnalysisEngine:
         form = features.get(f'{side}_recent_form') or {}
         standings = features.get(f'{side}_standings') or {}
         opponent_form = features.get(f'{"away" if side == "home" else "home"}_recent_form') or {}
-        pitcher_data = features.get('mlb_pitchers') or features.get('npb_pitchers') or features.get('cpbl_pitchers') or features.get('pitchers') or {}
+        pitcher_data = features.get('mlb_pitchers') or features.get('pitchers') or {}
 
         avg_for = float(form.get('avg_goals_for') or 0)
         avg_against = float(form.get('avg_goals_against') or 0)
@@ -197,17 +197,8 @@ class AnalysisEngine:
                 pitcher_score = clamp(10 - (float(era) - 2.5) * 1.5)
             else:
                 pitcher_score = clamp(5 + (avg_for - avg_against) * 0.8)
-            # 牛棚：優先使用真實 reliever ERA（MLB bullpen stats），否則用對手場均得分推估
-            bullpen_data = features.get('bullpen', {})
-            bp_side = bullpen_data.get(side, {}) if bullpen_data else {}
-            bp_era = bp_side.get('era')
-            if bp_era is not None:
-                try:
-                    bullpen = clamp(10 - (float(bp_era) - 2.5) * 1.5)
-                except (ValueError, TypeError):
-                    bullpen = clamp(10 - max(0, opp_avg_for - 4.0) * 1.2)
-            else:
-                bullpen = clamp(10 - max(0, opp_avg_for - 4.0) * 1.2)
+            # 牛棚：用對手場均得分推估（聯盟平均 ~4.5 為基準）
+            bullpen = clamp(10 - max(0, opp_avg_for - 4.0) * 1.2)
             # 主客場因素
             home_away = 7.0 if side == 'home' else 5.0
             venue_wr = standings.get('home_win_pct') if side == 'home' else standings.get('away_win_pct')
@@ -220,12 +211,7 @@ class AnalysisEngine:
             # 🏀 籃球六維邏輯（NBA + WNBA 共用）
             team_strength = clamp(win_pct * 10) if win_pct and win_pct > 0 else clamp(rank_to_score(rank))
             offense = clamp((avg_for - 100) * 0.2 + 5)
-            # [2026-08-10 fix] WNBA 場均 ~85-100，舊閾值 110 永遠達不到 → defense 永遠 10.0
-            # 改用聯盟自適應：NBA 用 110，WNBA 用 85（WNBA 場均得分基準）
-            if league == 'WNBA':
-                defense = clamp(10 - max(0, opp_avg_for - 85) * 0.2)
-            else:
-                defense = clamp(10 - max(0, opp_avg_for - 110) * 0.2)
+            defense = clamp(10 - max(0, opp_avg_for - 110) * 0.2)
             clutch = clamp(5 + (avg_for - avg_against) * 0.3)
             home_away = 6.5 if side == 'home' else 5.0
             venue_wr = standings.get('home_win_pct') if side == 'home' else standings.get('away_win_pct')
@@ -712,27 +698,6 @@ class AnalysisEngine:
                     elif ap.get('name'):
                         print(f"  ⚾ Away SP: {ap['name']} (stats 尚未公布)")
                 fetcher.close()
-
-                # 🆕 P0#2: MLB 牛棚 ERA（從 MLB Stats API /teams/{id}/stats?stats=season&group=pitching&situationCodes=R）
-                try:
-                    from mlb_data_fetcher import MLBDataFetcher as MLBDF
-                    bp_fetcher = MLBDF(conn=self.conn)
-                    home_bullpen = bp_fetcher.get_bullpen_stats(home_name)
-                    away_bullpen = bp_fetcher.get_bullpen_stats(away_name)
-                    if home_bullpen or away_bullpen:
-                        features['bullpen'] = {
-                            'home': home_bullpen or {},
-                            'away': away_bullpen or {},
-                        }
-                        h_era = home_bullpen.get('era', '?') if home_bullpen else '?'
-                        a_era = away_bullpen.get('era', '?') if away_bullpen else '?'
-                        h_ip = home_bullpen.get('ip', 0) if home_bullpen else 0
-                        a_ip = away_bullpen.get('ip', 0) if away_bullpen else 0
-                        print(f"  🐂 Bullpen: {home_name} RP ERA={h_era} ({h_ip} IP), {away_name} RP ERA={a_era} ({a_ip} IP)")
-                    bp_fetcher.close()
-                except Exception as bp_err:
-                    print(f"  ⚠ Bullpen stats fetch error: {bp_err}")
-
             except Exception as e:
                 print(f"  ⚠ MLB data fetch error: {e}")
                 self.conn.rollback()
@@ -1032,7 +997,7 @@ class AnalysisEngine:
             except Exception as e:
                 print(f"  ⚠ CPBL data fetch error: {e}")
 
-            # CPBL 今日先發投手（從 stats.cpbl.com.tw + cpbl.com.tw gamedetail）— 獨立區塊，不受上方 try 影響
+            # CPBL 今日先發投手（從 cpbl.com.tw 官網 API）— 獨立區塊，不受上方 try 影響
             try:
                 from cpbl_data_fetcher import CPBLDataFetcher
                 fetcher2 = CPBLDataFetcher()
@@ -1043,17 +1008,8 @@ class AnalysisEngine:
                 cpbl_starters = fetcher2.get_today_starting_pitchers(match_date)
                 if cpbl_starters:
                     features['cpbl_starting_pitchers'] = cpbl_starters
-
-                    # 【2026-08-06 更新】CPBL starter keys 現在是中文隊名（ex: "味全龍"），
-                    # 而 game dict 給的是英文隊名（ex: "Wei Chuan Dragons"），
-                    # 用 cpbl_data_fetcher.TEAM_MAP 反查做對應
-                    from cpbl_data_fetcher import TEAM_MAP as _CPBL_TEAM_MAP
-                    en_to_cn = {v: k for k, v in _CPBL_TEAM_MAP.items()}
-                    home_cn = en_to_cn.get(sp_home_name, sp_home_name)
-                    away_cn = en_to_cn.get(sp_away_name, sp_away_name)
-
-                    h_sp = cpbl_starters.get(home_cn, {})
-                    a_sp = cpbl_starters.get(away_cn, {})
+                    h_sp = cpbl_starters.get(sp_home_name, {})
+                    a_sp = cpbl_starters.get(sp_away_name, {})
                     h_name = h_sp.get('name', 'TBD') if h_sp else 'TBD'
                     a_name = a_sp.get('name', 'TBD') if a_sp else 'TBD'
                     print(f"  🏆 CPBL starting pitchers: {sp_home_name}={h_name}, {sp_away_name}={a_name}")
@@ -1073,83 +1029,6 @@ class AnalysisEngine:
                 fetcher2.close()
             except Exception as e:
                 print(f"  ⚠ CPBL starting pitcher fetch error: {e}")
-
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # P0#1: 休息天數 / 背靠背分析（NBA/MLB 影響最大）
-        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        # 從 games 表計算兩隊在前 N 天的出賽紀錄
-        # NBA 背靠背勝率降 ~39%，MLB 也有牛棚消耗效應
-        try:
-            match_date = game.get('match_date')
-            if match_date and league in ('MLB', 'NBA', 'WNBA', 'NPB', 'CPBL'):
-                def _get_team_rest_days(team_id, match_date, league):
-                    """計算一支球隊在 match_date 之前的連續出賽天數和休息天數"""
-                    import datetime as _dt
-                    if isinstance(match_date, str):
-                        target = _dt.datetime.strptime(match_date[:10], '%Y-%m-%d').date()
-                    else:
-                        target = match_date.date() if hasattr(match_date, 'date') else match_date
-
-                    # 查前 N 天的比賽情況
-                    lookback = 10  # 往前看10天
-                    start = (target - _dt.timedelta(days=lookback)).isoformat()
-                    end = (target - _dt.timedelta(days=1)).isoformat()
-
-                    self.cur.execute("""
-                        SELECT match_date, home_team_score IS NOT NULL as played
-                        FROM predictx.games
-                        WHERE (home_team_id = %(tid)s OR away_team_id = %(tid)s)
-                          AND match_date::date BETWEEN %(start)s AND %(end)s
-                          AND status = 'FINAL'
-                        ORDER BY match_date DESC
-                    """, {"tid": team_id, "start": start, "end": end})
-
-                    days = self.cur.fetchall() or []
-                    # 算連續出賽天數（從 target-1 開始往前算）
-                    consecutive_played = 0
-                    for d in days:
-                        if d['played']:
-                            consecutive_played += 1
-                        else:
-                            break
-
-                    # 最後一次出賽的日期
-                    last_game_date = None
-                    rest_days = None
-                    for d in days:
-                        if d['played']:
-                            last_game_date = d['match_date'].date() if hasattr(d['match_date'], 'date') else _dt.datetime.strptime(str(d['match_date'])[:10], '%Y-%m-%d').date()
-                            rest_days = (target - last_game_date).days - 1
-                            break
-
-                    if last_game_date is None:
-                        rest_days = None  # 本季首次出賽或資料不足
-
-                    return {
-                        'rest_days': rest_days,
-                        'consecutive_games': consecutive_played,
-                        'last_game_date': last_game_date.isoformat() if last_game_date else None,
-                    }
-
-                home_rest = _get_team_rest_days(game['home_team_id'], match_date, league)
-                away_rest = _get_team_rest_days(game['away_team_id'], match_date, league)
-
-                features['rest'] = {
-                    'home': home_rest,
-                    'away': away_rest,
-                }
-
-                # 計算差值：正值=主隊休息多
-                if home_rest.get('rest_days') is not None and away_rest.get('rest_days') is not None:
-                    rest_diff = home_rest['rest_days'] - away_rest['rest_days']
-                    features['rest']['diff'] = rest_diff
-                    h_label = f"休{home_rest['rest_days']}天" if home_rest['rest_days'] > 0 else ("背靠背" if home_rest['rest_days'] == 0 else f"休?天")
-                    a_label = f"休{away_rest['rest_days']}天" if away_rest['rest_days'] > 0 else ("背靠背" if away_rest['rest_days'] == 0 else f"休?天")
-                    print(f"  🕐 Rest days: {game['home_team_en']}={h_label}, {game['away_team_en']}={a_label}, diff={rest_diff:+d}")
-
-        except Exception as e:
-            print(f"  ⚠ Rest days computation error: {e}")
-            features['rest'] = {}
         
         return features
 
@@ -1528,81 +1407,7 @@ class AnalysisEngine:
 降雨: {weather_data['precip_mm']}mm"""
         else:
             weather_section = ""
-
-        # 🕐 休息天數分析段落（所有聯盟）
-        rest_data = features.get('rest', {})
-        if rest_data and (rest_data.get('home') or rest_data.get('away')):
-            h_rest = rest_data.get('home', {})
-            a_rest = rest_data.get('away', {})
-            rest_diff = rest_data.get('diff')
-
-            h_rest_days = h_rest.get('rest_days')
-            a_rest_days = a_rest.get('rest_days')
-
-            def _rest_label(days):
-                if days is None:
-                    return "資料不足"
-                if days == 0:
-                    return "背靠背（昨日剛出賽）"
-                if days == 1:
-                    return "休1天"
-                return f"休{days}天"
-
-            rest_section = "===== 休息天數（來源：games 表計算）=====\n"
-            rest_section += f"主隊 {home_team}: {_rest_label(h_rest_days)}\n"
-            rest_section += f"客隊 {away_team}: {_rest_label(a_rest_days)}\n"
-
-            if rest_diff is not None:
-                rest_section += f"休息天數差: {rest_diff:+d}（正=主隊多休）\n"
-
-            rest_section += """
-💡 分析指引：
-- 背靠背（連續兩天出賽）對體能與專注力影響極大：NBA 背靠背勝率僅 ~39%，MLB後段牛棚容易崩盤
-- 休1天 vs 背靠背：休息方有明顯體能優勢，勝率差距約 5-8%（NBA）或 3-5%（MLB）
-- 休3天以上：球員可能手感生疏，不一定比休1-2天更好
-- 若雙方休息狀況懸殊（差 ≥3天），請將此納入 Step 2 的體能因子
-"""
-        else:
-            rest_section = ""
-
-        # 🐂 MLB 牛棚 ERA（從 features['bullpen'] 讀取 reliever-only整季數據）
-        bullpen_data = features.get('bullpen', {})
-        if bullpen_data and (bullpen_data.get('home') or bullpen_data.get('away')):
-            h_bp = bullpen_data.get('home', {})
-            a_bp = bullpen_data.get('away', {})
-            h_era = h_bp.get('era')
-            a_era = a_bp.get('era')
-            h_k9 = h_bp.get('k_per_9')
-            a_k9 = a_bp.get('k_per_9')
-            h_bb9 = h_bp.get('bb_per_9')
-            a_bb9 = a_bp.get('bb_per_9')
-            h_ip = h_bp.get('ip')
-            a_ip = a_bp.get('ip')
-
-            bullpen_lines = [f"===== MLB 牛棚數據（後援投手整季統計 | NBA/其盟無此段落）====="]
-            bullpen_lines.append(f"主隊 {home_team} 牛棚: ERA={h_era}, K/9={h_k9}, BB/9={h_bb9}, 投球局數={h_ip}" if h_era else f"主隊 {home_team}: 牛棚數據不足")
-            bullpen_lines.append(f"客隊 {away_team} 牛棚: ERA={a_era}, K/9={a_k9}, BB/9={a_bb9}, IP={a_ip}" if a_era else f"客隊 {away_team}: 牛棚數據不足")
-
-            if h_era is not None and a_era is not None:
-                era_diff = round(float(h_era) - float(a_era), 2)
-                h_better = era_diff < 0  # 負=主隊 era 較低（較好）
-                bullpen_lines.append(f"牛棚 ERA 差: {era_diff:+.2f}（負=主隊牛棚較好）")
-
-                if abs(era_diff) > 0.50:
-                    direction = "主隊" if h_better else "客隊"
-                    magnitude = "明顯優勢" if abs(era_diff) > 1.0 else "小幅優勢"
-                    bullpen_lines.append(f"牛棚影響: {direction}後段有{magnitude}（差距 {abs(era_diff):.1f} ERA）")
-
-            bullpen_lines.append("")
-            bullpen_lines.append("💡 分析指引：")
-            bullpen_lines.append("- 牛棚 ERA 差距達 0.50 以上即有意義，1.00 以上為顯著優勢")
-            bullpen_lines.append("- 牛棚 K/9 高者能在關鍵時刻三振化解危機，封鎖對方後段攻勢")
-            bullpen_lines.append("- 牛棚 BB/9 高者（保送多）在緊張局面容易自爆")
-            bullpen_lines.append("- 若牛棚差距明顯（ERA > 1.0），此因素對勝率影響應高於先發投手")
-            bullpen_section = "\n".join(bullpen_lines)
-        else:
-            bullpen_section = ""
-
+        
         # 🏥 傷兵名單段落
         injury_data = features.get('injuries', {})
         if injury_data and (injury_data.get('home') or injury_data.get('away')):
@@ -1807,38 +1612,18 @@ Park Factor: {pf:.2f} ({park_interp})
                 current_dims = dims
                 break
 
-        # 🆕 [2026-08-10 統一化] 各聯盟主場優勢提示 — 與對照表及 Step 4 完全一致
-        # 設計原則：每聯盟給單一數字 + 對決原則，避免 LLM 困惑
-        # 與 home_advantage_full 對照表及 step4 主場指引使用同一組數字
+        # 🆕 通用主場優勢提示（CPBL 已有，補 MLB/NBA/NPB）
         league_upper_check = (league or "").upper()
         home_advantage_note = ""
-        if "MLB" in league_upper_check:
-            home_advantage_note = (
-                "\n- MLB 主場勝率 ~52%（實證無顯著優勢）。請勿因「主場」一詞就預設主隊有利——"
-                "以雙方實際數據對比為準。五五波時主隊僅有極微幅 tiebreaker（+0.01~+0.02）。"
-            )
-        elif "NPB" in league_upper_check:
-            home_advantage_note = (
-                "\n- NPB 主場勝率 ~53-55%（小幅優勢）。對實力接近的對戰，主隊有 +0.02~+0.04 微幅調整，"
-                "但勿過度依賴主場——投手差距仍是首要決定因素。"
-            )
-        elif "CPBL" in league_upper_check:
-            home_advantage_note = (
-                "\n- CPBL 主場勝率 ~45%（**客隊略佔優勢**）。請勿預設主隊有利——"
-                "中職實證主場加成不明顯，客隊戰績較佳時應直接給客隊較高勝率。"
-                "依實際對戰實力判斷，勿機械式加主場 tiebreaker。"
-            )
+        if "NBA" in league_upper_check:
+            home_advantage_note = "\n- NBA 主場優勢極為顯著：歷史主場勝率約 60%。對實力接近的對戰，主場球隊勝率應明顯 > 0.5。"
         elif "WNBA" in league_upper_check:
-            home_advantage_note = (
-                "\n- WNBA 主場勝率 ~58-60%（與 NBA 接近，顯著優勢）。對實力接近的對戰，"
-                "主隊可加 +0.04~+0.07 的合理主場加成，但受傷兵/體能因素影響大，"
-                "請特別注意背靠背球隊。"
-            )
-        elif "NBA" in league_upper_check:
-            home_advantage_note = (
-                "\n- NBA 主場勝率 ~60%（顯著優勢）。對實力接近的對戰，主隊可加 +0.05~+0.08 的合理主場加成，"
-                "除非客隊有絕對數據優勢（戰績差距 > 15 場）。"
-            )
+            home_advantage_note = "\n- WNBA 主場優勢顯著：歷史主場勝率約 58-60%，與 NBA 接近。對實力接近的對戰，主場球隊勝率應明顯 > 0.5。"
+        elif "MLB" in league_upper_check:
+            home_advantage_note = "\n- MLB 主場優勢約 53-54%。在五五波對戰中，主隊有統計上的小幅優勢，請勿系統性傾向客隊。"
+        elif "NPB" in league_upper_check:
+            home_advantage_note = "\n- NPB 主場優勢約 53%。對實力接近的對戰，主隊有小幅優勢。"
+        # CPBL 已在 cpbl_analysis_guide 中有「主場勝率約 55-60%」提示
 
         # CPBL 專屬分析指引 + 球員/戰績數據
         cpbl_analysis_guide = ""
@@ -1848,7 +1633,7 @@ Park Factor: {pf:.2f} ({park_interp})
             cpbl_spec += "- 洋將（外籍投手）對戰局影響極大，先發洋投通常佔優勢\n"
             cpbl_spec += "- 中職打者對新洋投適應期約 1-2 場\n"
             cpbl_spec += "- 牛棚穩定度是關鍵勝負因素\n"
-            cpbl_spec += "- 主場勝率約 45%（客隊略佔優勢，請勿預設主隊有利，依實際對戰實力判斷）\n"
+            cpbl_spec += "- 主場優勢明顯（中職主場勝率約 55-60%）\n"
             cpbl_spec += "- 近期團隊打擊狀況（近5場平均得分）比整季數據更具參考價值\n"
             cpbl_spec += "- 中職比賽節奏快，比分差距通常不大\n"
             cpbl_spec += "- 請特別關注兩隊近5場得失分差（淨勝分）\n"
@@ -1903,49 +1688,6 @@ Park Factor: {pf:.2f} ({park_interp})
                             avg_ev = sum(p.get('exit_velo_max_percentile') or 0 for p in pr_list) / max(len([p for p in pr_list if p.get('exit_velo_max_percentile') is not None]), 1)
                             cpbl_spec += f"\n  → 球隊主力平均: wRC+={avg_wrc:.1f}, OBP={avg_obp:.1f}, EVmax={avg_ev:.1f}"
 
-                # 🆕 [2026-07-25] 投手被打進階數據（Pitcher Batting Against PR，越低越好）
-                pa_pr = cpbl_data.get('pitcher_against_pr') or {}
-                h_pa_list = pa_pr.get('home') or []
-                a_pa_list = pa_pr.get('away') or []
-                if h_pa_list or a_pa_list:
-                    cpbl_spec += "\n\n===== 投手被打進階數據（P打 B-attacking Statcast；數值_越低越好_）====="
-                    cpbl_spec += "\n欄位：對手BA（被打擊率）、對手OBP（被上壘率）、對手SLG（被長打率）、對手wOBA（被打加權上壘率）、被打擊球初速、被打強擊球%、被打出色擊球、被打三振/保送/揮空/追打率"
-                    cpbl_spec += "\n**重要**：這些是「投手被打數據」—— 數值低代表對手難打數據高 = 投手壓制力強。_與打者 PR 方向相反！_"
-                    for side, label in [('home', '主隊'), ('away', '客隊')]:
-                        pa_list = h_pa_list if side == 'home' else a_pa_list
-                        team_label = f"{label} {home_team if side == 'home' else away_team}"
-                        if not pa_list:
-                            continue
-                        cpbl_spec += f"\n{team_label} 投手被打 PR（依排名由高至低）:"
-                        for i, p in enumerate(pa_list[:5], 1):
-                            name = p.get('player_name', '?')
-                            rank = p.get('ranking', '?')
-                            avg = p.get('opponent_avg', '?')
-                            obp = p.get('opponent_obp', '?')
-                            slg = p.get('opponent_slg', '?')
-                            woba = p.get('opponent_woba', '?')
-                            ev_max = p.get('exit_velo_max_kmh', '?')
-                            hard = p.get('hard_hit_pct', '?')
-                            barrel = p.get('barrel_pct', '?')
-                            k = p.get('k_pct', '?')
-                            bb = p.get('bb_pct', '?')
-                            whiff = p.get('whiff_pct', '?')
-                            cpbl_spec += (
-                                f"\n  #{i} {name} (P壓制排名 #{rank}): "
-                                f"對手BA={avg}, 對手OBP={obp}, 對手SLG={slg}, 對手wOBA={woba}, "
-                                f"被打EVmax={ev_max}km/h, 被打Hard%={hard}, 被打Barrel%={barrel}, "
-                                f"K%={k}, BB%={bb}, Whiff%={whiff} （越好）"
-                            )
-                        # 計算團隊投手被打平均壓制力（wOBA 越低越佳）
-                        woba_vals = [float(p['opponent_woba']) for p in pa_list if p.get('opponent_woba') and p['opponent_woba'] != '?']
-                        ev_vals = [float(p['exit_velo_max_kmh']) for p in pa_list if p.get('exit_velo_max_kmh') and p['exit_velo_max_kmh'] != '?']
-                        k_vals = [float(p['k_pct'].rstrip('%')) for p in pa_list if p.get('k_pct') and p['k_pct'] != '?']
-                        if woba_vals:
-                            avg_woba = sum(woba_vals)/len(woba_vals)
-                            avg_ev = sum(ev_vals)/len(ev_vals) if ev_vals else 0
-                            avg_k = sum(k_vals)/len(k_vals) if k_vals else 0
-                            cpbl_spec += f"\n  → 投手被打平均: 對手wOBA={avg_woba:.3f} (越低越好), 被打EVmax={avg_ev:.1f}, K%={avg_k:.1f}%"
-
                 h_stand = cpbl_data.get('standings', {}).get('home', {})
                 a_stand = cpbl_data.get('standings', {}).get('away', {})
                 h_pitch = cpbl_data.get('pitching', {}).get('home', {})
@@ -1953,60 +1695,12 @@ Park Factor: {pf:.2f} ({park_interp})
                 h_bat = cpbl_data.get('batting', {}).get('home', {})
                 a_bat = cpbl_data.get('batting', {}).get('away', {})
 
-                # CPBL 即時戰績排名（補充全年度數據表沒有的「本季排名」，
-                # 來源 cpbl.com.tw 即時爬蟲，全年度數據在下方段落）
-                if h_stand and h_stand.get('rank'):
-                    cpbl_spec += f"\n即時排名（cpbl.com.tw）: 主隊 {home_team} 第{h_stand['rank']}名 | 客隊 {away_team} 第{a_stand.get('rank','?')}名"
-                    # 注：不再注入 ERA/勝率/HR — 下方 cpbl_team_season_stats 段落已完整覆蓋
-
-                # 🆕 [2026-08-10] CPBL 全年度團隊進階數據（從 cpbl_team_season_stats 表）
-                try:
-                    self.cur.execute("""
-                        SELECT t.english_name, t.chinese_name,
-                               s.wins, s.ties, s.losses, s.win_pct, s.games_behind,
-                               s.home_wins, s.home_losses, s.away_wins, s.away_losses,
-                               s.streak, s.last_10_wins, s.last_10_losses,
-                               s.era, s.whip, s.avg, s.obp, s.slg,
-                               s.runs_scored, s.runs_allowed, s.hr_hitting, s.hr_allowed,
-                               s.so_pitching, s.bb_allowed, s.so_batting, s.bb_batting, s.sb,
-                               s.fielding_pct, s.errors, s.double_plays,
-                               s.h2h
-                        FROM predictx.cpbl_team_season_stats s
-                        JOIN predictx.teams t ON s.team_id = t.team_id
-                        WHERE s.season = 2026
-                          AND t.english_name IN (%s, %s)
-                    """, (home_team, away_team))
-                    season_rows = {r['english_name']: r for r in (self.cur.fetchall() or [])}
-
-                    if season_rows:
-                        cpbl_spec += "\n\n===== CPBL 全年度團隊數據（來源：cpbl_team_season_stats，使用者提供官方資料）====="
-                        for side, team_name in [('home', home_team), ('away', away_team)]:
-                            r = season_rows.get(team_name)
-                            if not r:
-                                continue
-                            label = '主隊' if side == 'home' else '客隊'
-                            cpbl_spec += f"\n{label} {team_name}："
-                            cpbl_spec += f"\n  戰績：{r['wins']}勝-{r['ties']}和-{r['losses']}敗，勝率 {r['win_pct']}，勝差 {r['games_behind']}"
-                            cpbl_spec += f"\n  主場：{r['home_wins']}勝-{r['home_losses']}敗 | 客場：{r['away_wins']}勝-{r['away_losses']}敗"
-                            cpbl_spec += f"\n  近況：{r['streak']}，近10場 {r['last_10_wins']}勝-{r['last_10_losses']}敗"
-                            cpbl_spec += f"\n  投球：ERA={r['era']}，WHIP={r['whip']}，SO={r['so_pitching']}，BB={r['bb_allowed']}，被HR={r['hr_allowed']}"
-                            cpbl_spec += f"\n  打擊：AVG={r['avg']}，OBP={r['obp']}，SLG={r['slg']}，得分={r['runs_scored']}，HR={r['hr_hitting']}，SO={r['so_batting']}，BB={r['bb_batting']}，SB={r['sb']}"
-                            cpbl_spec += f"\n  守備：FPCT={r['fielding_pct']}，失誤={r['errors']}，雙殺={r['double_plays']}"
-                            # H2H vs opponent
-                            h2h = r.get('h2h') or {}
-                            opp_name = away_team if side == 'home' else home_team
-                            opp_h2h = h2h.get(opp_name) if isinstance(h2h, dict) else None
-                            if opp_h2h:
-                                cpbl_spec += f"\n  對戰 {opp_name}：{opp_h2h['wins']}勝-{opp_h2h['ties']}和-{opp_h2h['losses']}敗"
-                        cpbl_spec += "\n\n💡 全年度數據分析指引："
-                        cpbl_spec += "\n- 團隊 ERA/WHIP 反映整體投手戰力，差距 > 0.5 為有意義優勢"
-                        cpbl_spec += "\n- 團隊 AVG/OBP/SLG 反映打線深度，OPS 差距 > 0.05 為明顯優勢"
-                        cpbl_spec += "\n- 守備率與失誤數反映防守穩定度，差距 > 10 失誤為顯著差異"
-                        cpbl_spec += "\n- 對戰歷史（H2H）在中職有較高參考價值，請納入分析權重"
-                        cpbl_spec += "\n- 近10場戰績比全年度更具時效性，若兩者矛盾以近10場為準"
-                        self.log_source("official_api")
-                except Exception as e:
-                    print(f"  ⚠ CPBL season stats fetch error (non-fatal): {e}")
+                if h_stand and h_stand.get('win_pct'):
+                    cpbl_spec += f"\n團隊數據（來源：cpbl.com.tw）:"
+                    cpbl_spec += f"\n主隊 {home_team}: 第{h_stand['rank']}名, {h_stand['wl_record']}, 勝率{h_stand['win_pct']}"
+                    cpbl_spec += f" | Team ERA={h_pitch.get('era','?')}, SO={h_pitch.get('so','?')}, HR={h_bat.get('hr','?')}"
+                    cpbl_spec += f"\n客隊 {away_team}: 第{a_stand['rank']}名, {a_stand['wl_record']}, 勝率{a_stand['win_pct']}"
+                    cpbl_spec += f" | Team ERA={a_pitch.get('era','?')}, SO={a_pitch.get('so','?')}, HR={a_bat.get('hr','?')}"
 
                 hitters = cpbl_data.get('hitting_leaders', {})
                 if hitters and hitters.get('home'):
@@ -2036,10 +1730,6 @@ Park Factor: {pf:.2f} ({park_interp})
                         cpbl_spec += line
 
             # 🆕 [2026-07-06] CPBL 當日 SP 個人 stats（從 predictx.player_season_stats）
-            # 🆕 [2026-07-25] 外籍投手/洋將 fallback：若不在 player_season_stats 中，
-            #   從 cpbl_pitcher_against_pr 取 Statcast（對手打擊）數據替代
-            sp_found_names = set()  # 已取到數據的 SP 名稱
-            cpbl_sp_section = ""  # 所有來源的 SP 數據區塊
             if (game.get('home_pitcher_name') or game.get('away_pitcher_name')):
                 cpbl_sp_names = [game.get('home_pitcher_name'), game.get('away_pitcher_name')]
                 cpbl_sp_names = [n for n in cpbl_sp_names if n and n != '尚未公布' and n != 'TBD']
@@ -2090,7 +1780,6 @@ Park Factor: {pf:.2f} ({park_interp})
                                             f"IP={ip}, SO={p_so}, BB={p_bb}, HR={p_hr}, "
                                             f"K/9={k9:.1f}, BB/9={bb9:.1f}, WHIP={whip:.2f}"
                                         )
-                                        sp_found_names.add(pname)
                                     else:
                                         avg = r.get('avg', 0) or 0
                                         obp = r.get('obp', 0) or 0
@@ -2102,50 +1791,11 @@ Park Factor: {pf:.2f} ({park_interp})
                                             f"HR={b_hr}, RBI={b_rbi}"
                                         )
                             if sp_lines:
-                                cpbl_sp_section = "\n\n===== CPBL 先發投手數據（來源：sportify.tw）=====\n" + "\n".join(sp_lines)
-                        else:
-                            cpbl_sp_section = ""
+                                cpbl_spec += "\n\n===== CPBL 球員個人數據（來源：sportify.tw）=====\n" + "\n".join(sp_lines)
+                                self.log_source("official_api")
+                                print(f"  📊 CPBL SP stats: {len(sp_lines)} players from DB")
                     except Exception as e:
                         print(f"  ⚠ CPBL player stats fetch error: {e}")
-                        cpbl_sp_section = ""
-
-                    # 🆕 [2026-07-25] Fallback：不在 sportify_tw 的 SP，從 cpbl_pitcher_against_pr 取 Statcast
-                    missing_sp = [n for n in cpbl_sp_names if n not in sp_found_names]
-                    if missing_sp:
-                        try:
-                            self.cur.execute("""
-                                SELECT player_name, ranking, opponent_avg, opponent_obp, opponent_slg,
-                                       opponent_woba, k_pct, bb_pct, whiff_pct, hard_hit_pct,
-                                       exit_velo_avg_kmh, exit_velo_max_kmh
-                                FROM predictx.cpbl_pitcher_against_pr
-                                WHERE season = 2026
-                                  AND player_name IN %s
-                            """, (tuple(missing_sp),))
-                            pa_rows = self.cur.fetchall() or []
-                            if pa_rows:
-                                pa_lines = []
-                                for r in pa_rows:
-                                    if isinstance(r, dict):
-                                        pa_lines.append(
-                                            f"  [Statcast] {r['player_name']}: "
-                                            f"對手wOBA={r['opponent_woba']}, 對手AVG={r['opponent_avg']}, "
-                                            f"對手SLG={r['opponent_slg']}, K%={r['k_pct']}, BB%={r['bb_pct']}, "
-                                            f"Whiff%={r['whiff_pct']}, Hard%={r['hard_hit_pct']}, "
-                                            f"被打EVmax={r['exit_velo_max_kmh']}km/h"
-                                        )
-                                    else:
-                                        pa_lines.append(
-                                            f"  [Statcast] {r[0]}: 對手wOBA={r[4]}, K%={r[5]}, Whiff%={r[7]}"
-                                        )
-                                if pa_lines:
-                                    cpbl_sp_section = (cpbl_sp_section or "") + "\n\n===== CPBL先發投手 Statcast（來源：cpbl_pitcher_against_pr；數值越低越好）=====\n" + "\n".join(pa_lines)
-                                    self.log_source("official_api")
-                                    print(f"  📊 CPBL SP Statcast fallback: {len(pa_lines)} players")
-                        except Exception as e:
-                            print(f"  ⚠ CPBL SP Statcast fallback error: {e}")
-
-                    if cpbl_sp_section:
-                        cpbl_spec += cpbl_sp_section
 
             # CPBL 今日先發投手（優先用 game 字典的 lottonavi/手動資料，其次用 cpbl.com.tw 抓取資料）
             cpbl_starters = features.get('cpbl_starting_pitchers', {}) or {}
@@ -2190,6 +1840,15 @@ Park Factor: {pf:.2f} ({park_interp})
                 f"{pos_hint}\n"
             )
 
+        # 🆕 [2026-06-24] 聯盟主場優勢常數（依歷史統計資料）
+        league_home_adv_const = {
+            "MLB": 0.030,   # 主力棒球歷史主場勝率約 53%
+            "NPB": 0.030,   # 日本職棒類似 MLB
+            "CPBL": 0.050,  # 中職較高（球迷文化）
+            "NBA": 0.080,   # NBA 主場勝率約 60%
+        }
+        league_home_adv = league_home_adv_const.get((league or "").upper(), 0.030)
+
         # 🆕 [2026-07-06] 信心理量規則（優化：明確化標準）
         # 重點：給出具體的數值門檻（戰績差距、淨勝分差、投手對位差）讓 LLM 不會過度保守
         confidence_calibration = """
@@ -2226,19 +1885,18 @@ Park Factor: {pf:.2f} ({park_interp})
 - 請根據「數據差距的實際幅度」評分，不要預設立場偏向保守
 """
 
-        # 🆕 [2026-08-10 統一化] 各聯盟歷史主場勝率對照表（純數字，供對照不用於機械加法）
-        # 與上方 home_advantage_note 及 Step 4 主場指引使用同一組數字
-        home_advantage_full = f"""⚾ 各聯盟歷史主場勝率參考（純對照，不用於機率計算）：
+        # 🆕 [2026-06-24] 主場優勢說明（豐富版，含數字）
+        home_advantage_full = f"""
+| 聯盟 | 歷史主場勝率 | 換算係數 | 本場幅度 |
+|------|-------------|---------|---------|
+| MLB  | ~53-54%      | +{league_home_adv_const['MLB']:.3f} | 實力接近時主隊 0.51-0.55 |
+| NPB  | ~53-55%      | +{league_home_adv_const['NPB']:.3f} | 接近性同上  |
+| CPBL | ~55-60%      | +{league_home_adv_const['CPBL']:.3f} | 主隊優勢更明顯 |
+| NBA  | ~60%         | +{league_home_adv_const['NBA']:.3f} | NBA 主場優勢最顯著 |
 
-| 聯盟 | 歷史主場勝率 | 主場效應強度 | 五五波微調建議 |
-|------|------------|------------|---------------|
-| MLB  | ~52%       | 無顯著優勢  | 主隊 +0.01~+0.02 |
-| NPB  | ~53-55%    | 小幅優勢    | 主隊 +0.02~+0.04 |
-| CPBL | ~45%       | 客隊略佔優  | **不應主動加主場**，戰績佳者勝 |
-| NBA  | ~60%       | 顯著優勢    | 主隊 +0.05~+0.08 |
-| WNBA | ~58-60%    | 顯著優勢    | 主隊 +0.04~+0.07 |
-
-請在 **Step 4** 的條件式主場指引中依實際對比調整，勿機械式加法。
+**用法**：在 Step 4 計算 home_win_probability 時，加上一個基準 0.50 後，須額外加上該聯盟的主場係數（{league_home_adv:.3f}）。
+範例：若加權平均後是 0.50 + 0.05 (主場優勢) = 0.55，最終值為 0.55（若接近則微調至 0.52-0.58 區間）。
+禁止：忽視主場優勢導致客隊勝率 > 主隊勝率 (五五波對戰時)。
 """
 
         prompt = f'''
@@ -2261,21 +1919,18 @@ Park Factor: {pf:.2f} ({park_interp})
 **Step 3 — 關鍵因子識別 (Key Factor Identification)**
 從 Step 2 中挑出 4-6 個**決定性因子**，每個給「權重 0-1」。
 權重總和 = 1.0（強制）。
-例：投手對位 0.35 + 近期狀態 0.25 + 打線火力 0.20 + 牛棚表現 0.20
-（注意：主場因素權重應 ≤ 0.10，MLB 實證主場勝率僅 ~52%，無顯著優勢）
+例：投手對位 0.35 + 主場優勢 0.15 + 近期狀態 0.20 + ...
 
 **Step 4 — 機率綜合 (Probability Aggregation)**
 根據 Step 3 的因子權重**綜合判斷** home_win_probability：
 - **不要機械式套用任何公式**——請根據 Step 2 的實質數據對比與 Step 3 的因子權重，自行權衡
 - 起點 0.50（五五波基準）
-- **主場加成請以「下方主場對照表」為唯一權威來源**，三個引用點（home_advantage_note、對照表、本 Step 4）數字必須一致
-- **🆕 通用主場加成指引**（不再因聯盟而異，所有規則以對照表為準）：
-  - 對手實力明顯較弱（差距 ≥ 15% 勝率或 ≥ 2.0 ERA 或三振能力差距明顯）→ 按對照表上限給主場加成（MLB ≤+0.02、NPB ≤+0.04、NBA ≤+0.08、WNBA ≤+0.07），CPBL 則不應主動加
-  - 對手實力明顯較強 → 主場加成可忽略甚至逆轉
-  - 雙方實力接近 → 按對照表「五五波微調」範圍給主場加成
-- **CPBL 特別規則**：因主隊加成不明顯，當主隊戰績或投手明顯較弱時，home_win_probability 應 < 0.45，**不要硬湊主場 tiebreaker**
+- **主場優勢請以 Step 2 的實際對比為主，不要因「主場」一詞就額外加分**
+  - 對手實力明顯較弱 → 主場效應可加 0.03-0.05
+  - 對手實力明顯較強 → 主場效應可忽略甚至逆轉
+  - 雙方實力接近 → 主場效應 +0.02 ~ +0.04 微調
 - 最終值限制在 [0.20, 0.80] 區間（避免極端）
-- 重要：若 Step 2 顯示客隊明顯佔優（如對手戰績、投手、打線都更好），即使主隊有主場，home_win_probability 也應 < 0.45
+- **重要**：若 Step 2 顯示客隊明顯佔優（如對手戰績、投手、打線都更好），即使主隊有主場，home_win_probability 也應 < 0.45
 - away_win_probability = 1 - home_win_probability
 
 **Step 5 — 信心理量 (Confidence Calibration)**
@@ -2316,8 +1971,6 @@ Park Factor: {pf:.2f} ({park_interp})
 {wnba_advanced_section}
 {npb_section}
 {weather_section}
-{rest_section}
-{bullpen_section}
 {injury_section}
 {cpbl_analysis_guide}
 {home_advantage_note}
@@ -2348,16 +2001,11 @@ Park Factor: {pf:.2f} ({park_interp})
 7. radar_chart 必須有 6 個 categories 和對應 6 個數值（0-10），不得為空
 8. key_factors 至少 4 個，**每個必須包含具體數字/球員名/百分比**
 
-【反偏差自檢 (Anti-Bias Self-Check) — 強制執行】
-完成分析後，請自我檢查並修正：
-
-1. **若本場預測主隊勝率 > 0.55，但 Step 2 多數維度（戰績、打線、牛棚）顯示客隊佔優 → 必須將 h_prob 下修至 ≤ 0.50**
-2. **若本場預測主隊勝率 < 0.45，但主隊多數維度佔優 → 必須將 h_prob 上修至 ≥ 0.50**
-3. **h_prob 必須與 Step 2 的實質強弱推論方向一致**，而非反映「主場 = 加分」的口號
-4. **比分方向必須與 h_prob 一致**（h_prob > 0.5 時比分主隊必須 > 客隊）
-5. **summary 結語的強弱結論必須與 h_prob 方向一致**
-
-**核心原則**：先發投手優異（單項）不足以覆蓋戰力 + 打線 + 牛棚 + 傷兵（多項）的整體劣勢，h_prob 必須反映「整體」而非「單項」。
+【反偏差自檢 (Anti-Bias Self-Check)】
+完成分析後，請自我檢查：
+- 若本場預測主隊勝率 > 0.55，但 Step 2 的實質數據（戰績、投手、打線）顯示客隊佔優 → 請重新評估
+- 若本場預測主隊勝率 < 0.45，但主隊實際有明顯數據優勢 → 請重新評估
+- 正確的方向：主隊勝率應**反映數據對比**，而非反映「主場 = 加分」的口號
 
 ═══════════════════════════════════════
 📋 輸出模板（嚴格遵守 keys 順序）
@@ -2379,10 +2027,10 @@ Park Factor: {pf:.2f} ({park_interp})
   "away_win_probability": 1 - home_win_probability,
   "confidence": 1-10 整數,
   "key_factors": [
-    "因子1中文（必須含具體數字/球員名）\n因子1英文（same content in English with specific numbers/player names）",
+    "因子1（必須含具體數字/球員名）",
     ...
   ],
-  "summary": "【中文分析】深度分析摘要（180-400字，引用具體球員與數據）\n\n【English Analysis】In-depth analysis summary (180-400 words, cite specific players and stats)",
+  "summary": "深度分析摘要（180-400字，引用具體球員與數據）",
   "predicted_score": "X-Y",
   "radar_chart": {{
     "categories": {json.dumps(current_dims, ensure_ascii=False)},
@@ -2421,11 +2069,11 @@ Park Factor: {pf:.2f} ({park_interp})
         payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": "你是一位頂尖的運動賽事分析師，擁有 20 年球評經驗，為 ESPN/NHK/Sportify 等知名媒體擔任過賽事評論員。你的風格是深入淺出、引用具體數據、語氣專業且有熱情，分析如同電視轉播的賽前分析節目。請同時用繁體中文和英文撰寫分析摘要與關鍵因子，兩種語言的內容應涵蓋相同重點但各自獨立完整。請根據提供的數據進行深度分析，並嚴格按照要求的 JSON 格式輸出。只輸出 JSON，不要有任何其他文字。"},
+                {"role": "system", "content": "你是一位頂尖的運動賽事分析師，擁有 20 年球評經驗，為 ESPN/NHK/Sportify 等知名媒體擔任過賽事評論員。你的風格是深入淺出、引用具體數據、語氣專業且有熱情，分析如同電視轉播的賽前分析節目。請根據提供的數據進行深度分析，並嚴格按照要求的 JSON 格式輸出。只輸出 JSON，不要有任何其他文字。"},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.5,
-            "max_tokens": 48000,  # 2026-08-07: 32000 仍 18% 截斷，提升至 48000 徹底解決 glm-5.2 reasoning chain 過長
+            "max_tokens": 11796,  # 9830 * 1.2 = 11796（再提高 20% 避免 reasoning 過長導致 JSON 截斷）
             "stream": False
         }
         headers = {
@@ -2458,16 +2106,8 @@ Park Factor: {pf:.2f} ({park_interp})
     
     def _parse_json_response(self, text):
         """解析 AI 回傳的 JSON（包含嵌套結構與中文鍵名處理）"""
-        # 🆕 2026-08-07: 去除 ```json / ``` fence（glm-5.2 偶爾輸出 markdown code block）
-        _stripped = text.strip()
-        if _stripped.startswith('```'):
-            nl = _stripped.find('\n')
-            if nl > 0:
-                end_fence = _stripped.rfind('```')
-                if end_fence > nl:
-                    _stripped = _stripped[nl+1:end_fence].strip()
         try:
-            result = json.loads(_stripped)
+            result = json.loads(text)
         except json.JSONDecodeError:
             # 嘗試從文字中提取 JSON 區塊
             import re
@@ -2732,9 +2372,8 @@ Park Factor: {pf:.2f} ({park_interp})
                 )
                 # 🆕 [fix] 摘要太短（< 150 字）視為不完整，走 fallback
                 is_too_short = len(summary) < 150
-                # 🆕 [雙語] 摘要太長截斷 — 雙語版本（中+英）合理長度 2000-3000 字，
-                # 上限放寬到 2500 字（從原本 600 提升），避免截斷英文段
-                is_too_long = len(summary) > 2500
+                # 🆕 [fix] 摘要太長（> 600 字）截斷為 600 字以內（避免使用者閱讀疲勞）
+                is_too_long = len(summary) > 600
                 if is_template:
                     print("  AI returned template, using computed fallback")
                     return None  # 走 fallback 路徑
@@ -2742,9 +2381,9 @@ Park Factor: {pf:.2f} ({park_interp})
                     print(f"  ⚠ AI summary too short ({len(summary)} chars < 150), using fallback for richer analysis")
                     return None  # 走 fallback 路徑（fallback 會被替換為更好的摘要）
                 if is_too_long:
-                    print(f"  ⚠ AI summary too long ({len(summary)} chars > 2500), truncating to fit UX limit")
-                    # 截斷到 2500 字以內，盡量在句號處切斷
-                    truncated = summary[:2500]
+                    print(f"  ⚠ AI summary too long ({len(summary)} chars > 600), truncating to fit UX limit")
+                    # 截斷到 600 字以內，盡量在句號處切斷
+                    truncated = summary[:600]
                     last_period = max(
                         truncated.rfind("。"),
                         truncated.rfind("！"),
@@ -2791,8 +2430,8 @@ Park Factor: {pf:.2f} ({park_interp})
                     home_advantage_map = {
                         'NBA': 0.58,   # NBA 主場勝率約 60%
                         'WNBA': 0.58,  # WNBA 主場勝率與 NBA 接近
-                        'CPBL': 0.45,  # 2026 實證主場勝率約 37.5%（近10天），設 0.45 為合理基準
-                        'MLB': 0.52,   # MLB 主場勝率約 53-54%（[2026-08-09] 校準下調至 0.52，預期命中率 +3pp）
+                        'CPBL': 0.55,  # CPBL 主場勝率約 55-60%
+                        'MLB': 0.54,   # MLB 主場勝率約 53-54%
                         'NPB': 0.54,   # NPB 主場勝率約 53%
                     }
                     home_prob = home_advantage_map.get(lg, 0.53)  # 預設 53% (一般主場優勢)
@@ -2882,23 +2521,22 @@ Park Factor: {pf:.2f} ({park_interp})
                                 home_prob = 1.0 - away_prob
                             pitcher_adjustment_log.append(f"{reason} → 勝率調整 {adjustment:+.2f}")
 
-                    # 🆕 [P0-MLB/NPB/CPBL] 先發投手三振能力(K/9)與四壞球控制(BB/9)確定性加成
-                    # [2026-08-10] 從 NPB-only 擴大到 MLB/CPBL — 投手 K/BB 對所有棒球聯盟都是勝負關鍵
+                    # 🆕 [P0-NPB] 先發投手三振能力(K/9)與四壞球控制(BB/9)確定性加成
+                    # 只對 NPB 生效：NPB 得分低、先發投手 K/BB 是勝負關鍵指標
                     # 直接調整勝率（不依賴 LLM 感覺），與 Recipe 6 ERA 校正疊加
-                    if lg in ('MLB', 'NPB', 'CPBL'):
+                    if lg == 'NPB':
                         kb_adjust_log = []
                         h_sp = (pitcher_data.get('home_pitcher') or {}).get('stats') or {}
                         a_sp = (pitcher_data.get('away_pitcher') or {}).get('stats') or {}
                         
-                        # 🆕 [fix] 缺少 K/9 BB/9 時從輪值 #1 借用（league-aware）
-                        _pitcher_key = {'MLB': 'mlb_pitchers', 'NPB': 'npb_pitchers', 'CPBL': 'cpbl_pitchers'}.get(lg, 'pitchers')
+                        # 🆕 [fix] lottonavi 只提供 ERA，缺少 K/9 BB/9 時從輪值 #1 借用
                         if h_sp and 'k_per_9' not in h_sp:
-                            home_pitchers_list = features.get(_pitcher_key, {}).get('home_pitchers', [])
+                            home_pitchers_list = features.get('npb_pitchers', {}).get('home_pitchers', [])
                             if home_pitchers_list:
                                 h_sp['k_per_9'] = home_pitchers_list[0].get('k_per_9', 0)
                                 h_sp['bb_per_9'] = home_pitchers_list[0].get('bb_per_9', 0)
                         if a_sp and 'k_per_9' not in a_sp:
-                            away_pitchers_list = features.get(_pitcher_key, {}).get('away_pitchers', [])
+                            away_pitchers_list = features.get('npb_pitchers', {}).get('away_pitchers', [])
                             if away_pitchers_list:
                                 a_sp['k_per_9'] = away_pitchers_list[0].get('k_per_9', 0)
                                 a_sp['bb_per_9'] = away_pitchers_list[0].get('bb_per_9', 0)
@@ -2920,7 +2558,7 @@ Park Factor: {pf:.2f} ({park_interp})
                                 home_prob = max(0.30, min(0.85, home_prob + kb_adj))
                                 away_prob = 1.0 - home_prob
                                 kb_adjust_log.append(
-                                    f"{lg} SP K/BB: 主K/9={h_k9}(BB/9={h_bb9}) vs 客K/9={a_k9}(BB/9={a_bb9}) "
+                                    f"NPB SP K/BB: 主K/9={h_k9}(BB/9={h_bb9}) vs 客K/9={a_k9}(BB/9={a_bb9}) "
                                     f"→ 勝率調整 {kb_adj:+.4f}"
                                 )
                         if kb_adjust_log:
@@ -2936,45 +2574,46 @@ Park Factor: {pf:.2f} ({park_interp})
                             result["summary"] = existing_summary + adjustment_note
                         print(f" ⚾ Recipe 6 投手調整: {pitcher_adjustment_log}")
 
-                # 🆕 [Recipe 8] 傷兵權重調整（MLB/NBA/WNBA）- 2026-07-21 新增
-                # [2026-08-10] 從投手調整巢狀中移出，獨立執行（不再依賴投手 K/BB 觸發）
-                # 根據日誌分析：主隊傷兵 9-11 人 vs 客隊 3-7 人，但 AI 仍預測主隊贏，導致命中率偏低
-                # 注意：用 features.get('league','') 而非外層 league 變數，避免 UnboundLocalError
-                injury_data = features.get('injuries', {})
-                _lg = (features.get('league') or '').upper()
-                if injury_data and _lg in ('MLB', 'NBA', 'WNBA'):
-                    home_injuries = len(injury_data.get('home', []))
-                    away_injuries = len(injury_data.get('away', []))
-                    injury_diff = home_injuries - away_injuries
-                    
-                    injury_adjustment = 0.0
-                    injury_log = []
-                    
-                    # 🆕 [2026-07-26] 門檻提升至 5 人，每多 1 人調整 1%（原 2% 過猛）
-                    if abs(injury_diff) > 5:
-                        # 每多 1 個傷兵，調整 1%（線性），最多調整 10%
-                        injury_adjustment = 0.01 * min(abs(injury_diff) - 5, 10)
-                        
-                        if injury_diff > 0:
-                            # 主隊傷兵更多，下修主隊勝率
-                            injury_adjustment = -injury_adjustment
-                            injury_log.append(f"主隊傷兵多{injury_diff}人 → 勝率調整 {injury_adjustment:+.2f}")
-                        else:
-                            # 客隊傷兵更多，上修主隊勝率
-                            injury_log.append(f"客隊傷兵多{abs(injury_diff)}人 → 勝率調整 {injury_adjustment:+.2f}")
-                        
-                        # 應用調整
-                        if injury_adjustment != 0.0:
-                            home_prob = max(0.30, min(0.85, home_prob + injury_adjustment))
+                    # 🆕 [Recipe NPB/MLB/CPBL 投手參數擴充] 先發投手 K/9 + BB/9 的確定性加成
+                    pitcher_param_delta = {
+                        'home_k9': home_k9,
+                        'away_k9': away_k9,
+                        'home_bb9': home_bb9,
+                        'away_bb9': away_bb9,
+                    }
+
+                    pitcher_adjustment = 0.0
+                    pitcher_adjustment_reasons = []
+
+                    k9_advantage = (home_k9 - away_k9)
+                    if k9_advantage >= 1.0:
+                        pitcher_adjustment += min(0.02 * (k9_advantage / 1.0), 0.04)
+                        pitcher_adjustment_reasons.append(f"主隊先發K/9優勢 +{k9_advantage:.1f}")
+
+                    bb9_gap = (away_bb9 - home_bb9)
+                    if bb9_gap >= 0.5:
+                        pitcher_adjustment += 0.01 * (bb9_gap / 0.5)
+                        pitcher_adjustment_reasons.append(f"客隊BB/9偏高 +{bb9_gap:.1f}")
+
+                    if home_kbb_ratio > 0 and away_kbb_ratio > 0 and (home_kbb_ratio - away_kbb_ratio) > 0.5:
+                        pitcher_adjustment += 0.02
+                        pitcher_adjustment_reasons.append(f"主隊K/BB比值優勢 +{(home_kbb_ratio - away_kbb_ratio):.2f}")
+
+                    if pitcher_adjustment != 0.0:
+                        pitcher_adjustment = max(-0.05, min(0.05, pitcher_adjustment))
+                        if home_prob > away_prob:
+                            home_prob = max(0.30, min(0.85, home_prob + pitcher_adjustment))
                             away_prob = 1.0 - home_prob
-                            result["home_win_probability"] = round(home_prob, 4)
-                            result["away_win_probability"] = round(away_prob, 4)
-                            
-                            existing_summary = result.get("summary", "") or ""
-                            adjustment_note = "\n\n[傷兵校正] " + "; ".join(injury_log)
-                            if "[傷兵校正]" not in existing_summary:
-                                result["summary"] = existing_summary + adjustment_note
-                            print(f" 🏥 Recipe 8 傷兵調整：{injury_log}")
+                        else:
+                            away_prob = max(0.30, min(0.85, away_prob - pitcher_adjustment))
+                            home_prob = 1.0 - away_prob
+                        result["home_win_probability"] = round(home_prob, 4)
+                        result["away_win_probability"] = round(away_prob, 4)
+                        existing_summary = result.get("summary", "") or ""
+                        adjustment_note = "\n\n[投手參數校正] " + "; ".join(pitcher_adjustment_reasons) + f" => 勝率調整 {pitcher_adjustment:+.2f}"
+                        if "[投手參數校正]" not in existing_summary:
+                            result["summary"] = existing_summary + adjustment_note
+                        print(f" ⚾ Recipe 6 投手參數調整: {pitcher_adjustment_reasons}")
 
 
                 # 信心指數標準化: 若 Ollama 回傳 0~1 分數則轉換為 1~10 評分
@@ -3026,14 +2665,14 @@ Park Factor: {pf:.2f} ({park_interp})
                             feature_boost += 1
                             boost_reasons.append(f"投手 ERA 差距 {era_diff:.2f}")
 
-                # 條件 3: 排名差距 > 10 名 — [2026-08-10 移除] 實證有害（conf=7 命中率僅 41%），排名差距不具預測力
-                # home_rank = home_standings_raw.get('rank')
-                # away_rank = away_standings_raw.get('rank')
-                # if home_rank and away_rank:
-                #     rank_diff = abs(int(home_rank) - int(away_rank))
-                #     if rank_diff > 10:
-                #         feature_boost += 1
-                #         boost_reasons.append(f"排名差距 {rank_diff}")
+                # 條件 3: 排名差距 > 10 名
+                home_rank = home_standings_raw.get('rank')
+                away_rank = away_standings_raw.get('rank')
+                if home_rank and away_rank:
+                    rank_diff = abs(int(home_rank) - int(away_rank))
+                    if rank_diff > 10:
+                        feature_boost += 1
+                        boost_reasons.append(f"排名差距 {rank_diff}")
 
                 if feature_boost > 0:
                     old_conf = normalized_conf
@@ -3078,33 +2717,6 @@ Park Factor: {pf:.2f} ({park_interp})
                         home_prob = 1.0 - away_prob
                     result["home_win_probability"] = round(home_prob, 4)
                     result["away_win_probability"] = round(away_prob, 4)
-
-                # 🆕 [2026-08-10] 強制一致性檢查：h_prob 與 AI 結語（reasoning.step4）的方向必須一致
-                # 問題：LLM 偶爾在 reasoning.step4_probability_calc 寫「客隊勝」但 h_prob > 0.5 看好主隊
-                # 解法：掃描 step4 reasoning，若偵測到與 h_prob 矛盾的結論，自動調整 h_prob
-                step4_text = ""
-                try:
-                    reasoning = result.get("reasoning")
-                    if isinstance(reasoning, dict):
-                        step4_text = reasoning.get("step4_probability_calc", "") or ""
-                except Exception:
-                    step4_text = ""
-                # 若 AI 在 step4 結論說「客隊勝」/「主隊敗」但 h_prob 看好主隊 → 修正
-                if step4_text and home_prob > 0.5:
-                    kw_negative = ['客隊勝', '客隊略佔', '客隊佔優', '主隊輸', '主隊敗', '客隊小勝', '客隊主推']
-                    if any(k in step4_text for k in kw_negative):
-                        # AI 結論與 h_prob 矛盾：以 AI 結語為準，下修 h_prob
-                        home_prob = max(0.20, 0.5 - 0.05)  # 0.45
-                        away_prob = 1.0 - home_prob
-                        result["home_win_probability"] = round(home_prob, 4)
-                        result["away_win_probability"] = round(away_prob, 4)
-                elif step4_text and home_prob < 0.5:
-                    kw_positive = ['主隊勝', '主隊略佔', '主隊佔優', '客隊輸', '客隊敗', '主隊小勝', '主隊主推']
-                    if any(k in step4_text for k in kw_positive):
-                        home_prob = min(0.80, 0.5 + 0.05)  # 0.55
-                        away_prob = 1.0 - home_prob
-                        result["home_win_probability"] = round(home_prob, 4)
-                        result["away_win_probability"] = round(away_prob, 4)
 
                 # 🆕 校正 predicted_score：確保與勝率一致
                 # 若 home_prob > away_prob → home_score 應 > away_score，反之亦然
@@ -3176,24 +2788,22 @@ Park Factor: {pf:.2f} ({park_interp})
         away_avg_f = away_form.get('avg_goals_for', 0) or 0
         away_avg_a = away_form.get('avg_goals_against', 0) or 0
 
-        # 🆕 [P0-MLB/NPB/CPBL fallback 同步] 先發投手 K/9 與 BB/9 確定性加成
-        # [2026-08-10] 從 NPB-only 擴大到 MLB/CPBL
+        # 🆕 [P0-NPB fallback 同步] 先發投手 K/9 與 BB/9 確定性加成
         # 與正常路徑 Recipe 6 區塊使用完全一致公式，確保 fallback 也反映投手三振/保送優勢
         lg_fb = (features.get('league') or '').upper()
-        if lg_fb in ('MLB', 'NPB', 'CPBL'):
-            kb_pitcher = features.get('mlb_pitchers') or features.get('npb_pitchers') or features.get('cpbl_pitchers') or features.get('pitchers') or {}
+        if lg_fb == 'NPB':
+            kb_pitcher = features.get('npb_pitchers') or features.get('mlb_pitchers') or features.get('pitchers') or {}
             h_sp_fb = (kb_pitcher.get('home_pitcher') or {}).get('stats') or {}
             a_sp_fb = (kb_pitcher.get('away_pitcher') or {}).get('stats') or {}
             
-            # 🆕 [fix] 缺少 K/9 BB/9 時從輪值 #1 借用（league-aware）
-            _fb_pitcher_key = {'MLB': 'mlb_pitchers', 'NPB': 'npb_pitchers', 'CPBL': 'cpbl_pitchers'}.get(lg_fb, 'pitchers')
+            # 🆕 [fix] lottonavi 只提供 ERA，缺少 K/9 BB/9 時從輪值 #1 借用
             if h_sp_fb and 'k_per_9' not in h_sp_fb:
-                home_pitchers_fb = features.get(_fb_pitcher_key, {}).get('home_pitchers', [])
+                home_pitchers_fb = features.get('npb_pitchers', {}).get('home_pitchers', [])
                 if home_pitchers_fb:
                     h_sp_fb['k_per_9'] = home_pitchers_fb[0].get('k_per_9', 0)
                     h_sp_fb['bb_per_9'] = home_pitchers_fb[0].get('bb_per_9', 0)
             if a_sp_fb and 'k_per_9' not in a_sp_fb:
-                away_pitchers_fb = features.get(_fb_pitcher_key, {}).get('away_pitchers', [])
+                away_pitchers_fb = features.get('npb_pitchers', {}).get('away_pitchers', [])
                 if away_pitchers_fb:
                     a_sp_fb['k_per_9'] = away_pitchers_fb[0].get('k_per_9', 0)
                     a_sp_fb['bb_per_9'] = away_pitchers_fb[0].get('bb_per_9', 0)
@@ -3208,99 +2818,12 @@ Park Factor: {pf:.2f} ({park_interp})
                 kb_adj_fb = round(k9_adj_fb + bb9_adj_fb, 4)
                 if abs(kb_adj_fb) >= 0.005:
                     home_prob = max(0.30, min(0.85, home_prob + kb_adj_fb))
-                    print(f"  ⚾ [fallback] {lg_fb} SP K/BB: 主 K/9={h_k9_fb}(BB/9={h_bb9_fb}) vs 客 K/9={a_k9_fb}(BB/9={a_bb9_fb}) → 勝率調整 {kb_adj_fb:+.4f}")
-
-        # 🆕 [2026-07-19] Fallback 進階數據強化：先發投手 + 團隊打擊/投球
-        lg_fb = (features.get('league') or '').upper()
-        try:
-            if lg_fb in ('MLB', 'NPB', 'CPBL'):
-                pitcher_block = features.get('mlb_pitchers') or features.get('npb_pitchers') or features.get('cpbl_pitchers') or features.get('pitchers') or {}
-                h_sp = (pitcher_block.get('home_pitcher') or {}).get('stats') or {}
-                a_sp = (pitcher_block.get('away_pitcher') or {}).get('stats') or {}
-
-                def safe_float(v):
-                    try:
-                        return float(v or 0)
-                    except (TypeError, ValueError):
-                        return 0.0
-
-                h_era = safe_float(h_sp.get('era'))
-                a_era = safe_float(a_sp.get('era'))
-                h_k9 = safe_float(h_sp.get('k_per_9'))
-                a_k9 = safe_float(a_sp.get('k_per_9'))
-                h_bb9 = safe_float(h_sp.get('bb_per_9'))
-                a_bb9 = safe_float(a_sp.get('bb_per_9'))
-                h_whip = safe_float(h_sp.get('whip'))
-                a_whip = safe_float(a_sp.get('whip'))
-
-                if h_era > 0 and a_era > 0:
-                    era_adj = (a_era - h_era) * 0.02
-                    home_prob = max(0.30, min(0.85, home_prob + era_adj))
-                    print(f"  ⚾ [fallback進階] SP ERA: 主={h_era:.2f} vs 客={a_era:.2f} → 勝率調整 {era_adj:+.4f}")
-                if h_k9 and a_k9 and h_bb9 and a_bb9:
-                    adv = (h_k9 - a_k9) * 0.015 + (a_bb9 - h_bb9) * 0.02
-                    home_prob = max(0.30, min(0.85, home_prob + adv))
-                    print(f"  ⚾ [fallback進階] SP K/BB: 主={h_k9:.1f}/{h_bb9:.1f} vs 客={a_k9:.1f}/{a_bb9:.1f} → 勝率調整 {adv:+.4f}")
-                if h_whip and a_whip:
-                    whip_adj = (a_whip - h_whip) * 0.03
-                    home_prob = max(0.30, min(0.85, home_prob + whip_adj))
-                    print(f"  ⚾ [fallback進階] SP WHIP: 主={h_whip:.2f} vs 客={a_whip:.2f} → 勝率調整 {whip_adj:+.4f}")
-
-            if lg_fb == 'MLB':
-                mlb_adv = features.get('mlb_advanced') or {}
-                h_team = (mlb_adv.get('team_stats') or {}).get('home') or {}
-                a_team = (mlb_adv.get('team_stats') or {}).get('away') or {}
-
-                def calc_avg(hits, ab):
-                    return round(hits / ab, 3) if ab and ab > 0 else 0
-                def calc_ops_onbase(hits, bb, hbp, sf, ab):
-                    denom = ab + bb + hbp + sf
-                    return round((hits + bb + hbp) / denom, 3) if denom and denom > 0 else 0
-                def calc_team_era(er, outs):
-                    return round(er * 9 / (outs / 3), 2) if outs and outs > 0 else 0
-
-                h_avg = calc_avg(h_team.get('hitting_hits', 0), h_team.get('hitting_atbats', 0))
-                a_avg = calc_avg(a_team.get('hitting_hits', 0), a_team.get('hitting_atbats', 0))
-                h_obp = calc_ops_onbase(h_team.get('hitting_hits', 0), h_team.get('hitting_baseonballs', 0), h_team.get('hitting_hitbypitch', 0), h_team.get('hitting_sacflies', 0), h_team.get('hitting_atbats', 0))
-                a_obp = calc_ops_onbase(a_team.get('hitting_hits', 0), a_team.get('hitting_baseonballs', 0), a_team.get('hitting_hitbypitch', 0), a_team.get('hitting_sacflies', 0), a_team.get('hitting_atbats', 0))
-                h_era = calc_team_era(h_team.get('pitching_earnedruns', 0), h_team.get('pitching_outs', 0))
-                a_era = calc_team_era(a_team.get('pitching_earnedruns', 0), a_team.get('pitching_outs', 0))
-
-                if h_avg and a_avg and h_era and a_era:
-                    bat_adj = (h_avg - a_avg) * 0.6 + (a_era - h_era) * 0.02
-                    home_prob = max(0.30, min(0.85, home_prob + bat_adj))
-                    print(f"  ⚾ [fallback進階] MLB team AVG/ERA: 主={h_avg:.3f}/{h_era:.2f} vs 客={a_avg:.3f}/{a_era:.2f} → 勝率調整 {bat_adj:+.4f}")
-
-            if lg_fb in ('NBA', 'WNBA'):
-                nba_adv = features.get('nba_advanced') or features.get('wnba_advanced') or {}
-                h_team = (nba_adv.get('team_stats') or {}).get('home') or {}
-                a_team = (nba_adv.get('team_stats') or {}).get('away') or {}
-
-                h_off = float(h_team.get('off_rtg') or 0)
-                a_off = float(a_team.get('off_rtg') or 0)
-                h_def = float(h_team.get('def_rtg') or 0)
-                a_def = float(a_team.get('def_rtg') or 0)
-                h_pace = float(h_team.get('pace') or 0)
-                a_pace = float(a_team.get('pace') or 0)
-                h_efg = float(h_team.get('efg_pct') or 0)
-                a_efg = float(a_team.get('efg_pct') or 0)
-
-                if h_off and a_off:
-                    net = (h_off - a_off) + (a_def - h_def) * 0.5
-                    home_prob = max(0.30, min(0.85, home_prob + net * 0.01))
-                    print(f"  ⚾ [fallback進階] NBA/WNBA OffRtg/DefRtg: 主={h_off:.1f}/{h_def:.1f} vs 客={a_off:.1f}/{a_def:.1f} → 勝率調整 {net * 0.01:+.4f}")
-                if h_pace and a_pace and h_efg and a_efg:
-                    efg_adj = (h_efg - a_efg) * 0.03
-                    home_prob = max(0.30, min(0.85, home_prob + efg_adj))
-                    print(f"  ⚾ [fallback進階] NBA/WNBA eFG%: 主={h_efg:.3f} vs 客={a_efg:.3f} → 勝率調整 {efg_adj:+.4f}")
-        except Exception as adv_err:
-            print(f"  ⚠ Fallback 進階數據強化失敗：{adv_err}")
+                    print(f"  ⚾ [fallback] NPB SP K/BB: 主 K/9={h_k9_fb}(BB/9={h_bb9_fb}) vs 客 K/9={a_k9_fb}(BB/9={a_bb9_fb}) → 勝率調整 {kb_adj_fb:+.4f}")
 
         # Radar chart 維度（用於 fallback 也保留 AI-style 6 維度）
         league = features.get('league', '')
         leauge_dims_map = {
             "MLB": ["球隊整體戰力", "打線火力", "先發投手", "牛棚表現", "主客場因素", "近期狀態"],
-            "NPB": ["球隊整體戰力", "打線火力", "先發投手", "牛棚表現", "主客場因素", "近期狀態"],
             "NBA": ["團隊整體戰力", "進攻效率", "防守強度", "籃板能力", "關鍵球處理", "近期狀態"],
             "WNBA": ["團隊整體戰力", "進攻效率", "防守強度", "籃板能力", "關鍵球處理", "近期狀態"],
             "CPBL": ["球隊整體戰力", "打線火力", "先發投手", "牛棚表現", "主客場因素", "近期狀態"],
@@ -3410,8 +2933,6 @@ Park Factor: {pf:.2f} ({park_interp})
             "away_win_probability": round(1 - home_prob, 4),
             "confidence": max(1, min(10, round(max(home_prob, 1 - home_prob) * 10))),
             "key_factors": factors[:4],
-            # 🆕 [2026-07-25] Fallback path 也將 features 持久化，避免後續 Prompt injection 失敗
-            "features": features,
             "summary": (
                 f"{features['game_info']['home_team_name']} vs {features['game_info']['away_team_name']}："
                 f"{home_form.get('win_loss', '近期數據不足')}，"

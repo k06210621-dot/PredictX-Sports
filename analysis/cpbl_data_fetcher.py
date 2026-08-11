@@ -840,7 +840,7 @@ class CPBLDataFetcher:
             headers = {}
             if internal_secret:
                 headers['X-Internal-Secret'] = internal_secret
-            r = self.session.get(url, headers=headers, timeout=15)
+            r = self.session.get(url, headers=headers, timeout=120)
             if r.status_code != 200:
                 print(f"  [CPBL SP] Proxy HTTP {r.status_code}", flush=True)
                 return None
