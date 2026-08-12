@@ -3119,6 +3119,16 @@ Park Factor: {pf:.2f} ({park_interp})
                 if combined_text and home_prob > 0.5:
                     if any(k in combined_text for k in kw_negative):
                         contradiction_detected = True
+                    # 🆕 regex 數字檢測：主隊勝率 < 50% 或 客隊勝率 > 50% 但 hp > 0.5
+                    if not contradiction_detected:
+                        import re as _re2
+                        m = _re2.search(r'主隊勝率\s*(\d+)', combined_text)
+                        if m and int(m.group(1)) < 50:
+                            contradiction_detected = True
+                        m = _re2.search(r'客隊勝率\s*(\d+)', combined_text)
+                        if m and int(m.group(1)) > 50:
+                            contradiction_detected = True
+                    if contradiction_detected:
                         # AI 文字結論與 h_prob 矛盾：以 AI 文字結語為準，下修 h_prob
                         home_prob = max(0.20, 0.5 - 0.05)  # 0.45
                         away_prob = 1.0 - home_prob
@@ -3127,6 +3137,16 @@ Park Factor: {pf:.2f} ({park_interp})
                 elif combined_text and home_prob < 0.5:
                     if any(k in combined_text for k in kw_positive):
                         contradiction_detected = True
+                    # 🆕 regex 數字檢測：主隊勝率 > 50% 或 客隊勝率 < 50% 但 hp < 0.5
+                    if not contradiction_detected:
+                        import re as _re3
+                        m = _re3.search(r'主隊勝率\s*(\d+)', combined_text)
+                        if m and int(m.group(1)) > 50:
+                            contradiction_detected = True
+                        m = _re3.search(r'客隊勝率\s*(\d+)', combined_text)
+                        if m and int(m.group(1)) < 50:
+                            contradiction_detected = True
+                    if contradiction_detected:
                         home_prob = min(0.80, 0.5 + 0.05)  # 0.55
                         away_prob = 1.0 - home_prob
                         result["home_win_probability"] = round(home_prob, 4)
