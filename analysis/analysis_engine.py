@@ -3087,9 +3087,9 @@ Park Factor: {pf:.2f} ({park_interp})
                     result["home_win_probability"] = round(home_prob, 4)
                     result["away_win_probability"] = round(away_prob, 4)
 
-                # 🆕 [2026-08-10] 強制一致性檢查：h_prob 與 AI 結語（reasoning.step4）的方向必須一致
-                # 問題：LLM 偶爾在 reasoning.step4_probability_calc 寫「客隊勝」但 h_prob > 0.5 看好主隊
-                # 解法：掃描 step4 reasoning，若偵測到與 h_prob 矛盾的結論，自動調整 h_prob
+                # 🆕 [2026-08-10] 強制一致性檢查：h_prob 與 AI 結語（reasoning.step4 + summary）的方向必須一致
+                # 問題：LLM 偶爾在 reasoning.step4_probability_calc / summary 寫「客隊勝」但 h_prob > 0.5 看好主隊
+                # 解法：掃描 step4 + summary，若偵測到與 h_prob 矛盾的結論，自動調整 h_prob 並修正 summary 文字
                 step4_text = ""
                 try:
                     reasoning = result.get("reasoning")
@@ -3097,22 +3097,82 @@ Park Factor: {pf:.2f} ({park_interp})
                         step4_text = reasoning.get("step4_probability_calc", "") or ""
                 except Exception:
                     step4_text = ""
-                # 若 AI 在 step4 結論說「客隊勝」/「主隊敗」但 h_prob 看好主隊 → 修正
-                if step4_text and home_prob > 0.5:
-                    kw_negative = ['客隊勝', '客隊略佔', '客隊佔優', '主隊輸', '主隊敗', '客隊小勝', '客隊主推']
-                    if any(k in step4_text for k in kw_negative):
-                        # AI 結論與 h_prob 矛盾：以 AI 結語為準，下修 h_prob
+                summary_text = str(result.get("summary", "") or "")
+                # 合併掃描範圍：step4 + summary（任一有矛盾就修正）
+                combined_text = (step4_text + " " + summary_text)
+
+                # 擴充關鍵字（覆蓋更多口語化變體）
+                kw_negative = [
+                    '客隊勝', '客隊略佔', '客隊佔優', '客隊占優', '客隊小勝', '客隊主推',
+                    '客隊看好', '客隊稍佔優', '客隊占上風', '客隊稍占優',
+                    '主隊輸', '主隊敗', '主隊勝率低於五成', '主隊不看好',
+                    'away team win', 'visitors win', 'road team win',
+                ]
+                kw_positive = [
+                    '主隊勝', '主隊略佔', '主隊佔優', '主隊占優', '主隊小勝', '主隊主推',
+                    '主隊看好', '主隊稍佔優', '主隊占上風', '主隊稍占優',
+                    '客隊輸', '客隊敗', '客隊勝率低於五成', '客隊不看好',
+                    'home team win', 'hosts win',
+                ]
+
+                contradiction_detected = False
+                if combined_text and home_prob > 0.5:
+                    if any(k in combined_text for k in kw_negative):
+                        contradiction_detected = True
+                        # AI 文字結論與 h_prob 矛盾：以 AI 文字結語為準，下修 h_prob
                         home_prob = max(0.20, 0.5 - 0.05)  # 0.45
                         away_prob = 1.0 - home_prob
                         result["home_win_probability"] = round(home_prob, 4)
                         result["away_win_probability"] = round(away_prob, 4)
-                elif step4_text and home_prob < 0.5:
-                    kw_positive = ['主隊勝', '主隊略佔', '主隊佔優', '客隊輸', '客隊敗', '主隊小勝', '主隊主推']
-                    if any(k in step4_text for k in kw_positive):
+                elif combined_text and home_prob < 0.5:
+                    if any(k in combined_text for k in kw_positive):
+                        contradiction_detected = True
                         home_prob = min(0.80, 0.5 + 0.05)  # 0.55
                         away_prob = 1.0 - home_prob
                         result["home_win_probability"] = round(home_prob, 4)
                         result["away_win_probability"] = round(away_prob, 4)
+
+                # 🆕 [2026-08-12] 矛盾偵測到時，同步修正 summary 內的勝率百分比與比分
+                # 避免 iOS 顯示「hp=0.45 主隊敗」但 summary 仍寫「客隊勝率 60%」
+                if contradiction_detected and summary_text:
+                    import re
+                    winner_is_home = home_prob > away_prob
+                    winner_pct = round(max(home_prob, away_prob) * 100)
+                    loser_pct = round(min(home_prob, away_prob) * 100)
+
+                    # 修正中文段：替換「主隊/客隊勝率 N%」為正確方向
+                    if winner_is_home:
+                        summary_text = re.sub(
+                            r'客隊勝率\s*\d+\s*[%％]',
+                            f'主隊勝率{winner_pct}%',
+                            summary_text
+                        )
+                        summary_text = re.sub(
+                            r'主隊勝率\s*\d+\s*[%％]',
+                            f'主隊勝率{winner_pct}%',
+                            summary_text
+                        )
+                    else:
+                        summary_text = re.sub(
+                            r'主隊勝率\s*\d+\s*[%％]',
+                            f'客隊勝率{winner_pct}%',
+                            summary_text
+                        )
+                        summary_text = re.sub(
+                            r'客隊勝率\s*\d+\s*[%％]',
+                            f'客隊勝率{winner_pct}%',
+                            summary_text
+                        )
+
+                    # 修正英文段：替換 "X% win probability"
+                    summary_text = re.sub(
+                        r'(\d+)\s*%\s*win\s*probability',
+                        f'{winner_pct}% win probability',
+                        summary_text,
+                        flags=re.IGNORECASE
+                    )
+
+                    result["summary"] = summary_text
 
                 # 🆕 校正 predicted_score：確保與勝率一致
                 # 若 home_prob > away_prob → home_score 應 > away_score，反之亦然
