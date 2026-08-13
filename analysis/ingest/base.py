@@ -16,7 +16,13 @@ import logging
 import requests
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+import zoneinfo
+
+_taipei_tz = zoneinfo.ZoneInfo("Asia/Taipei")
+
+def _taipei_now():
+    return datetime.now(_taipei_tz)
 
 LOGGER = logging.getLogger("ingest.base")
 
@@ -110,7 +116,7 @@ class BaseIngester(ABC):
         """
         LOGGER.info(f"[{self.league_code}] ===== 開始抓取 =====")
         all_games: List[Dict[str, Any]] = []
-        today = datetime.now()
+        today = _taipei_now()
         ok = True
 
         for i in range(self.league_days_ahead + 1):
@@ -172,7 +178,7 @@ class BaseIngester(ABC):
         - 上傳時仍走既有 /api/insert_games 端點，會自動 UPDATE 既有 game 的 score/status
         """
         if not target_date:
-            yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+            yesterday = (_taipei_now() - timedelta(days=1)).strftime("%Y-%m-%d")
             target_date = yesterday
 
         LOGGER.info(f"[{self.league_code}] ===== 昨日補抓 ===== {target_date}")

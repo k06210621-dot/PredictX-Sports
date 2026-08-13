@@ -519,7 +519,7 @@ def api_games():
             LEFT JOIN predictx.game_status gs ON g.game_id = gs.game_id
             LEFT JOIN predictx.game_analysis ga ON g.game_id = ga.game_id
             WHERE UPPER(th.league) = UPPER(%s) AND UPPER(ta.league) = UPPER(%s)
-            AND g.match_date >= CURRENT_DATE - (%s || ' days')::interval
+            AND g.match_date >= (CURRENT_DATE AT TIME ZONE 'Asia/Taipei')::date - (%s || ' days')::interval
             -- 🆕 移除 team_aliases JOIN（之前導致同 game 重複 4 次，例如 NBA Nets 出現 4 個別名）
             -- 直接使用 teams.english_name 作為顯示用名稱
             ORDER BY g.match_date DESC, g.game_id

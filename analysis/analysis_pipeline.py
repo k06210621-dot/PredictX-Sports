@@ -45,7 +45,7 @@ class AnalysisPipeline:
                 FROM predictx.games g
                 LEFT JOIN predictx.game_analysis ga ON g.game_id = ga.game_id
                 WHERE g.status ILIKE 'scheduled'
-                  AND g.match_date = CURRENT_DATE
+                  AND g.match_date = (CURRENT_DATE AT TIME ZONE 'Asia/Taipei')::date
                   AND (ga.analysis_id IS NULL OR ga.updated_at < NOW() - INTERVAL '12 hours')
             """
             self.cur.execute(query)

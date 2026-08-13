@@ -50,7 +50,7 @@ class SettlementEngine:
                   AND (ga.analysis_data->'actual_result' IS NULL)
                   AND g.home_team_score IS NOT NULL
                   AND g.away_team_score IS NOT NULL
-                  AND g.match_date <= CURRENT_DATE
+                  AND g.match_date <= (CURRENT_DATE AT TIME ZONE 'Asia/Taipei')::date
             """
         
         self.cur.execute(query)

@@ -13,6 +13,9 @@ import json
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+TAIPEI_TZ = ZoneInfo("Asia/Taipei")
 
 # 確保 analysis/ 目錄在 sys.path 中
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -231,7 +234,7 @@ def main():
         sys.exit(1)
 
     # 2. 計算目標日期：今日 + 明日（台北時間）
-    taipei_tz = datetime.now().astimezone().tzinfo
+    taipei_tz = TAIPEI_TZ
     today = datetime.now(taipei_tz).strftime('%Y-%m-%d')
     tomorrow = (datetime.now(taipei_tz) + timedelta(days=1)).strftime('%Y-%m-%d')
     target_dates = [today, tomorrow]

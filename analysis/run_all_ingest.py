@@ -27,6 +27,12 @@ import argparse
 import logging
 import time
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+TAIPEI_TZ = ZoneInfo("Asia/Taipei")
+
+def _taipei_now():
+    return datetime.now(TAIPEI_TZ)
 
 # 確保 analysis/ 在 sys.path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -118,7 +124,7 @@ def main():
 
     # ===== 第二階段：昨日補抓（補上 Final 比分）=====
     # 抓「APP 顯示的昨日」= 台北昨日
-    app_yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    app_yesterday = (_taipei_now() - timedelta(days=1)).strftime("%Y-%m-%d")
     LOGGER.info("\n" + "=" * 60)
     LOGGER.info(f"=== 昨日補抓階段 START === APP 顯示昨日 = {app_yesterday}")
     LOGGER.info("=" * 60)
