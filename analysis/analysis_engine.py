@@ -96,6 +96,51 @@ FALLBACK_LLM_API_KEY = os.environ.get("FALLBACK_LLM_API_KEY", os.environ.get("OL
 MODEL_NAME = os.environ.get("PREDICTX_MODEL", "qwen3.5:9b")
 USE_CLOUD = MODEL_NAME == "cloud"
 
+
+def _extract_rate(text, side="home"):
+    """從 summary 抽出 home/away 顯式勝率。回傳 0-1 的 float，找不到回 None。"""
+    import re
+    if side == "home":
+        specific_patterns = [
+            r"home win probability[^\d]*(\d+(?:\.\d+)?)",
+            r"home_win_probability[^\d]*(\d+(?:\.\d+)?)",
+            r"主隊.*?機率.*?(\d+(?:\.\d+)?)\s*%",
+            r"主隊.*?(\d+(?:\.\d+)?)\s*%",
+            r"home\s+(\d+(?:\.\d+)?)\s*%",
+        ]
+    else:
+        specific_patterns = [
+            r"away win probability[^\d]*(\d+(?:\.\d+)?)",
+            r"away_win_probability[^\d]*(\d+(?:\.\d+)?)",
+            r"客隊.*?機率.*?(\d+(?:\.\d+)?)\s*%",
+            r"客隊.*?(\d+(?:\.\d+)?)\s*%",
+            r"away\s+(\d+(?:\.\d+)?)\s*%",
+        ]
+    text_lower = text.lower()
+    all_matches = []
+    for pat in specific_patterns:
+        all_matches.extend(re.findall(pat, text_lower))
+    if all_matches:
+        try:
+            return float(all_matches[-1]) / 100.0
+        except (ValueError, TypeError):
+            pass
+    return None
+
+
+def _extract_score(text):
+    """從 summary 抽取比分字串，如 '5-3' / '3-6'，找不到回 None。"""
+    import re
+    matches = re.findall(r"(\d+)\s*[-－–]\s*(\d+)", text)
+    if matches:
+        try:
+            h, a = matches[-1]
+            return f"{int(h)}-{int(a)}"
+        except (ValueError, TypeError):
+            pass
+    return None
+
+
 class AnalysisEngine:
     def __init__(self, conn=None):
         if conn:
@@ -3087,112 +3132,24 @@ Park Factor: {pf:.2f} ({park_interp})
                     result["home_win_probability"] = round(home_prob, 4)
                     result["away_win_probability"] = round(away_prob, 4)
 
-                # 🆕 [2026-08-10] 強制一致性檢查：h_prob 與 AI 結語（reasoning.step4 + summary）的方向必須一致
-                # 問題：LLM 偶爾在 reasoning.step4_probability_calc / summary 寫「客隊勝」但 h_prob > 0.5 看好主隊
-                # 解法：掃描 step4 + summary，若偵測到與 h_prob 矛盾的結論，自動調整 h_prob 並修正 summary 文字
-                step4_text = ""
-                try:
-                    reasoning = result.get("reasoning")
-                    if isinstance(reasoning, dict):
-                        step4_text = reasoning.get("step4_probability_calc", "") or ""
-                except Exception:
-                    step4_text = ""
-                summary_text = str(result.get("summary", "") or "")
-                # 合併掃描範圍：step4 + summary（任一有矛盾就修正）
-                combined_text = (step4_text + " " + summary_text)
-
-                # 擴充關鍵字（覆蓋更多口語化變體）
-                kw_negative = [
-                    '客隊勝', '客隊略佔', '客隊佔優', '客隊占優', '客隊小勝', '客隊主推',
-                    '客隊看好', '客隊稍佔優', '客隊占上風', '客隊稍占優',
-                    '主隊輸', '主隊敗', '主隊勝率低於五成', '主隊不看好',
-                    'away team win', 'visitors win', 'road team win',
-                ]
-                kw_positive = [
-                    '主隊勝', '主隊略佔', '主隊佔優', '主隊占優', '主隊小勝', '主隊主推',
-                    '主隊看好', '主隊稍佔優', '主隊占上風', '主隊稍占優',
-                    '客隊輸', '客隊敗', '客隊勝率低於五成', '客隊不看好',
-                    'home team win', 'hosts win',
-                ]
-
-                contradiction_detected = False
-                if combined_text and home_prob > 0.5:
-                    if any(k in combined_text for k in kw_negative):
-                        contradiction_detected = True
-                    # 🆕 regex 數字檢測：主隊勝率 < 50% 或 客隊勝率 > 50% 但 hp > 0.5
-                    if not contradiction_detected:
-                        import re as _re2
-                        m = _re2.search(r'主隊勝率\s*(\d+)', combined_text)
-                        if m and int(m.group(1)) < 50:
-                            contradiction_detected = True
-                        m = _re2.search(r'客隊勝率\s*(\d+)', combined_text)
-                        if m and int(m.group(1)) > 50:
-                            contradiction_detected = True
-                    if contradiction_detected:
-                        # AI 文字結論與 h_prob 矛盾：以 AI 文字結語為準，下修 h_prob
-                        home_prob = max(0.20, 0.5 - 0.05)  # 0.45
-                        away_prob = 1.0 - home_prob
-                        result["home_win_probability"] = round(home_prob, 4)
-                        result["away_win_probability"] = round(away_prob, 4)
-                elif combined_text and home_prob < 0.5:
-                    if any(k in combined_text for k in kw_positive):
-                        contradiction_detected = True
-                    # 🆕 regex 數字檢測：主隊勝率 > 50% 或 客隊勝率 < 50% 但 hp < 0.5
-                    if not contradiction_detected:
-                        import re as _re3
-                        m = _re3.search(r'主隊勝率\s*(\d+)', combined_text)
-                        if m and int(m.group(1)) > 50:
-                            contradiction_detected = True
-                        m = _re3.search(r'客隊勝率\s*(\d+)', combined_text)
-                        if m and int(m.group(1)) < 50:
-                            contradiction_detected = True
-                    if contradiction_detected:
-                        home_prob = min(0.80, 0.5 + 0.05)  # 0.55
-                        away_prob = 1.0 - home_prob
+                # 🆕 [2026-08-16] summary-first consistency: summary 是 AI 最終結論，
+                # 數值與 predicted_score 都應該服從 summary，而不是反向對齊 step4。
+                # 做法：從 summary 中抽出勝率與比分，覆寫 prediction 數字。
+                summary_text = (result.get("summary") or "").strip()
+                if summary_text:
+                    # 1) 從 summary 抽取顯式勝率，例如 "home win probability 55%" / "客隊勝率 45%"
+                    hp_from_summary = _extract_rate(summary_text, side="home")
+                    ap_from_summary = _extract_rate(summary_text, side="away")
+                    if hp_from_summary is not None and ap_from_summary is not None:
+                        home_prob = max(0.20, min(0.80, hp_from_summary))
+                        away_prob = max(0.20, min(0.80, ap_from_summary))
                         result["home_win_probability"] = round(home_prob, 4)
                         result["away_win_probability"] = round(away_prob, 4)
 
-                # 🆕 [2026-08-12] 矛盾偵測到時，同步修正 summary 內的勝率百分比與比分
-                # 避免 iOS 顯示「hp=0.45 主隊敗」但 summary 仍寫「客隊勝率 60%」
-                if contradiction_detected and summary_text:
-                    import re
-                    winner_is_home = home_prob > away_prob
-                    winner_pct = round(max(home_prob, away_prob) * 100)
-                    loser_pct = round(min(home_prob, away_prob) * 100)
-
-                    # 修正中文段：替換「主隊/客隊勝率 N%」為正確方向
-                    if winner_is_home:
-                        summary_text = re.sub(
-                            r'客隊勝率\s*\d+\s*[%％]',
-                            f'主隊勝率{winner_pct}%',
-                            summary_text
-                        )
-                        summary_text = re.sub(
-                            r'主隊勝率\s*\d+\s*[%％]',
-                            f'主隊勝率{winner_pct}%',
-                            summary_text
-                        )
-                    else:
-                        summary_text = re.sub(
-                            r'主隊勝率\s*\d+\s*[%％]',
-                            f'客隊勝率{winner_pct}%',
-                            summary_text
-                        )
-                        summary_text = re.sub(
-                            r'客隊勝率\s*\d+\s*[%％]',
-                            f'客隊勝率{winner_pct}%',
-                            summary_text
-                        )
-
-                    # 修正英文段：替換 "X% win probability"
-                    summary_text = re.sub(
-                        r'(\d+)\s*%\s*win\s*probability',
-                        f'{winner_pct}% win probability',
-                        summary_text,
-                        flags=re.IGNORECASE
-                    )
-
-                    result["summary"] = summary_text
+                    # 2) 從 summary 抽取比分，例如 "5-3" / "3-6"，優先覆寫 predicted_score
+                    score_from_summary = _extract_score(summary_text)
+                    if score_from_summary:
+                        result["predicted_score"] = score_from_summary
 
                 # 🆕 校正 predicted_score：確保與勝率一致
                 # 若 home_prob > away_prob → home_score 應 > away_score，反之亦然
