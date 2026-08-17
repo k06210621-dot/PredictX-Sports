@@ -773,67 +773,82 @@ class AnalysisEngine:
         """
         獲取隊伍在聯盟中的排名（優先從 standings 表，fallback 到 games 計算）
         """
-        # 🆕 [Recipe 7 整合] 優先從官方戰績表讀取（MLB/NPB/CPBL）
-        table_standing = self.get_league_standings_from_table(team_id)
-        if table_standing:
-            return table_standing
+        # [Bug fix 2026-08-17 22:42] 包 try/except + rollback 防止 transaction aborted
+        try:
+            # 🆕 [Recipe 7 整合] 優先從官方戰績表讀取（MLB/NPB/CPBL）
+            table_standing = self.get_league_standings_from_table(team_id)
+            if table_standing:
+                return table_standing
 
-        self.cur.execute("SELECT league FROM predictx.teams WHERE team_id = %s", (team_id,))
-        team = self.cur.fetchone()
-        if not team:
+            self.cur.execute("SELECT league FROM predictx.teams WHERE team_id = %s", (team_id,))
+            team = self.cur.fetchone()
+            if not team:
+                return None
+            
+            league = team['league']
+            
+            query = """
+                WITH team_games AS (
+                    SELECT 
+                        t.team_id, t.english_name,
+                        SUM(CASE 
+                            WHEN (g.home_team_id = t.team_id AND g.home_team_score > g.away_team_score)
+                                 OR (g.away_team_id = t.team_id AND g.away_team_score > g.home_team_score)
+                            THEN 1 ELSE 0 END) as wins,
+                        SUM(CASE 
+                            WHEN (g.home_team_id = t.team_id AND g.home_team_score < g.away_team_score)
+                                 OR (g.away_team_id = t.team_id AND g.away_team_score > g.home_team_score)
+                            THEN 1 ELSE 0 END) as losses,
+                        SUM(CASE WHEN g.home_team_id = t.team_id THEN g.home_team_score ELSE g.away_team_score END) as goals_for,
+                        SUM(CASE WHEN g.home_team_id = t.team_id THEN g.away_team_score ELSE g.home_team_score END) as goals_against,
+                        COUNT(*) as games_played
+                    FROM predictx.teams t
+                    JOIN predictx.games g ON (g.home_team_id = t.team_id OR g.away_team_id = t.team_id)
+                    WHERE t.league = %s AND g.status IN ('final', 'FINAL')
+                    GROUP BY t.team_id, t.english_name
+                )
+                SELECT *, 
+                       ROUND(wins::numeric / NULLIF(games_played, 0), 3) as win_pct
+                FROM team_games
+                ORDER BY win_pct DESC
+            """
+            self.cur.execute(query, (league,))
+            standings = self.cur.fetchall()
+            
+            for idx, row in enumerate(standings):
+                if row['team_id'] == team_id:
+                    return {
+                        "rank": idx + 1,
+                        "total_teams": len(standings),
+                        "wins": row['wins'],
+                        "losses": row['losses'],
+                        "games_played": row['games_played'],
+                        "win_pct": float(row['win_pct']) if row['win_pct'] else 0.0,
+                        "goals_for": int(row['goals_for']),
+                        "goals_against": int(row['goals_against']),
+                        "goal_diff": int(row['goals_for'] - row['goals_against'])
+                    }
+            
             return None
-        
-        league = team['league']
-        
-        query = """
-            WITH team_games AS (
-                SELECT 
-                    t.team_id, t.english_name,
-                    SUM(CASE 
-                        WHEN (g.home_team_id = t.team_id AND g.home_team_score > g.away_team_score)
-                             OR (g.away_team_id = t.team_id AND g.away_team_score > g.home_team_score)
-                        THEN 1 ELSE 0 END) as wins,
-                    SUM(CASE 
-                        WHEN (g.home_team_id = t.team_id AND g.home_team_score < g.away_team_score)
-                             OR (g.away_team_id = t.team_id AND g.away_team_score < g.home_team_score)
-                        THEN 1 ELSE 0 END) as losses,
-                    SUM(CASE WHEN g.home_team_id = t.team_id THEN g.home_team_score ELSE g.away_team_score END) as goals_for,
-                    SUM(CASE WHEN g.home_team_id = t.team_id THEN g.away_team_score ELSE g.home_team_score END) as goals_against,
-                    COUNT(*) as games_played
-                FROM predictx.teams t
-                JOIN predictx.games g ON (g.home_team_id = t.team_id OR g.away_team_id = t.team_id)
-                WHERE t.league = %s AND g.status IN ('final', 'FINAL')
-                GROUP BY t.team_id, t.english_name
-            )
-            SELECT *, 
-                   ROUND(wins::numeric / NULLIF(games_played, 0), 3) as win_pct
-            FROM team_games
-            ORDER BY win_pct DESC
-        """
-        self.cur.execute(query, (league,))
-        standings = self.cur.fetchall()
-        
-        for idx, row in enumerate(standings):
-            if row['team_id'] == team_id:
-                return {
-                    "rank": idx + 1,
-                    "total_teams": len(standings),
-                    "wins": row['wins'],
-                    "losses": row['losses'],
-                    "games_played": row['games_played'],
-                    "win_pct": float(row['win_pct']) if row['win_pct'] else 0.0,
-                    "goals_for": int(row['goals_for']),
-                    "goals_against": int(row['goals_against']),
-                    "goal_diff": int(row['goals_for'] - row['goals_against'])
-                }
-        
-        return None
+        except Exception:
+            # [Bug fix 2026-08-17 22:42] 任何錯誤都 rollback 清乾淨
+            try:
+                self.conn.rollback()
+            except Exception:
+                pass
+            return None
+
 
     def get_game_features(self, game_id):
         """
         從資料庫提取單場比賽的所有分析特徵（強化版）
         對 MLB 賽事自動上網擷取即時進階數據
         """
+        # [Bug fix 2026-08-17 22:42] 確保 transaction 乾淨（避免上次失敗的 InFailedSqlTransaction 殘留）
+        try:
+            self.conn.rollback()
+        except Exception:
+            pass
         features = {}
         
         # 1. 基礎比賽資訊與隊伍名稱
