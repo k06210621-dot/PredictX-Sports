@@ -712,10 +712,55 @@ class AnalysisEngine:
 
         return None
 
+    def get_league_standings_from_table(self, team_id):
+        """
+        從 mlb_team_standings / npb_team_standings / cpbl_team_standings 讀取戰績。
+        若 table 無資料，回傳 None。
+        """
+        self.cur.execute("SELECT league, sport FROM predictx.teams WHERE team_id = %s", (team_id,))
+        team = self.cur.fetchone()
+        if not team:
+            return None
+        league = (team['league'] or '').upper()
+        sport = (team['sport'] or '').upper()
+        if sport not in ('MLB', 'NPB', 'CPBL') and league not in ('MLB', 'NPB', 'CPBL'):
+            return None
+
+        table_name = f"{league.lower()}_team_standings"
+        query = f"""
+            SELECT rank, games_played, wins, losses, ties,
+                   ROUND(wins::numeric / NULLIF(wins + losses + ties, 0), 3) as win_pct
+            FROM predictx.{table_name}
+            WHERE team_id = %s
+            ORDER BY season DESC, half_season DESC
+            LIMIT 1
+        """
+        try:
+            self.cur.execute(query, (team_id,))
+            row = self.cur.fetchone()
+            if not row:
+                return None
+            return {
+                "rank": row['rank'],
+                "total_teams": 0,
+                "wins": row['wins'],
+                "losses": row['losses'],
+                "games_played": row['games_played'],
+                "win_pct": float(row['win_pct']) if row['win_pct'] else 0.0,
+                "source": f"official_standings:{table_name}",
+            }
+        except Exception:
+            return None
+
     def get_league_standings(self, team_id):
         """
-        獲取隊伍在聯盟中的排名（直接從 games 表計算）
+        獲取隊伍在聯盟中的排名（優先從 standings 表，fallback 到 games 計算）
         """
+        # 🆕 [Recipe 7 整合] 優先從官方戰績表讀取（MLB/NPB/CPBL）
+        table_standing = self.get_league_standings_from_table(team_id)
+        if table_standing:
+            return table_standing
+
         self.cur.execute("SELECT league FROM predictx.teams WHERE team_id = %s", (team_id,))
         team = self.cur.fetchone()
         if not team:
