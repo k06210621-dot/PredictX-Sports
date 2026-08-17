@@ -490,6 +490,26 @@ class AnalysisEngine:
                 "side": g['side']  # 🆕 標註主客場
             })
 
+        # 🆕 [2026-08-17] 計算當前連勝/連敗 streak
+        # 由於 games 已按 match_date DESC 排序，results[0] 是最新一場
+        # streak > 0 = 連勝中, streak < 0 = 連敗中, streak = 0 = 無連勝/連敗
+        # 注意：遇到反向結果時立即 break，不要繼續累計
+        streak = 0
+        if results:
+            for r in results:
+                if r['result'] == 'W':
+                    if streak >= 0:
+                        streak += 1
+                    else:
+                        break  # 已連敗中遇到 W，streak 結束
+                elif r['result'] == 'L':
+                    if streak > 0:
+                        break  # 已連勝中遇到 L，streak 結束（保持原 streak）
+                    else:
+                        streak -= 1
+                else:
+                    break  # 和局/未知中斷連勝/連敗
+
         return {
             "recent_games": results,
             "win_loss": f"{wins}-{len(results)-wins}",
@@ -497,6 +517,8 @@ class AnalysisEngine:
             "avg_goals_for": round(total_goals_for / len(results), 1) if results else 0,
             "avg_goals_against": round(total_goals_against / len(results), 1) if results else 0,
             "goal_diff": round((total_goals_for - total_goals_against) / len(results), 1) if results else 0,
+            # 🆕 [2026-08-17] 當前連勝/連敗 streak（正=連勝, 負=連敗）
+            "streak": streak,
             # 🆕 主客場分離數據（讓 AI prompt 注入後能更精準預測）
             "home_record": {
                 "games": home_games,
@@ -1254,6 +1276,16 @@ class AnalysisEngine:
                 return "無近期比賽數據"
             lines = [f"戰績: {form['win_loss']}, 勝率: {form['win_rate']}"]
             lines.append(f"場均得分: {form['avg_goals_for']}, 場均失分: {form['avg_goals_against']}, 淨勝差: {form['goal_diff']}")
+            # 🆕 [2026-08-17] 連勝/連敗 streak（心理因素/氣勢指標）
+            streak = form.get('streak', 0)
+            if streak >= 4:
+                lines.append(f"⚡ 連勝 {streak} 場 — 氣勢正旺（信心度強化訊號）")
+            elif streak >= 3:
+                lines.append(f"📈 連勝 {streak} 場 — 狀態穩定上升")
+            elif streak <= -4:
+                lines.append(f"⚠️ 連敗 {abs(streak)} 場 — 氣勢低迷（信心度強化訊號）")
+            elif streak <= -3:
+                lines.append(f"📉 連敗 {abs(streak)} 場 — 狀態下滑")
             # 🆕 主客場分離數據（讓 AI 區分主客表現）
             hr = form.get('home_record', {})
             ar = form.get('away_record', {})
@@ -3087,6 +3119,28 @@ Park Factor: {pf:.2f} ({park_interp})
                 #     if rank_diff > 10:
                 #         feature_boost += 1
                 #         boost_reasons.append(f"排名差距 {rank_diff}")
+
+                # 🆕 [2026-08-17] 條件 4: 連勝/連敗 streak 顯著差距
+                # 兩隊 streak 差距 ≥ 3 場（一方連勝 ≥4 或連敗 ≥4，且對手無反向 streak）
+                # 目的: 強化心理因素/氣勢差異對結果的預測力
+                home_form_raw = features.get('home_recent_form') or {}
+                away_form_raw = features.get('away_recent_form') or {}
+                home_streak = int(home_form_raw.get('streak', 0) or 0)
+                away_streak = int(away_form_raw.get('streak', 0) or 0)
+                streak_diff = abs(home_streak - away_streak)
+                # 強 streak 差距: 一方 ≥ 4 連勝/連敗，另一方 ≤ 2
+                if streak_diff >= 3 and max(abs(home_streak), abs(away_streak)) >= 4 and min(abs(home_streak), abs(away_streak)) <= 2:
+                    feature_boost += 1
+                    if home_streak > 0 and away_streak < 0:
+                        boost_reasons.append(f"主隊連勝 {home_streak} 場 vs 客隊連敗 {abs(away_streak)} 場")
+                    elif home_streak < 0 and away_streak > 0:
+                        boost_reasons.append(f"主隊連敗 {abs(home_streak)} 場 vs 客隊連勝 {away_streak} 場")
+                    elif home_streak >= 4 and away_streak >= 1:
+                        boost_reasons.append(f"主隊連勝 {home_streak} 場 vs 客隊連勝 {away_streak} 場")
+                    elif away_streak >= 4 and home_streak >= 1:
+                        boost_reasons.append(f"客隊連勝 {away_streak} 場 vs 主隊連勝 {home_streak} 場")
+                    else:
+                        boost_reasons.append(f"Streak 差距 {streak_diff} 場（主{home_streak:+d}/客{away_streak:+d}）")
 
                 if feature_boost > 0:
                     old_conf = normalized_conf
