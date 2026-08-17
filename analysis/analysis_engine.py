@@ -758,6 +758,11 @@ class AnalysisEngine:
                 "losses": row['losses'],
                 "games_played": row['games_played'],
                 "win_pct": float(row['win_pct']) if row['win_pct'] else 0.0,
+                # [Bug fix 2026-08-17 22:50] format_standings 需要这些字段
+                # 官方 standings 表不含得失分，給 0 placeholder
+                "goals_for": 0,
+                "goals_against": 0,
+                "goal_diff": 0,
                 "source": f"official_standings:{table_name}",
             }
         except Exception:
@@ -2008,7 +2013,7 @@ Park Factor: {pf:.2f} ({park_interp})
         def format_standings(s):
             if not s:
                 return "無排名數據"
-            return f"第 {s['rank']}/{s['total_teams']} 名, {s['wins']}勝{s['losses']}敗, 勝率 {s['win_pct']:.3f}, 得分 {s['goals_for']}, 失分 {s['goals_against']}, 淨勝分 {s['goal_diff']:+d}"
+            return f"第 {s['rank']}/{s['total_teams']} 名, {s['wins']}勝{s['losses']}敗, 勝率 {s['win_pct']:.3f}, 得分 {s.get('goals_for', 0)}, 失分 {s.get('goals_against', 0)}, 淨勝分 {s.get('goal_diff', 0):+d}"
 
         home_standings = format_standings(features['home_standings'])
         away_standings = format_standings(features['away_standings'])
