@@ -829,9 +829,9 @@ class AnalysisEngine:
                         "losses": row['losses'],
                         "games_played": row['games_played'],
                         "win_pct": float(row['win_pct']) if row['win_pct'] else 0.0,
-                        "goals_for": int(row['goals_for']),
-                        "goals_against": int(row['goals_against']),
-                        "goal_diff": int(row['goals_for'] - row['goals_against'])
+                        "goals_for": int(row['goals_for'] or 0),
+                        "goals_against": int(row['goals_against'] or 0),
+                        "goal_diff": int((row['goals_for'] or 0) - (row['goals_against'] or 0))
                     }
             
             return None
