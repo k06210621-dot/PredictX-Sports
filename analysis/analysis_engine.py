@@ -98,23 +98,62 @@ USE_CLOUD = MODEL_NAME == "cloud"
 
 
 def _extract_rate(text, side="home"):
-    """從 summary 抽出 home/away 顯式勝率。回傳 0-1 的 float，找不到回 None。"""
+    """從 summary 抽出 home/away 顯式勝率。回傳 0-1 的 float，找不到回 None。
+
+    修正 [2026-08-17] Bug fix：
+    - 原 regex `r"客隊.*?(\d+(?:\.\d+)?)\s*%"` 過於寬鬆，會抓到「客隊...主場戰績20%」中的20%
+    - 改成「成對匹配」優先：先找「主隊 X%, 客隊 Y%」整段，再決定回傳哪個值
+    - 個別匹配時，要求緊鄰「勝率/機率」關鍵字，避免誤抓
+    """
     import re
+
+    # 🆕 [2026-08-17] 優先策略 1：成對匹配「主隊 X%, 客隊 Y%」
+    # 處理「主隊勝率38%，客隊62%」這種常見格式（中間可能插入「勝率/機率/勝出機率」等）
+    # 分隔符放寬為 [\s\S]{0,200}? 以支援 "and" 等英文連接詞，但限制距離避免誤抓
+    pair_patterns = [
+        # 中文版：主隊[關鍵字可選]X%，中間任意字元，客隊[關鍵字可選]Y%
+        r"主隊[^\d]*?(\d+(?:\.\d+)?)\s*%[\s\S]{0,200}?客隊[^\d]*?(\d+(?:\.\d+)?)\s*%",
+        r"客隊[^\d]*?(\d+(?:\.\d+)?)\s*%[\s\S]{0,200}?主隊[^\d]*?(\d+(?:\.\d+)?)\s*%",
+        # 英文版：home/away X%, ..., away/home Y%
+        r"home[^\d]*?(\d+(?:\.\d+)?)\s*%[\s\S]{0,200}?away[^\d]*?(\d+(?:\.\d+)?)\s*%",
+        r"away[^\d]*?(\d+(?:\.\d+)?)\s*%[\s\S]{0,200}?home[^\d]*?(\d+(?:\.\d+)?)\s*%",
+    ]
+    for pat in pair_patterns:
+        m = re.search(pat, text.lower())
+        if m:
+            # 根據 pattern 順序判斷：第 1、3 個 pat 順序為 home→away
+            # 第 2、4 個 pat 順序為 away→home
+            is_reverse_order = pat.startswith(r"客隊") or pat.startswith(r"away")
+            if is_reverse_order:
+                # (away, home)
+                away_v, home_v = m.groups()
+            else:
+                # (home, away)
+                home_v, away_v = m.groups()
+            try:
+                if side == "home":
+                    return float(home_v) / 100.0
+                else:
+                    return float(away_v) / 100.0
+            except (ValueError, TypeError):
+                pass
+
+    # 備援：個別匹配（必須含「勝率/機率」關鍵字以避免誤抓）
     if side == "home":
         specific_patterns = [
-            r"home win probability[^\d]*(\d+(?:\.\d+)?)",
-            r"home_win_probability[^\d]*(\d+(?:\.\d+)?)",
-            r"主隊.*?機率.*?(\d+(?:\.\d+)?)\s*%",
-            r"主隊.*?(\d+(?:\.\d+)?)\s*%",
-            r"home\s+(\d+(?:\.\d+)?)\s*%",
+            r"home win probability[^\d]*?(\d+(?:\.\d+)?)\s*%?",
+            r"home_win_probability[^\d]*?(\d+(?:\.\d+)?)\s*%?",
+            r"主隊(?:勝率|勝出機率|獲勝機率|勝算)[^\d]*?(\d+(?:\.\d+)?)\s*%",
+            r"主隊[^\d]*?機率[^\d]*?(\d+(?:\.\d+)?)\s*%",
+            r"home\s+win[^\d]*?(\d+(?:\.\d+)?)\s*%",
         ]
     else:
         specific_patterns = [
-            r"away win probability[^\d]*(\d+(?:\.\d+)?)",
-            r"away_win_probability[^\d]*(\d+(?:\.\d+)?)",
-            r"客隊.*?機率.*?(\d+(?:\.\d+)?)\s*%",
-            r"客隊.*?(\d+(?:\.\d+)?)\s*%",
-            r"away\s+(\d+(?:\.\d+)?)\s*%",
+            r"away win probability[^\d]*?(\d+(?:\.\d+)?)\s*%?",
+            r"away_win_probability[^\d]*?(\d+(?:\.\d+)?)\s*%?",
+            r"客隊(?:勝率|勝出機率|獲勝機率|勝算)[^\d]*?(\d+(?:\.\d+)?)\s*%",
+            r"客隊[^\d]*?機率[^\d]*?(\d+(?:\.\d+)?)\s*%",
+            r"away\s+win[^\d]*?(\d+(?:\.\d+)?)\s*%",
         ]
     text_lower = text.lower()
     all_matches = []
@@ -122,20 +161,48 @@ def _extract_rate(text, side="home"):
         all_matches.extend(re.findall(pat, text_lower))
     if all_matches:
         try:
-            return float(all_matches[-1]) / 100.0
+            return float(all_matches[0]) / 100.0
         except (ValueError, TypeError):
             pass
     return None
 
 
 def _extract_score(text):
-    """從 summary 抽取比分字串，如 '5-3' / '3-6'，找不到回 None。"""
+    """從 summary 抽取比分字串，如 '5-3' / '3-6'，找不到回 None。
+
+    修正 [2026-08-17] Bug fix：
+    - 原 regex 過於寬鬆，會抓到「1勝4敗」、「3-2」、「0.525 vs 0.483」等非預測比分
+    - 改成必須緊鄰「比分/推演比分/預測比分/expected score」等明確關鍵字
+    - 多個匹配時，取**第一個**最相關的（最可能在前段）
+    """
     import re
+    # 🆕 [2026-08-17] 優先用「明確」比分標記
+    specific_patterns = [
+        r"預測比分[為是：:]?\s*(\d+)\s*[-－–]\s*(\d+)",
+        r"推演比分[為是：:]?\s*(\d+)\s*[-－–]\s*(\d+)",
+        r"expected score[^\d]*?(\d+)\s*[-－–]\s*(\d+)",
+        r"projected score[^\d]*?(\d+)\s*[-－–]\s*(\d+)",
+        r"比分[為是：:]?\s*(\d+)\s*[-－–]\s*(\d+)",
+    ]
+    for pat in specific_patterns:
+        m = re.search(pat, text)
+        if m:
+            try:
+                h, a = m.groups()
+                return f"{int(h)}-{int(a)}"
+            except (ValueError, TypeError):
+                pass
+    # Fallback：找最後一個 X-Y 格式（避免抓「主場戰績1勝4敗」這類）
     matches = re.findall(r"(\d+)\s*[-－–]\s*(\d+)", text)
     if matches:
         try:
+            # 🆕 [2026-08-17] 取**最後**一個（比分通常在 summary 末尾）
             h, a = matches[-1]
-            return f"{int(h)}-{int(a)}"
+            # 但若該值是「戰績」格式（如 1-4、3-2），可能是誤抓
+            # 用啟發式：若 score 數字小於 15（合理棒球比分），則接受
+            h_int, a_int = int(h), int(a)
+            if 0 <= h_int <= 20 and 0 <= a_int <= 20:
+                return f"{h_int}-{a_int}"
         except (ValueError, TypeError):
             pass
     return None
