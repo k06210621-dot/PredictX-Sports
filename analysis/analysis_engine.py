@@ -727,12 +727,23 @@ class AnalysisEngine:
             return None
 
         table_name = f"{league.lower()}_team_standings"
+        # [Bug fix 2026-08-17 22:38] mlb_team_standings / npb_team_standings 沒有 half_season 欄位
+        # 先檢查表內是否有 half_season 欄位，動態組建 ORDER BY
+        self.cur.execute("""
+            SELECT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_schema = 'predictx' AND table_name = %s
+                AND column_name = 'half_season'
+            ) as has_half_season
+        """, (table_name,))
+        has_half_season = self.cur.fetchone()["has_half_season"]
+        order_by = "season DESC, half_season DESC" if has_half_season else "season DESC"
         query = f"""
             SELECT rank, games_played, wins, losses, ties,
                    ROUND(wins::numeric / NULLIF(wins + losses + ties, 0), 3) as win_pct
             FROM predictx.{table_name}
             WHERE team_id = %s
-            ORDER BY season DESC, half_season DESC
+            ORDER BY {order_by}
             LIMIT 1
         """
         try:
@@ -750,6 +761,12 @@ class AnalysisEngine:
                 "source": f"official_standings:{table_name}",
             }
         except Exception:
+            # [Bug fix 2026-08-17 22:38] rollback 必要：psycopg2 SQL 失敗會讓整個 transaction aborted
+            # 後續所有 cur.execute 都會拋 InFailedSqlTransaction
+            try:
+                self.conn.rollback()
+            except Exception:
+                pass
             return None
 
     def get_league_standings(self, team_id):
