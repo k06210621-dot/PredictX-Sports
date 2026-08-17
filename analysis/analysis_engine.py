@@ -717,13 +717,13 @@ class AnalysisEngine:
         從 mlb_team_standings / npb_team_standings / cpbl_team_standings 讀取戰績。
         若 table 無資料，回傳 None。
         """
-        self.cur.execute("SELECT league, sport FROM predictx.teams WHERE team_id = %s", (team_id,))
+        # [Bug fix 2026-08-17] teams 表沒有 sport 欄位，只查 league
+        self.cur.execute("SELECT league FROM predictx.teams WHERE team_id = %s", (team_id,))
         team = self.cur.fetchone()
         if not team:
             return None
         league = (team['league'] or '').upper()
-        sport = (team['sport'] or '').upper()
-        if sport not in ('MLB', 'NPB', 'CPBL') and league not in ('MLB', 'NPB', 'CPBL'):
+        if league not in ('MLB', 'NPB', 'CPBL'):
             return None
 
         table_name = f"{league.lower()}_team_standings"
