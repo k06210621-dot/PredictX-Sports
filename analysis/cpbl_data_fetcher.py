@@ -706,7 +706,24 @@ class CPBLDataFetcher:
             # 3. 對每場一軍 (KindCode=A) 比賽呼叫 gamedetail
             starters = {}
             games_a = [g for g in games if g.get('kindCode') == 'A']
+
+            # 🆕 [2026-08-18] 優先使用 box/getlive API（不需要 token，不會 404）
+            live_starters = self._get_starting_pitchers_from_box_getlive(games_a)
+            if live_starters:
+                print(f"  [CPBL SP] box/getlive 成功抓取 {len(live_starters)} 筆先發", flush=True)
+                return live_starters
+            else:
+                print(f"  [CPBL SP] box/getlive 無資料或全 null，fallback 到 gamedetail...", flush=True)
+
             print(f"  [CPBL SP] Found {len(games_a)} 一軍 games on {date_str}", flush=True)
+
+            # 🆕 [2026-08-18] 優先用 box/index 抓先發投手（無需 token，HTML 穩定，避開 gamedetail 404）
+            box_starters = self._get_starting_pitchers_from_box_index(date_str, games_a)
+            if box_starters:
+                print(f"  [CPBL SP] box/index 成功抓取 {len(box_starters)} 筆先發", flush=True)
+                return box_starters
+            else:
+                print(f"  [CPBL SP] box/index 無資料，fallback 到 gamedetail...", flush=True)
 
             # 【2026-08-06】CPBL CDN 對單一 session 連續請求會有 race condition
             # schedule 抓完馬上打 gamedetail 容易拿到 404。
@@ -823,6 +840,93 @@ class CPBLDataFetcher:
                 )
             except Exception:
                 return None
+
+
+
+    def _get_starting_pitchers_from_box_getlive(self, games_a):
+        """
+        從 /box/getlive API 抓取先發投手（優先於 gamedetail）。
+        這個 API 不需要 __RequestVerificationToken，穩定且不會 404。
+
+        Args:
+            games_a: 一軍比賽列表 (含 gameSno, Year)
+
+        Returns:
+            dict: {中文隊名: {name, acnt}, ...} 或空 dict
+        """
+        import time as _t
+        import json as _json
+        starters = {}
+
+        for idx, g in enumerate(games_a):
+            if idx > 0:
+                _t.sleep(1.5)
+
+            gamesno = g.get('gameSno')
+            year = g.get('Year', 2026)
+            if not gamesno:
+                continue
+
+            url = 'https://www.cpbl.com.tw/box/getlive'
+            payload = {"year": str(year), "kindCode": "A", "gameSno": str(gamesno)}
+            headers = {
+                "Referer": f"https://www.cpbl.com.tw/box/index?year={year}&kindCode=A&gameSno={gamesno}",
+                "X-Requested-With": "XMLHttpRequest",
+                "User-Agent": "Mozilla/5.0",
+            }
+
+            try:
+                resp = self.session.post(url, data=payload, headers=headers, timeout=15, verify=False)
+                if resp.status_code != 200:
+                    print(f"  [CPBL SP getlive] gameSno={gamesno} HTTP {resp.status_code}", flush=True)
+                    continue
+
+                data = resp.json()
+                if not data.get('Success'):
+                    print(f"  [CPBL SP getlive] gameSno={gamesno} API 返回 Success=false", flush=True)
+                    continue
+
+                # GameDetailJson 是一個 JSON 字串陣列
+                raw_list = data.get('GameDetailJson') or '[]'
+                if isinstance(raw_list, str):
+                    try:
+                        details = _json.loads(raw_list)
+                    except _json.JSONDecodeError:
+                        details = []
+                else:
+                    details = raw_list if isinstance(raw_list, list) else []
+
+                if not details:
+                    print(f"  [CPBL SP getlive] gameSno={gamesno} GameDetailJson 為空", flush=True)
+                    continue
+
+                detail = details[0]
+
+                # 球隊名稱
+                home_team = detail.get('HomeTeamName') or ''
+                away_team = detail.get('VisitingTeamName') or ''
+
+                # 先發投手名稱 + acnt
+                home_pname = detail.get('HomeFirstMover') or ''
+                away_pname = detail.get('VisitingFirstMover') or ''
+                home_acnt = (detail.get('HomeFirstAcnt') or '').strip()
+                away_acnt = (detail.get('VisitingFirstAcnt') or '').strip()
+
+                # 中文隊名映射
+                home_en = self.TEAM_CN_TO_EN.get(home_team, home_team)
+                away_en = self.TEAM_CN_TO_EN.get(away_team, away_team)
+
+                if home_en and home_pname:
+                    starters[home_en] = {'name': home_pname, 'acnt': home_acnt}
+                if away_en and away_pname:
+                    starters[away_en] = {'name': away_pname, 'acnt': away_acnt}
+
+                print(f"  [CPBL SP getlive] gameSno={gamesno} 主={home_pname} 客={away_pname}", flush=True)
+
+            except Exception as e:
+                print(f"  [CPBL SP getlive] gameSno={gamesno} error: {e}", flush=True)
+
+        return starters
 
     def _get_today_starting_pitchers_via_proxy(self, proxy_url, internal_secret, date_str):
         """透過內部 CPBL proxy 抓取先發（PredictX-All-Ingest 容器內的 serve_cpbl.py）
