@@ -3217,10 +3217,10 @@ Park Factor: {pf:.2f} ({park_interp})
                 # 信心指數標準化: 若 Ollama 回傳 0~1 分數則轉換為 1~10 評分
                 raw_conf = float(result.get("confidence", 0.0))
                 if raw_conf <= 1.0:
-                    # 0-1 -> 1-10 映射: 0.0->1, 0.5->5, 1.0->10
-                    normalized_conf = max(1, round(raw_conf * 10))
+                    # 0-1 -> 1.0-10.0 映射: 0.0->1.0, 0.5->5.0, 1.0->10.0
+                    normalized_conf = round(max(1.0, raw_conf * 10), 1)
                 else:
-                    normalized_conf = max(1, min(10, round(raw_conf)))
+                    normalized_conf = round(max(1.0, min(10.0, raw_conf)), 1)
                 result["confidence"] = normalized_conf
 
                 # 🆕 [Recipe 7: 方法 E] 基於特徵的置信度動態調整
@@ -3296,7 +3296,7 @@ Park Factor: {pf:.2f} ({park_interp})
 
                 if feature_boost > 0:
                     old_conf = normalized_conf
-                    normalized_conf = min(10, normalized_conf + feature_boost)
+                    normalized_conf = min(10.0, normalized_conf + feature_boost * 0.5)
                     result["confidence"] = normalized_conf
                     print(f"  📈 Recipe 7 置信度提升: {old_conf} → {normalized_conf} (依據: {', '.join(boost_reasons)})")
 
@@ -3326,7 +3326,8 @@ Park Factor: {pf:.2f} ({park_interp})
                 # 弱主場時下修 1pp,避免弱隊主場差距被過度放大
                 if home_advantage < 0.54:
                     min_prob_diff_map = {k: max(0, v - 0.01) for k, v in min_prob_diff_map.items()}
-                min_diff = min_prob_diff_map.get(normalized_conf, 0.0)
+                # 🆕 [2026-08-18] confidence 为 1 位小数，查表用四舍五入取整
+                min_diff = min_prob_diff_map.get(int(round(normalized_conf)), 0.0)
                 if prob_diff + 0.005 < min_diff:  # 🆕 加 0.005 容忍度避免浮點數問題
                     # 強制加大差距：把 favorite 提升到 (0.5 + min_diff/2 + 0.01)，underdog 對應降低
                     if home_prob > away_prob:
@@ -3666,7 +3667,7 @@ Park Factor: {pf:.2f} ({park_interp})
         fallback = {
             "home_win_probability": round(home_prob, 4),
             "away_win_probability": round(1 - home_prob, 4),
-            "confidence": max(1, min(10, round(max(home_prob, 1 - home_prob) * 10))),
+            "confidence": round(max(1.0, min(10.0, max(home_prob, 1 - home_prob) * 10)), 1),
             "key_factors": factors[:4],
             # 🆕 [2026-07-25] Fallback path 也將 features 持久化，避免後續 Prompt injection 失敗
             "features": features,
