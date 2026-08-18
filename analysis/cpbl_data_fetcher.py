@@ -717,14 +717,6 @@ class CPBLDataFetcher:
 
             print(f"  [CPBL SP] Found {len(games_a)} 一軍 games on {date_str}", flush=True)
 
-            # 🆕 [2026-08-18] 優先用 box/index 抓先發投手（無需 token，HTML 穩定，避開 gamedetail 404）
-            box_starters = self._get_starting_pitchers_from_box_index(date_str, games_a)
-            if box_starters:
-                print(f"  [CPBL SP] box/index 成功抓取 {len(box_starters)} 筆先發", flush=True)
-                return box_starters
-            else:
-                print(f"  [CPBL SP] box/index 無資料，fallback 到 gamedetail...", flush=True)
-
             # 【2026-08-06】CPBL CDN 對單一 session 連續請求會有 race condition
             # schedule 抓完馬上打 gamedetail 容易拿到 404。
             # 【2026-08-06 v2】自動 cron 仍 100% 失敗 → 提高 sleep 時長:
