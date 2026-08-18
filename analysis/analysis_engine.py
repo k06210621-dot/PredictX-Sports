@@ -110,13 +110,16 @@ def _extract_rate(text, side="home"):
     # 🆕 [2026-08-17] 優先策略 1：成對匹配「主隊 X%, 客隊 Y%」
     # 處理「主隊勝率38%，客隊62%」這種常見格式（中間可能插入「勝率/機率/勝出機率」等）
     # 分隔符放寬為 [\s\S]{0,200}? 以支援 "and" 等英文連接詞，但限制距離避免誤抓
+    # 🆕 [2026-08-18 Bug fix] 排除「主場勝率/客場勝率/主場戰績/客場戰績」这些都是历史胜率，不是预测胜率
+    # 避免 regex 抓到「主隊主場勝率50%，客隊客場勝率40%」这种历史胜率对
     pair_patterns = [
         # 中文版：主隊[關鍵字可選]X%，中間任意字元，客隊[關鍵字可選]Y%
-        r"主隊[^\d]*?(\d+(?:\.\d+)?)\s*%[\s\S]{0,200}?客隊[^\d]*?(\d+(?:\.\d+)?)\s*%",
-        r"客隊[^\d]*?(\d+(?:\.\d+)?)\s*%[\s\S]{0,200}?主隊[^\d]*?(\d+(?:\.\d+)?)\s*%",
+        # 排除中間包含「主場/客場/戰績」歷史關鍵字
+        r"主隊(?!主場|客場|戰績)[^\d]*?(\d+(?:\.\d+)?)\s*%[\s\S]{0,200}?客隊(?!主場|客場|戰績)[^\d]*?(\d+(?:\.\d+)?)\s*%",
+        r"客隊(?!主場|客場|戰績)[^\d]*?(\d+(?:\.\d+)?)\s*%[\s\S]{0,200}?主隊(?!主場|客場|戰績)[^\d]*?(\d+(?:\.\d+)?)\s*%",
         # 英文版：home/away X%, ..., away/home Y%
-        r"home[^\d]*?(\d+(?:\.\d+)?)\s*%[\s\S]{0,200}?away[^\d]*?(\d+(?:\.\d+)?)\s*%",
-        r"away[^\d]*?(\d+(?:\.\d+)?)\s*%[\s\S]{0,200}?home[^\d]*?(\d+(?:\.\d+)?)\s*%",
+        r"home(?!\s+record|\s+win\s+rate)[^\d]*?(\d+(?:\.\d+)?)\s*%[\s\S]{0,200}?away(?!\s+record|\s+win\s+rate)[^\d]*?(\d+(?:\.\d+)?)\s*%",
+        r"away(?!\s+record|\s+win\s+rate)[^\d]*?(\d+(?:\.\d+)?)\s*%[\s\S]{0,200}?home(?!\s+record|\s+win\s+rate)[^\d]*?(\d+(?:\.\d+)?)\s*%",
     ]
     for pat in pair_patterns:
         m = re.search(pat, text.lower())
@@ -3346,6 +3349,13 @@ Park Factor: {pf:.2f} ({park_interp})
                     if hp_from_summary is not None and ap_from_summary is not None:
                         home_prob = max(0.20, min(0.80, hp_from_summary))
                         away_prob = max(0.20, min(0.80, ap_from_summary))
+                        # 🆕 [Bug fix 2026-08-18] 概率歸一化：home + away 必須 = 1.0
+                        # 修法前：50% + 40% = 90% 不歸一
+                        # 修法：按比例重新分配
+                        total = home_prob + away_prob
+                        if total > 0:
+                            home_prob = home_prob / total
+                            away_prob = away_prob / total
                         result["home_win_probability"] = round(home_prob, 4)
                         result["away_win_probability"] = round(away_prob, 4)
 
