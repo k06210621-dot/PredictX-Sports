@@ -255,6 +255,38 @@ class AnalysisEngine:
         scores = [self.source_registry[s] for s in self.used_sources]
         return round(sum(scores) / len(scores), 2)
 
+    def _normalize_radar_chart(self, home_vals, away_vals):
+        """
+        🆕 [2026-08-18 Bug fix] 把两组雷達圖數據歸一化到統一 1.0-10.0 scale，
+        避免 iOS RadarChartView 二次 normalize 時主客隊用不同 scale 導致
+        「分數接近但點位差很大」的問題。
+
+        Args:
+            home_vals: 主隊 6 維雷達圖數值 (0-10)
+            away_vals: 客隊 6 維雷達圖數值 (0-10)
+
+        Returns:
+            (norm_home, norm_away): 歸一化後的兩組數值 (1.0-10.0 範圍，保留 1 位小數)
+        """
+        if not home_vals or not away_vals:
+            return home_vals, away_vals
+
+        combined = list(home_vals) + list(away_vals)
+        min_val = min(combined)
+        max_val = max(combined)
+
+        if max_val == min_val:
+            # 所有值相同 → 統一映射到 5.5 (中間值)
+            mid = [5.5] * len(home_vals)
+            return mid, mid
+
+        range_val = max_val - min_val
+        # 映射到 1.0 - 10.0 (保留 0.5 緩衝避免貼邊)
+        norm_home = [round(1.0 + (v - min_val) / range_val * 9.0, 1) for v in home_vals]
+        norm_away = [round(1.0 + (v - min_val) / range_val * 9.0, 1) for v in away_vals]
+        return norm_home, norm_away
+
+
     def _compute_team_radar_scores(self, features, side='home'):
         """根據 stats 計算 6 維雷達圖分數（0-10）。
         side: 'home' or 'away'
@@ -2615,8 +2647,8 @@ Park Factor: {pf:.2f} ({park_interp})
   "predicted_score": "X-Y",
   "radar_chart": {{
     "categories": {json.dumps(current_dims, ensure_ascii=False)},
-    "home_team": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-    "away_team": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            "home_team": _fb_norm_home,
+            "away_team": _fb_norm_away,
   }}
 }}
 
@@ -3403,10 +3435,14 @@ Park Factor: {pf:.2f} ({park_interp})
                     dims = dims_map.get(league_lc, ["整體戰力", "進攻能力", "防守能力", "戰術執行", "環境因素", "近期狀態"])
                     home_radar_scores = self._compute_team_radar_scores(features, 'home')
                     away_radar_scores = self._compute_team_radar_scores(features, 'away')
+                    # 🆕 [2026-08-18] 兩組數據用同一 scale 歸一化，避免 iOS 二次 normalize 出錯
+                    _raw_home = [min(10, max(0, h)) for h in home_radar_scores['values']]
+                    _raw_away = [min(10, max(0, a)) for a in away_radar_scores['values']]
+                    _norm_home, _norm_away = self._normalize_radar_chart(_raw_home, _raw_away)
                     result['radar_chart'] = {
                         "categories": dims,
-                        "home_team": [min(10, max(0, h)) for h in home_radar_scores['values']],
-                        "away_team": [min(10, max(0, a)) for a in away_radar_scores['values']],
+                        "home_team": _norm_home,
+                        "away_team": _norm_away,
                     }
                     print(f"  📊 Recipe 8 雷達圖補齊: {len(dims)} 維")
 
@@ -3664,6 +3700,11 @@ Park Factor: {pf:.2f} ({park_interp})
         if len(factors) < 4:
             factors.append(f"預測比分 {home_predicted}-{away_predicted}")
 
+
+        # 🆕 [2026-08-18 Bug fix] 雷達圖兩組數據用同一 scale 歸一化
+        _fb_home = [min(10, h) for h in home_vals]
+        _fb_away = [min(10, a) for a in away_vals]
+        _fb_norm_home, _fb_norm_away = self._normalize_radar_chart(_fb_home, _fb_away)
         fallback = {
             "home_win_probability": round(home_prob, 4),
             "away_win_probability": round(1 - home_prob, 4),
