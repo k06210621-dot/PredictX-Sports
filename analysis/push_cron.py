@@ -73,7 +73,9 @@ async def daily_push_notification():
                 'away_team': game[2],
                 'match_date': game[3]
             }
-            confidence = float(game[3])
+            # 🆕 [Bug fix 2026-08-18] confidence 應使用 game[4] (SELECT 順序為 game_id=0, home_team=1, away_team=2, match_date=3, confidence=4)
+            # 修法前用 game[3] (match_date) 會拋 ValueError，每天 cron 跑實際上無效
+            confidence = float(game[4])
             
             # 使用 push_service 的發送功能
             from push_service import send_match_notification
