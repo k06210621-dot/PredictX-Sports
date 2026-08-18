@@ -2647,8 +2647,8 @@ Park Factor: {pf:.2f} ({park_interp})
   "predicted_score": "X-Y",
   "radar_chart": {{
     "categories": {json.dumps(current_dims, ensure_ascii=False)},
-            "home_team": _fb_norm_home,
-            "away_team": _fb_norm_away,
+            "home_team": [min(10, h) for h in home_vals],
+            "away_team": [min(10, a) for a in away_vals],
   }}
 }}
 
@@ -3731,11 +3731,11 @@ Park Factor: {pf:.2f} ({park_interp})
             ),
             "radar_chart": {
                 "categories": dims,
-                "home_team": [min(10, h) for h in home_vals],
-                "away_team": [min(10, a) for a in away_vals],
+                "home_team": _fb_norm_home,
+                "away_team": _fb_norm_away,
             },
-            "home_total_score": round(sum(home_vals)/len(home_vals), 1),
-            "away_total_score": round(sum(away_vals)/len(away_vals), 1),
+            "home_total_score": round(sum(_fb_home)/len(_fb_home), 1),
+            "away_total_score": round(sum(_fb_away)/len(_fb_away), 1),
             "source_quality": {
                 "score": self.calculate_source_score(),
                 "sources": list(self.used_sources)
