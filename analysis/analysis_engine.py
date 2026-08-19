@@ -3435,14 +3435,14 @@ Park Factor: {pf:.2f} ({park_interp})
                     dims = dims_map.get(league_lc, ["整體戰力", "進攻能力", "防守能力", "戰術執行", "環境因素", "近期狀態"])
                     home_radar_scores = self._compute_team_radar_scores(features, 'home')
                     away_radar_scores = self._compute_team_radar_scores(features, 'away')
-                    # 🆕 [2026-08-18] 兩組數據用同一 scale 歸一化，避免 iOS 二次 normalize 出錯
+                    # 🆕 [2026-08-20] 停用後端歸一化，直接回傳 0-10 原始分數
+                    # iOS 端 RadarChartView 會自行歸一化；此處避免雙重歸一化導致視覺失真
                     _raw_home = [min(10, max(0, h)) for h in home_radar_scores['values']]
                     _raw_away = [min(10, max(0, a)) for a in away_radar_scores['values']]
-                    _norm_home, _norm_away = self._normalize_radar_chart(_raw_home, _raw_away)
                     result['radar_chart'] = {
                         "categories": dims,
-                        "home_team": _norm_home,
-                        "away_team": _norm_away,
+                        "home_team": _raw_home,
+                        "away_team": _raw_away,
                     }
                     print(f"  📊 Recipe 8 雷達圖補齊: {len(dims)} 維")
 
@@ -3701,10 +3701,10 @@ Park Factor: {pf:.2f} ({park_interp})
             factors.append(f"預測比分 {home_predicted}-{away_predicted}")
 
 
-        # 🆕 [2026-08-18 Bug fix] 雷達圖兩組數據用同一 scale 歸一化
+        # 🆕 [2026-08-20] 停用後端歸一化，直接回傳 0-10 原始分數
+        # iOS 端 RadarChartView 會自行歸一化；此處避免雙重歸一化導致視覺失真
         _fb_home = [min(10, h) for h in home_vals]
         _fb_away = [min(10, a) for a in away_vals]
-        _fb_norm_home, _fb_norm_away = self._normalize_radar_chart(_fb_home, _fb_away)
         fallback = {
             "home_win_probability": round(home_prob, 4),
             "away_win_probability": round(1 - home_prob, 4),
@@ -3731,8 +3731,8 @@ Park Factor: {pf:.2f} ({park_interp})
             ),
             "radar_chart": {
                 "categories": dims,
-                "home_team": _fb_norm_home,
-                "away_team": _fb_norm_away,
+                "home_team": _fb_home,
+                "away_team": _fb_away,
             },
             "home_total_score": round(sum(_fb_home)/len(_fb_home), 1),
             "away_total_score": round(sum(_fb_away)/len(_fb_away), 1),
