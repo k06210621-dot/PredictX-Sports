@@ -33,7 +33,7 @@ def save_no_push(conn, game_id, result):
                DO UPDATE SET analysis_data = EXCLUDED.analysis_data,
                              updated_at = CURRENT_TIMESTAMP,
                              last_analyzed_pitcher_update = EXCLUDED.last_analyzed_pitcher_update""",
-            (game_id, json.dumps(result), p['pitcher_updated_at'] if p else None)
+            (game_id, json.dumps(result, default=str), p['pitcher_updated_at'] if p else None)
         )
         conn.commit()
         return True
