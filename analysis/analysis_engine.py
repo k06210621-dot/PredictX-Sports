@@ -1282,6 +1282,43 @@ class AnalysisEngine:
                         print(f"  🏆 CPBL pitchers: {home_name} {len(hp)} pitchers, {away_name} {len(ap)} pitchers")
                 except Exception as e:
                     print(f"  ⚠ CPBL pitcher fetch error: {e}")
+                
+                # 🆕 [2026-08-21] Fallback：若 sportify.tw 失敗，從 cpbl_pitcher_pr 補讀
+                if not features.get('cpbl_pitchers'):
+                    try:
+                        import psycopg2
+                        _conn = psycopg2.connect(os.environ.get("DATABASE_PUBLIC_URL", ""))
+                        _cur = _conn.cursor()
+                        _cur.execute("""
+                            SELECT t.english_name, p.player_name, p.era, p.k_pct, p.bb_pct
+                            FROM predictx.cpbl_pitcher_pr p
+                            JOIN predictx.teams t ON p.team_id = t.team_id
+                            WHERE p.season = 2026 AND p.era IS NOT NULL AND p.era > 0
+                        """)
+                        rows = _cur.fetchall() or []
+                        _cur.close()
+                        _conn.close()
+                        
+                        fb = {}
+                        for r in rows:
+                            team_en, pname, era, k_pct, bb_pct = r
+                            if team_en not in fb:
+                                fb[team_en] = []
+                            fb[team_en].append({
+                                'name': pname,
+                                'era': float(era) if era else 0,
+                                'k_per_9': float(k_pct) if k_pct else 0,  # DB 有 k_pct 而非 k_per_9
+                                'bb_per_9': float(bb_pct) if bb_pct else 0,
+                                'ip': 0,
+                            })
+                        
+                        if fb:
+                            features['cpbl_pitchers'] = fb
+                            hp = fb.get(home_name, [])
+                            ap = fb.get(away_name, [])
+                            print(f"  🏆 CPBL pitchers (DB fallback): {home_name} {len(hp)}, {away_name} {len(ap)}")
+                    except Exception as e:
+                        print(f"  ⚠ CPBL pitcher DB fallback error: {e}")
 
                 fetcher.close()
             except Exception as e:
