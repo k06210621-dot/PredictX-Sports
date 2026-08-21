@@ -407,12 +407,13 @@ class AnalysisEngine:
         import re
 
         # 不同聯盟的合理分數範圍
+        # ⚠️ CPBL 實際主隊 0-19、客隊 0-11，擴大上限避免裁切真實吹盤比分
         score_ranges = {
             "MLB": (2, 9),    # 棒球單隊常見 2-9 分
             "NBA": (95, 135), # 籃球單隊常見 95-135 分
             "WNBA": (70, 110), # WNBA 單隊常見 70-110 分（場均低於 NBA）
             "NPB": (2, 9),
-            "CPBL": (2, 9),
+            "CPBL": (0, 12),  # 2026-08-21 調整：實際觀測 0-19/0-11，取保守上限 12
         }
         lo, hi = score_ranges.get((league or "").upper(), (2, 9))
 
@@ -468,11 +469,14 @@ class AnalysisEngine:
         underdog_score = a_score if home_favorite else h_score
 
         # 🆕 [fix] 根據勝率差距動態調整比分差距
-        # prob_diff > 0.4 → favorite 應至少贏 3 分以上
+        # prob_diff > 0.4 → favorite 應至少贏 4 分以上
+        # prob_diff > 0.3 → 至少 3 分差距
         # prob_diff > 0.2 → 至少 2 分差距
         # prob_diff > 0.1 → 至少 1 分差距
         target_gap = 1
         if prob_diff > 0.4:
+            target_gap = 4
+        elif prob_diff > 0.3:
             target_gap = 3
         elif prob_diff > 0.2:
             target_gap = 2

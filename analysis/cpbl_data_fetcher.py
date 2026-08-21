@@ -905,8 +905,17 @@ class CPBLDataFetcher:
                 away_acnt = (detail.get('VisitingFirstAcnt') or '').strip()
 
                 # 中文隊名映射
-                home_en = self.TEAM_CN_TO_EN.get(home_team, home_team)
-                away_en = self.TEAM_CN_TO_EN.get(away_team, away_team)
+                team_cn_map = {
+                    "中信兄弟": "CTBC Brothers",
+                    "統一獅": "Uni-President 7-ELEVEn Lions",
+                    "統一7-ELEVEn獅": "Uni-President 7-ELEVEn Lions",
+                    "富邦悍將": "Fubon Guardians",
+                    "味全龍": "Wei Chuan Dragons",
+                    "台鋼雄鷹": "TSG Hawks",
+                    "樂天桃猿": "Rakuten Monkeys",
+                }
+                home_en = team_cn_map.get(home_team, home_team)
+                away_en = team_cn_map.get(away_team, away_team)
 
                 if home_en and home_pname:
                     starters[home_en] = {'name': home_pname, 'acnt': home_acnt}
