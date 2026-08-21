@@ -1290,7 +1290,7 @@ class AnalysisEngine:
                         _conn = psycopg2.connect(os.environ.get("DATABASE_PUBLIC_URL", ""))
                         _cur = _conn.cursor()
                         _cur.execute("""
-                            SELECT t.english_name, p.player_name, p.era, p.k_pct, p.bb_pct
+                            SELECT t.english_name, p.player_name, p.era
                             FROM predictx.cpbl_pitcher_pr p
                             JOIN predictx.teams t ON p.team_id = t.team_id
                             WHERE p.season = 2026 AND p.era IS NOT NULL AND p.era > 0
@@ -1301,22 +1301,19 @@ class AnalysisEngine:
                         
                         fb = {}
                         for r in rows:
-                            team_en, pname, era, k_pct, bb_pct = r
+                            team_en, pname, era = r
                             if team_en not in fb:
                                 fb[team_en] = []
                             fb[team_en].append({
                                 'name': pname,
                                 'era': float(era) if era else 0,
-                                'k_per_9': float(k_pct) if k_pct else 0,  # DB 有 k_pct 而非 k_per_9
-                                'bb_per_9': float(bb_pct) if bb_pct else 0,
-                                'ip': 0,
                             })
                         
                         if fb:
                             features['cpbl_pitchers'] = fb
                             hp = fb.get(home_name, [])
                             ap = fb.get(away_name, [])
-                            print(f"  🏆 CPBL pitchers (DB fallback): {home_name} {len(hp)}, {away_name} {len(ap)}")
+                            print(f"  🏆 CPBL pitchers (DB fallback, ERA only): {home_name} {len(hp)}, {away_name} {len(ap)}")
                     except Exception as e:
                         print(f"  ⚠ CPBL pitcher DB fallback error: {e}")
 
