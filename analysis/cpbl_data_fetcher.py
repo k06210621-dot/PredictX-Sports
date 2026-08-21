@@ -1015,17 +1015,19 @@ class CPBLDataFetcher:
         era_fallback = {}
         try:
             import psycopg2
-            _conn = psycopg2.connect(os.environ.get("DATABASE_PUBLIC_URL", ""))
-            _cur = _conn.cursor()
-            _cur.execute("""
-                SELECT player_name, era
-                FROM predictx.cpbl_pitcher_pr
-                WHERE season = %s AND era IS NOT NULL AND era > 0
-            """, (season,))
-            for row in _cur.fetchall():
-                era_fallback[row[0]] = float(row[1])
-            _cur.close()
-            _conn.close()
+            db_url = os.environ.get("DATABASE_PUBLIC_URL", "") or os.environ.get("DATABASE_URL", "") or os.environ.get("POSTGRES_URL", "")
+            if db_url:
+                _conn = psycopg2.connect(db_url)
+                _cur = _conn.cursor()
+                _cur.execute("""
+                    SELECT player_name, era
+                    FROM predictx.cpbl_pitcher_pr
+                    WHERE season = %s AND era IS NOT NULL AND era > 0
+                """, (season,))
+                for row in _cur.fetchall():
+                    era_fallback[row[0]] = float(row[1])
+                _cur.close()
+                _conn.close()
         except Exception:
             pass
         
