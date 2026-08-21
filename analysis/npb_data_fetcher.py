@@ -144,21 +144,32 @@ class NPBDataFetcher:
             return None
 
     def get_standings(self):
-        """取得 NPB 聯盟排名"""
-        resp = self.session.get("https://baseball-data.com/", timeout=15)
-        if resp.status_code != 200:
-            # Fallback to npb_team_standings table
-            return self._get_standings_from_db()
+        """取得 NPB 聯盟排名
+        優先從 npb_team_standings 表取（避免 baseball-data.com 403 問題），
+        找不到再爬 baseball-data.com。
+        """
+        # 1) 先試 DB（更可靠）
+        db_standings = self._get_standings_from_db()
+        if db_standings:
+            return db_standings
+        
+        # 2) Fallback 到 baseball-data.com 爬蟲
+        try:
+            resp = self.session.get("https://baseball-data.com/", timeout=15)
+            if resp.status_code != 200:
+                return {}
+        except Exception:
+            return {}
         
         soup = BeautifulSoup(resp.text, 'xml')
         self.fetched_sources.append("baseball-data.com")
         
         standings = {}
         tables = soup.find_all('table')
-        for table in tables[:2]:  # 前兩個表格是中央聯盟和太平洋聯盟
+        for table in tables[:2]:
             rows = table.find_all('tr')
             league_name = "Central" if tables.index(table) == 0 else "Pacific"
-            for row in rows[1:]:  # 跳過表頭
+            for row in rows[1:]:
                 cells = row.find_all('td')
                 if len(cells) >= 8:
                     jp_name = cells[1].get_text(strip=True)
