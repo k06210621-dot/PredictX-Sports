@@ -1292,7 +1292,7 @@ class AnalysisEngine:
                             _conn = psycopg2.connect(db_url)
                             _cur = _conn.cursor()
                             _cur.execute("""
-                                SELECT t.english_name, p.player_name, p.era
+                                SELECT t.english_name, p.player_name, p.era, p.k_pct, p.bb_pct
                                 FROM predictx.cpbl_pitcher_pr p
                                 JOIN predictx.teams t ON p.team_id = t.team_id
                                 WHERE p.season = 2026 AND p.era IS NOT NULL AND p.era > 0
@@ -1303,15 +1303,15 @@ class AnalysisEngine:
                             
                             fb = {}
                             for r in rows:
-                                team_en, pname, era = r
+                                team_en, pname, era, k_pct, bb_pct = r
                                 if team_en not in fb:
                                     fb[team_en] = []
                                 fb[team_en].append({
                                     'name': pname,
                                     'era': float(era) if era else 0,
                                     'whip': 0,
-                                    'k_per_9': 0,
-                                    'bb_per_9': 0,
+                                    'k_per_9': float(k_pct) if k_pct else 0,
+                                    'bb_per_9': float(bb_pct) if bb_pct else 0,
                                     'ip': 0,
                                     'wins': 0,
                                     'losses': 0,
@@ -1321,7 +1321,7 @@ class AnalysisEngine:
                                 features['cpbl_pitchers'] = fb
                                 hp = fb.get(home_name, [])
                                 ap = fb.get(away_name, [])
-                                print(f"  🏆 CPBL pitchers (DB fallback, ERA only): {home_name} {len(hp)}, {away_name} {len(ap)}")
+                                print(f"  🏆 CPBL pitchers (DB fallback, ERA+K%+BB%): {home_name} {len(hp)}, {away_name} {len(ap)}")
                     except Exception as e:
                         print(f"  ⚠ CPBL pitcher DB fallback error: {e}")
 
@@ -2332,13 +2332,13 @@ Park Factor: {pf:.2f} ({park_interp})
                 if h_ps:
                     cpbl_spec += "\n主隊 %s 投手群：" % home_team
                     for i, p in enumerate(h_ps, 1):
-                        line = "\n  #%d %s: ERA=%.2f, WHIP=%.3f, K/9=%.1f, BB/9=%.1f, %dW-%dL, %.1f局" % (
+                        line = "\n  #%d %s: ERA=%.2f, WHIP=%.3f, K%%=%.1f, BB%%=%.1f, %dW-%dL, %.1f局" % (
                             i, p['name'], p['era'], p['whip'], p['k_per_9'], p['bb_per_9'], p['wins'], p['losses'], p['ip'])
                         cpbl_spec += line
                 if a_ps:
                     cpbl_spec += "\n客隊 %s 投手群：" % away_team
                     for i, p in enumerate(a_ps, 1):
-                        line = "\n  #%d %s: ERA=%.2f, WHIP=%.3f, K/9=%.1f, BB/9=%.1f, %dW-%dL, %.1f局" % (
+                        line = "\n  #%d %s: ERA=%.2f, WHIP=%.3f, K%%=%.1f, BB%%=%.1f, %dW-%dL, %.1f局" % (
                             i, p['name'], p['era'], p['whip'], p['k_per_9'], p['bb_per_9'], p['wins'], p['losses'], p['ip'])
                         cpbl_spec += line
 
@@ -2597,8 +2597,8 @@ Park Factor: {pf:.2f} ({park_interp})
 
 **投手近況加減分規則（CPBL 專用，強制執行）**
 在確定 predicted_score 後，必須檢查「對方先發投手」近 3 場 stats：
-- 正面指標：K/9 ≥ 8.0（+1）、BB/9 ≤ 3.0（+1）、ERA ≤ 3.5（+1）
-- 負面指標：K/9 ≤ 6.0（+1）、BB/9 ≥ 4.0（+1）、ERA ≥ 5.0（+1）
+- 正面指標：K% ≥ 20.0（+1）、BB% ≤ 8.0（+1）、ERA ≤ 3.5（+1）
+- 負面指標：K% ≤ 14.0（+1）、BB% ≥ 12.0（+1）、ERA ≥ 5.0（+1）
 - 計算 positive_count（正面指標個數）與 negative_count（負面指標個數）
 - 若 positive_count ≥ 2：我方得分 -= positive_count（對手失分下修，-1 或 -2）
 - 若 negative_count ≥ 2：我方得分 += negative_count（對手失分上修，+1 或 +2）
