@@ -1309,6 +1309,12 @@ class AnalysisEngine:
                                 fb[team_en].append({
                                     'name': pname,
                                     'era': float(era) if era else 0,
+                                    'whip': 0,
+                                    'k_per_9': 0,
+                                    'bb_per_9': 0,
+                                    'ip': 0,
+                                    'wins': 0,
+                                    'losses': 0,
                                 })
                             
                             if fb:
