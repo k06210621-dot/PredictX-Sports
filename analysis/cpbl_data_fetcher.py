@@ -444,18 +444,18 @@ class CPBLDataFetcher:
     def get_player_pr_data(self, team_name, top_n=10):
         """
         從 predictx.cpbl_player_pr 表取球隊的 PR 進階打擊數據
-        依 PR ranking（PR 值越高越前面）取前 N 名
+        改為回傳原始數值（woba/avg/slg/obp/iso 等），而非 percentile
         """
         team_id = self.get_local_team_id(team_name)
         if not team_id:
             return []
         try:
             self.cur.execute("""
-                SELECT player_name, ranking, wrc_plus, avg_percentile, slg_percentile,
-                       obp_percentile, iso_percentile, exit_velo_avg_percentile,
-                       exit_velo_max_percentile, hard_hit_pct_percentile, barrel_count,
-                       barrel_pct_percentile, k_pct_percentile, bb_pct_percentile,
-                       whiff_pct_percentile, chase_pct_percentile
+                SELECT player_name, ranking, wrc_plus,
+                       woba, avg, slg, obp, iso,
+                       exit_velo_avg, exit_velo_max,
+                       hard_hit_pct, barrel_count, barrel_pct,
+                       k_pct, bb_pct, whiff_pct, chase_pct
                 FROM predictx.cpbl_player_pr
                 WHERE team_id = %s AND season = 2026
                 ORDER BY ranking ASC

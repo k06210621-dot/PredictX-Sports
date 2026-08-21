@@ -2189,25 +2189,25 @@ Park Factor: {pf:.2f} ({park_interp})
                             name = p.get('player_name', '?')
                             rank = p.get('ranking', '?')
                             wrc = p.get('wrc_plus', '?')
-                            avg = p.get('avg_percentile', '?')
-                            slg = p.get('slg_percentile', '?')
-                            obp = p.get('obp_percentile', '?')
-                            iso = p.get('iso_percentile', '?')
-                            ev = p.get('exit_velo_max_percentile', '?')
-                            hard = p.get('hard_hit_pct_percentile', '?')
-                            barrel = p.get('barrel_pct_percentile', '?')
-                            k_pct = p.get('k_pct_percentile', '?')
-                            bb_pct = p.get('bb_pct_percentile', '?')
+                            avg = p.get('avg', '?')
+                            slg = p.get('slg', '?')
+                            obp = p.get('obp', '?')
+                            iso = p.get('iso', '?')
+                            ev = p.get('exit_velo_max', '?')
+                            hard = p.get('hard_hit_pct', '?')
+                            barrel = p.get('barrel_pct', '?')
+                            k_pct = p.get('k_pct', '?')
+                            bb_pct = p.get('bb_pct', '?')
                             cpbl_spec += (
                                 f"\n  #{i} {name} (PR排名#{rank}): "
                                 f"wRC+={wrc}, AVG={avg}, SLG={slg}, OBP={obp}, ISO={iso}, "
                                 f"EVmax={ev}, Hard%={hard}, Barrel%={barrel}, K%={k_pct}, BB%={bb_pct}"
                             )
-                        # 計算團隊平均 wRC+ 與 OBp
+                        # 計算團隊平均
                         if pr_list:
                             avg_wrc = sum(p.get('wrc_plus') or 0 for p in pr_list) / max(len([p for p in pr_list if p.get('wrc_plus') is not None]), 1)
-                            avg_obp = sum(p.get('obp_percentile') or 0 for p in pr_list) / max(len([p for p in pr_list if p.get('obp_percentile') is not None]), 1)
-                            avg_ev = sum(p.get('exit_velo_max_percentile') or 0 for p in pr_list) / max(len([p for p in pr_list if p.get('exit_velo_max_percentile') is not None]), 1)
+                            avg_obp = sum(p.get('obp') or 0 for p in pr_list) / max(len([p for p in pr_list if p.get('obp') is not None]), 1)
+                            avg_ev = sum(p.get('exit_velo_max') or 0 for p in pr_list) / max(len([p for p in pr_list if p.get('exit_velo_max') is not None]), 1)
                             cpbl_spec += f"\n  → 球隊主力平均: wRC+={avg_wrc:.1f}, OBP={avg_obp:.1f}, EVmax={avg_ev:.1f}"
 
                 # 🆕 [2026-07-25] 投手被打進階數據（Pitcher Batting Against PR，越低越好）
