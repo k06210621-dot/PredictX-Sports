@@ -2553,6 +2553,17 @@ Park Factor: {pf:.2f} ({park_interp})
 - 0.60-0.70 → 較明確差距
 - 0.70+ → 大比分領先
 
+**投手近況加減分規則（CPBL 專用，強制執行）**
+在確定 predicted_score 後，必須檢查「對方先發投手」近 3 場 stats：
+- 正面指標：K/9 ≥ 8.0（+1）、BB/9 ≤ 3.0（+1）、ERA ≤ 3.5（+1）
+- 負面指標：K/9 ≤ 6.0（+1）、BB/9 ≥ 4.0（+1）、ERA ≥ 5.0（+1）
+- 計算 positive_count（正面指標個數）與 negative_count（負面指標個數）
+- 若 positive_count ≥ 2：我方得分 -= positive_count（對手失分下修，-1 或 -2）
+- 若 negative_count ≥ 2：我方得分 += negative_count（對手失分上修，+1 或 +2）
+- positive_count 與 negative_count 不會同時 >= 2（投手 stats 互斥）
+- 若對方投手數據不足（0、null、'---'），跳過不調整
+- 調整後仍需服從 home_win_probability 方向，且 predicted_score 必須為具體字串如 "3-2"
+
 ═══════════════════════════════════════
 📊 數據輸入 (Data Inputs)
 ═══════════════════════════════════════
@@ -2657,12 +2668,13 @@ Park Factor: {pf:.2f} ({park_interp})
 }}
 
 【🚨 內部一致性強制要求（必讀，輸出前自我檢查）】
-你輸出的 JSON 必須同時滿足以下三條不可違反的一致性規則：
+你輸出的 JSON 必須同時滿足以下四條不可違反的一致性規則：
 1. 勝率方向一致：若 home_win_probability > 0.5，summary 與 reasoning.step4_probability_calc 的結尾必須寫「主隊勝/主隊佔優/主隊小勝/主隊看好/主隊略佔」其中之一，**禁止**寫「客隊勝/客隊佔優/客隊小勝/客隊看好/客隊略佔/主隊敗/主隊輸/主隊勝率低於五成」等含客隊勝意思的詞。反之亦然（away_win_probability > 0.5 時同規則對調）。
 2. 比分方向一致：若 home_win_probability > 0.5，predicted_score 內 X-Y 中的 X 必須大於 Y。summary 與 reasoning.step6_score_rationale 結尾出現的「X-Y」比分，X、Y 的大小關係也必須與 home_win_probability > 0.5 一致（主隊分數 > 客隊分數）。反之亦然。
 3. 百分比精確：summary 與 reasoning.step4_probability_calc 結尾出現的「主隊/客隊勝率 N%」的 N，必須等於 home_win_probability 或 away_win_probability 四捨五入到整數後的百分比（例：home_win_probability=0.44 → N=44）。
+4. **CPBL 投手加減分落實**：若本場聯賽為 CPBL，且 predicted_score 已根據「對方先發投手近 3 場 K/9、BB/9、ERA」做了 -1/-2/+1/+2 的加減分，則 reasoning.step6_score_rationale 結尾必須明確寫出「投手調整 ±1/±2」字樣，否則視為遺漏，**必須回 step 6 補做**。
 
-請在輸出前最後自我檢查這三條。如果任何一條不符，**修正後再輸出 JSON**。**禁止輸出結構欄位與文字結論矛盾的結果**。
+請在輸出前最後自我檢查這四條。如果任何一條不符，**修正後再輸出 JSON**。**禁止輸出結構欄位與文字結論矛盾的結果**。
 
 請只輸出這個 JSON object，不要有任何其他文字。
 '''
