@@ -113,7 +113,7 @@ class NPBDataFetcher:
             self.cur = conn.cursor(cursor_factory=RealDictCursor)
         else:
             try:
-                database_url = os.getenv('DATABASE_URL')
+                database_url = os.getenv('DATABASE_PUBLIC_URL') or os.getenv('DATABASE_URL')
                 if database_url:
                     if database_url.startswith('postgres://'):
                         database_url = database_url.replace('postgres://', 'postgresql://', 1)
@@ -147,7 +147,8 @@ class NPBDataFetcher:
         """取得 NPB 聯盟排名"""
         resp = self.session.get("https://baseball-data.com/", timeout=15)
         if resp.status_code != 200:
-            return None
+            # Fallback to npb_team_standings table
+            return self._get_standings_from_db()
         
         soup = BeautifulSoup(resp.text, 'xml')
         self.fetched_sources.append("baseball-data.com")
@@ -173,41 +174,79 @@ class NPBDataFetcher:
                     }
         return standings
 
+    def _get_standings_from_db(self):
+        """從 npb_team_standings 表讀取戰績（baseball-data.com 失敗時的 fallback）"""
+        if not self.cur:
+            return {}
+        try:
+            self.cur.execute("""
+                SELECT t.english_name, s.rank, s.games_played, s.wins, s.losses, s.ties,
+                       ROUND(s.wins::numeric / NULLIF(s.wins + s.losses + s.ties, 0), 3) as win_pct,
+                       s.league
+                FROM predictx.npb_team_standings s
+                JOIN predictx.teams t ON s.team_id = t.team_id
+                WHERE s.season = 2026 AND t.league = 'NPB'
+            """)
+            rows = self.cur.fetchall()
+            if not rows:
+                return {}
+            self.fetched_sources.append("npb_team_standings (official verified)")
+            standings = {}
+            for row in rows:
+                standings[row['english_name']] = {
+                    "rank": str(row['rank']),
+                    "games": str(row['games_played']),
+                    "wins": str(row['wins']),
+                    "losses": str(row['losses']),
+                    "ties": str(row['ties']),
+                    "win_pct": str(row['win_pct']),
+                    "league": row['league'],
+                }
+            return standings
+        except Exception:
+            return {}
+
     def get_team_batting_stats(self, team_name):
         """取得 NPB 球隊打擊數據
         優先從 npb_team_batting 表取（含 OPS/SLG/OBP 等進階指標），
         找不到再回退 baseball-data.com 爬蟲（僅 AVG/HR）。
         """
-        # 1) 先嘗試從 npb_team_batting 表取 2026 賽季數據
         team_id = self._get_team_id_by_name(team_name)
         if team_id:
-            self.cur.execute("""
-                SELECT games, at_bats, runs, hits, doubles, triples, home_runs, rbi,
-                       walks, strikeouts, total_bases, obp, slg, avg
-                FROM predictx.npb_team_batting
-                WHERE team_id = %s AND season = 2026
-            """, (team_id,))
-            row = self.cur.fetchone()
-            if row:
-                self.fetched_sources.append("npb_team_batting (official verified)")
-                return {
-                    'games': row['games'],
-                    'at_bats': row['at_bats'],
-                    'runs': row['runs'],
-                    'hits': row['hits'],
-                    'doubles': row['doubles'],
-                    'triples': row['triples'],
-                    'home_runs': row['home_runs'],
-                    'rbi': row['rbi'],
-                    'walks': row['walks'],
-                    'strikeouts': row['strikeouts'],
-                    'total_bases': row['total_bases'],
-                    'obp': float(row['obp']) if row['obp'] is not None else None,
-                    'slg': float(row['slg']) if row['slg'] is not None else None,
-                    'avg': float(row['avg']) if row['avg'] is not None else None,
-                    'hr': row['home_runs'],
-                    'avg': float(row['avg']) if row['avg'] is not None else None,
-                }
+            try:
+                self.cur.execute("""
+                    SELECT games, runs, hits, home_runs, rbi, walks, strikeouts, total_bases,
+                           obp, slg, avg
+                    FROM predictx.npb_team_batting
+                    WHERE team_id = %s AND season = 2026
+                """, (team_id,))
+                row = self.cur.fetchone()
+                if row:
+                    self.fetched_sources.append("npb_team_batting (official verified)")
+                    return {
+                        'games': row['games'],
+                        'at_bats': None,
+                        'runs': row['runs'],
+                        'hits': row['hits'],
+                        'doubles': None,
+                        'triples': None,
+                        'home_runs': row['home_runs'],
+                        'rbi': row['rbi'],
+                        'walks': row['walks'],
+                        'strikeouts': row['strikeouts'],
+                        'total_bases': row['total_bases'],
+                        'obp': float(row['obp']) if row['obp'] is not None else None,
+                        'slg': float(row['slg']) if row['slg'] is not None else None,
+                        'avg': float(row['avg']) if row['avg'] is not None else None,
+                        'hr': row['home_runs'],
+                    }
+            except Exception:
+                pass
+        
+        # Fallback to baseball-data.com scraper
+        code = TEAM_URL_CODES.get(team_name)
+        if not code:
+            return None
         
         url = f"https://baseball-data.com/stats/hitter-{code}/"
         resp = self.session.get(url, timeout=15)
@@ -247,7 +286,48 @@ class NPBDataFetcher:
         return totals
 
     def get_team_pitching_stats(self, team_name):
-        """取得 NPB 球隊投球數據（從球員數據加總）"""
+        """取得 NPB 球隊投球數據
+        優先從 npb_team_pitching 表取，找不到再回退 baseball-data.com 爬蟲。
+        """
+        team_id = self._get_team_id_by_name(team_name)
+        if team_id:
+            try:
+                self.cur.execute("""
+                    SELECT games_played, wins, losses, ties, era, saves, holds,
+                           complete_games, shutouts, hits_allowed, hr_allowed,
+                           walks, hbp, strikeouts, runs_allowed, earned_runs, whip, dips,
+                           avg_runs_allowed, avg_hits_allowed
+                    FROM predictx.npb_team_pitching
+                    WHERE team_id = %s AND season = 2026
+                """, (team_id,))
+                row = self.cur.fetchone()
+                if row:
+                    self.fetched_sources.append("npb_team_pitching (official verified)")
+                    return {
+                        'games': row['games_played'],
+                        'wins': row['wins'],
+                        'losses': row['losses'],
+                        'ties': row['ties'],
+                        'era': float(row['era']) if row['era'] is not None else None,
+                        'saves': row['saves'],
+                        'holds': row['holds'],
+                        'complete_games': row['complete_games'],
+                        'shutouts': row['shutouts'],
+                        'hits_allowed': row['hits_allowed'],
+                        'hr_allowed': row['hr_allowed'],
+                        'walks': row['walks'],
+                        'hbp': row['hbp'],
+                        'strikeouts': row['strikeouts'],
+                        'runs_allowed': row['runs_allowed'],
+                        'earned_runs': row['earned_runs'],
+                        'whip': float(row['whip']) if row['whip'] is not None else None,
+                        'dips': float(row['dips']) if row['dips'] is not None else None,
+                        'win_pct': round(row['wins'] / max(row['wins'] + row['losses'] + row['ties'], 1), 3),
+                    }
+            except Exception:
+                pass
+        
+        # Fallback to baseball-data.com scraper
         code = TEAM_URL_CODES.get(team_name)
         if not code:
             return None
