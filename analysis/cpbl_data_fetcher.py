@@ -976,6 +976,7 @@ class CPBLDataFetcher:
         """
         從 sportify.tw 爬取 CPBL 全聯盟投手個人數據
         使用 curl 繞過 Python 3.9 SSL 限制
+        ERA fallback：若 sportify.tw 缺 ERA，從 predictx.cpbl_pitcher_pr 補讀
         """
         import subprocess, re, json
         
@@ -1010,6 +1011,24 @@ class CPBLDataFetcher:
         if not pitchers:
             return None
         
+        # 🆕 [2026-08-21] ERA fallback：從 cpbl_pitcher_pr 表建立名稱→ERA 映射
+        era_fallback = {}
+        try:
+            import psycopg2
+            _conn = psycopg2.connect(os.environ.get("DATABASE_PUBLIC_URL", ""))
+            _cur = _conn.cursor()
+            _cur.execute("""
+                SELECT player_name, era
+                FROM predictx.cpbl_pitcher_pr
+                WHERE season = %s AND era IS NOT NULL AND era > 0
+            """, (season,))
+            for row in _cur.fetchall():
+                era_fallback[row[0]] = float(row[1])
+            _cur.close()
+            _conn.close()
+        except Exception:
+            pass
+        
         teams = {}
         for p in pitchers:
             tn = p.get('team_name', '')
@@ -1041,10 +1060,15 @@ class CPBLDataFetcher:
             else:
                 try:
                     ip = float(ip_str)
-                except (ValueError, TypeError):
+                except:
                     ip = 0
             
             era_val = float(p.get('era', 0)) if p.get('era') else 0
+            # 🆕 fallback：sportify.tw 無 ERA 時，從 DB 讀取
+            if era_val == 0:
+                pname = p.get('player_name', '')
+                era_val = era_fallback.get(pname, 0)
+            
             whip_val = float(p.get('whip', 0)) if p.get('whip') else 0
             
             teams[team_en].append({
