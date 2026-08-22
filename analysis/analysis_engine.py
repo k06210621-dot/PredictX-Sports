@@ -1310,8 +1310,8 @@ class AnalysisEngine:
                                     'name': pname,
                                     'era': float(era) if era else 0,
                                     'whip': 0,
-                                    'k_per_9': float(k_pct) if k_pct else 0,
-                                    'bb_per_9': float(bb_pct) if bb_pct else 0,
+                                    'k_pct': float(k_pct) if k_pct else 0,
+                                    'bb_pct': float(bb_pct) if bb_pct else 0,
                                     'ip': 0,
                                     'wins': 0,
                                     'losses': 0,
@@ -2333,13 +2333,13 @@ Park Factor: {pf:.2f} ({park_interp})
                     cpbl_spec += "\n主隊 %s 投手群：" % home_team
                     for i, p in enumerate(h_ps, 1):
                         line = "\n  #%d %s: ERA=%.2f, WHIP=%.3f, K%%=%.1f, BB%%=%.1f, %dW-%dL, %.1f局" % (
-                            i, p['name'], p['era'], p['whip'], p['k_per_9'], p['bb_per_9'], p['wins'], p['losses'], p['ip'])
+                            i, p['name'], p['era'], p['whip'], p['k_pct'], p['bb_pct'], p['wins'], p['losses'], p['ip'])
                         cpbl_spec += line
                 if a_ps:
                     cpbl_spec += "\n客隊 %s 投手群：" % away_team
                     for i, p in enumerate(a_ps, 1):
                         line = "\n  #%d %s: ERA=%.2f, WHIP=%.3f, K%%=%.1f, BB%%=%.1f, %dW-%dL, %.1f局" % (
-                            i, p['name'], p['era'], p['whip'], p['k_per_9'], p['bb_per_9'], p['wins'], p['losses'], p['ip'])
+                            i, p['name'], p['era'], p['whip'], p['k_pct'], p['bb_pct'], p['wins'], p['losses'], p['ip'])
                         cpbl_spec += line
 
             # 🆕 [2026-07-06] CPBL 當日 SP 個人 stats（從 predictx.player_season_stats）
@@ -2714,7 +2714,7 @@ Park Factor: {pf:.2f} ({park_interp})
 1. 勝率方向一致：若 home_win_probability > 0.5，summary 與 reasoning.step4_probability_calc 的結尾必須寫「主隊勝/主隊佔優/主隊小勝/主隊看好/主隊略佔」其中之一，**禁止**寫「客隊勝/客隊佔優/客隊小勝/客隊看好/客隊略佔/主隊敗/主隊輸/主隊勝率低於五成」等含客隊勝意思的詞。反之亦然（away_win_probability > 0.5 時同規則對調）。
 2. 比分方向一致：若 home_win_probability > 0.5，predicted_score 內 X-Y 中的 X 必須大於 Y。summary 與 reasoning.step6_score_rationale 結尾出現的「X-Y」比分，X、Y 的大小關係也必須與 home_win_probability > 0.5 一致（主隊分數 > 客隊分數）。反之亦然。
 3. 百分比精確：summary 與 reasoning.step4_probability_calc 結尾出現的「主隊/客隊勝率 N%」的 N，必須等於 home_win_probability 或 away_win_probability 四捨五入到整數後的百分比（例：home_win_probability=0.44 → N=44）。
-4. **CPBL 投手加減分落實**：若本場聯賽為 CPBL，且 predicted_score 已根據「對方先發投手近 3 場 K/9、BB/9、ERA」做了 -1/-2/+1/+2 的加減分，則 reasoning.step6_score_rationale 結尾必須明確寫出「投手調整 ±1/±2」字樣，否則視為遺漏，**必須回 step 6 補做**。
+4. **CPBL 投手加減分落實**：若本場聯賽為 CPBL，且 predicted_score 已根據「對方先發投手近 3 場 K%、BB%、ERA」做了 -1/-2/+1/+2 的加減分，則 reasoning.step6_score_rationale 結尾必須明確寫出「投手調整 ±1/±2」字樣，否則視為遺漏，**必須回 step 6 補做**。
 
 請在輸出前最後自我檢查這四條。如果任何一條不符，**修正後再輸出 JSON**。**禁止輸出結構欄位與文字結論矛盾的結果**。
 
