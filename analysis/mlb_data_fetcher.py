@@ -579,41 +579,99 @@ class MLBDataFetcher:
 
     def get_bullpen_stats(self, team_name):
         """取得 MLB 球隊牛棚（reliever-only）整季統計
-        使用 MLB Stats API /teams/{id}/stats 的 situationCodes=R 參數
-        （R = Relief Pitcher）
-
+        
+        正確邏輯：
+        1. 先抓球隊 roster，篩選出 reliever（GS=0 且 GF>0，或 GS=0 且 IP>10）
+        2. 逐一抓取每位 reliever 的個人 season stats
+        3. 累加 IP、ER、K、BB、H、BF、Games 後計算整體指標
+        
         回傳：{'era': float, 'whip': float, 'k_per_9': float, 'bb_per_9': float, 'games': int, 'ip': float}
         若失敗回傳 None"""
         try:
             mlb_id = self.get_mlb_team_id_by_name(team_name)
             if not mlb_id:
                 return None
-            url = f"{MLB_API_BASE}/teams/{mlb_id}/stats?stats=season&season=2026&group=pitching&sportId=1&situationCodes=R"
-            resp = self.session.get(url, timeout=10)
-            if resp.status_code != 200:
+            
+            # 1. 抓 roster 找出所有 reliever
+            roster_url = f"{MLB_API_BASE}/teams/{mlb_id}/roster?season=2026"
+            roster_resp = self.session.get(roster_url, timeout=10)
+            if roster_resp.status_code != 200:
                 return None
-            data = resp.json()
-            splits = data.get('stats', [{}])[0].get('splits', [])
-            if not splits:
+            
+            roster_data = roster_resp.json()
+            pitcher_ids = []
+            for entry in roster_data.get('roster', []):
+                pos = entry.get('position', {}).get('abbreviation', '')
+                if pos == 'P':
+                    pitcher_ids.append(entry['person']['id'])
+            
+            if not pitcher_ids:
                 return None
-            s = splits[0].get('stat', {})
-            er = s.get('earnedRuns', 0) or 0
-            outs = s.get('outs', 0) or 0
-            ip = outs / 3
-            h = s.get('hits', 0) or 0
-            bb = s.get('baseOnBalls', 0) or 0
-            k = s.get('strikeOuts', 0) or 0
-            bf = s.get('battersFaced', 0) or 0
-            games = s.get('gamesPlayed', 0) or 0
-            era = round(er * 9 / ip, 2) if ip > 0 else 0
-            whip = round((bb + h) / ip, 3) if ip > 0 else 0
+            
+            # 2. 逐一抓取投手 stats，判斷是否為 reliever
+            reliever_ids = []
+            for pid in pitcher_ids:
+                stats_url = f"{MLB_API_BASE}/people/{pid}/stats?stats=season&season=2026&group=pitching"
+                stats_resp = self.session.get(stats_url, timeout=10)
+                if stats_resp.status_code != 200:
+                    continue
+                pdata = stats_resp.json()
+                splits = pdata.get('stats', [{}])[0].get('splits', [{}])
+                if not splits:
+                    continue
+                s = splits[0].get('stat', {})
+                gs = s.get('gamesStarted', 0)
+                gf = s.get('gamesFinished', 0)
+                outs = s.get('outs', 0)
+                ip = outs / 3
+                # Reliever 定義：未先發 (GS=0) 且 (有完投 GF>0 或 投超過 10 局)
+                if gs == 0 and (gf > 0 or ip > 10):
+                    reliever_ids.append(pid)
+            
+            if not reliever_ids:
+                return None
+            
+            # 3. 累加所有 reliever 的數據
+            total_er = 0
+            total_outs = 0
+            total_h = 0
+            total_bb = 0
+            total_k = 0
+            total_bf = 0
+            total_games = 0
+            
+            for pid in reliever_ids:
+                stats_url = f"{MLB_API_BASE}/people/{pid}/stats?stats=season&season=2026&group=pitching"
+                stats_resp = self.session.get(stats_url, timeout=10)
+                if stats_resp.status_code != 200:
+                    continue
+                pdata = stats_resp.json()
+                splits = pdata.get('stats', [{}])[0].get('splits', [{}])
+                if not splits:
+                    continue
+                s = splits[0].get('stat', {})
+                total_er += s.get('earnedRuns', 0) or 0
+                total_outs += s.get('outs', 0) or 0
+                total_h += s.get('hits', 0) or 0
+                total_bb += s.get('baseOnBalls', 0) or 0
+                total_k += s.get('strikeOuts', 0) or 0
+                total_bf += s.get('battersFaced', 0) or 0
+                total_games += s.get('gamesPlayed', 0) or 0
+            
+            if total_outs == 0:
+                return None
+            
+            ip = total_outs / 3
+            era = round(total_er * 9 / ip, 2) if ip > 0 else 0
+            whip = round((total_bb + total_h) / ip, 3) if ip > 0 else 0
+            
             self.fetched_sources.append("statsapi.mlb.com")
             return {
                 'era': era,
                 'whip': whip,
-                'k_per_9': round(k * 9 / ip, 1) if ip > 0 else 0,
-                'bb_per_9': round(bb * 9 / ip, 1) if ip > 0 else 0,
-                'games': games,
+                'k_per_9': round(total_k * 9 / ip, 1) if ip > 0 else 0,
+                'bb_per_9': round(total_bb * 9 / ip, 1) if ip > 0 else 0,
+                'games': total_games,
                 'ip': round(ip, 1),
             }
         except Exception as e:
