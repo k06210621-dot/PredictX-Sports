@@ -508,6 +508,99 @@ class AnalysisEngine:
 
         return f"{h_score}-{a_score}"
 
+    def _pitcher_score_adjustment(self, features, predicted_score, home_prob, away_prob):
+        """
+        根據先發投手 stats 進行失分 ±1 微調（不改變勝率）。
+
+        規則：
+        - 3 項指標（ERA + k_per_9 + bb_per_9）中 >=2 項優於聯盟基準 → 該投手對手失分下修 1
+        - 3 項指標中 >=2 項劣於聯盟基準 → 該投手對手失分上修 1
+        - 不確定/資料不足 → 不調整
+
+        注意：
+        - home_pitcher 好壞影響 away_score（對手 = away）
+        - away_pitcher 好壞影響 home_score（對手 = home）
+        """
+        import re
+
+        league = (features.get('league') or '').upper()
+        if league not in ('CPBL', 'MLB', 'NPB'):
+            return predicted_score
+
+        # 聯盟基準
+        benchmarks = {
+            'CPBL': {'era': 4.55, 'k_rate': 15.8, 'bb_rate': 9.4},
+            'MLB':  {'era': 4.11, 'k_rate': 8.44, 'bb_rate': 3.17},
+            'NPB':  {'era': 3.35, 'k_rate': 7.77, 'bb_rate': 2.80},
+        }
+        bm = benchmarks[league]
+
+        def _safe(v):
+            try:
+                f = float(v)
+                return f if f > 0 else None
+            except (TypeError, ValueError):
+                return None
+
+        def pitcher_impact(pitcher_stats):
+            if not pitcher_stats:
+                return 0
+            era = _safe(pitcher_stats.get('era'))
+            k = _safe(pitcher_stats.get('k_per_9') or pitcher_stats.get('k_pct'))
+            bb = _safe(pitcher_stats.get('bb_per_9') or pitcher_stats.get('bb_pct'))
+            if era is None or k is None or bb is None:
+                return 0
+
+            good_era = era < bm['era'] - 0.3
+            good_k = k > bm['k_rate'] + 0.8
+            good_bb = bb < bm['bb_rate'] - 0.4
+            bad_era = era > bm['era'] + 0.6
+            bad_k = k < bm['k_rate'] - 0.8
+            bad_bb = bb > bm['bb_rate'] + 0.4
+
+            if sum([good_era, good_k, good_bb]) >= 2:
+                return -1
+            if sum([bad_era, bad_k, bad_bb]) >= 2:
+                return 1
+            return 0
+
+        pitcher_data = (
+            features.get('mlb_pitchers')
+            or features.get('npb_pitchers')
+            or features.get('cpbl_pitchers')
+            or {}
+        )
+
+        def _side_stats(side):
+            p = (pitcher_data.get(f'{side}_pitcher') or {}).get('stats') or {}
+            if not p:
+                return None
+            if side == 'home' and features.get('home_team'):
+                p = dict(p)
+                p.setdefault('name', features['home_team'])
+            elif side == 'away' and features.get('away_team'):
+                p = dict(p)
+                p.setdefault('name', features['away_team'])
+            return p
+
+        home_stats = _side_stats('home')
+        away_stats = _side_stats('away')
+
+        h_adj = pitcher_impact(home_stats)
+        a_adj = pitcher_impact(away_stats)
+
+        if h_adj == 0 and a_adj == 0:
+            return predicted_score
+
+        m = re.search(r'(\d+)\s*[-－–]\s*(\d+)', str(predicted_score))
+        if not m:
+            return predicted_score
+        h = int(m.group(1))
+        a = int(m.group(2))
+        h = max(0, h + a_adj)
+        a = max(0, a + h_adj)
+        return f"{h}-{a}"
+
     def get_team_recent_form(self, team_id, league, limit=10):
         """
         獲取隊伍最近 N 場比賽的戰績與得失分
@@ -3470,6 +3563,11 @@ Park Factor: {pf:.2f} ({park_interp})
                     blowout_bonus=_bonus
                 )
 
+                # 🆕 [2026-08-22] 投手 stats ±1 微調（ERA/K/BB vs 聯盟基準）
+                result["predicted_score"] = self._pitcher_score_adjustment(
+                    features, result.get("predicted_score"), home_prob, away_prob
+                )
+
                 # 🆕 [Recipe 8] radar_chart 補齊邏輯（修雷達圖消失 bug）
                 # 修正: LLM 常回傳空陣列的 radar_chart ({"categories": [], ...})
                 # 舊邏輯只在「完全沒 key」時補空 dict,不會修「空陣列」情況
@@ -3783,9 +3881,10 @@ Park Factor: {pf:.2f} ({park_interp})
             # 🆕 [fix] fallback 也要過 reconcile，避免未來賽事（無先發數據 → CPBL SP 404）
             # 走 fallback 時算出平手比分（如 4-4）被原樣寫入，造成棒球平手異常。
             # 統一用 _reconcile_predicted_score 確保 favorite 勝 1 分以上。
-            "predicted_score": self._reconcile_predicted_score(
-                f"{home_predicted}-{away_predicted}", home_prob, 1 - home_prob,
-                features.get('league', '')
+            "predicted_score": self._pitcher_score_adjustment(
+                features,
+                self._reconcile_predicted_score(f"{home_predicted}-{away_predicted}", home_prob, 1 - home_prob, features.get('league', '')),
+                home_prob, 1 - home_prob
             ),
             "radar_chart": {
                 "categories": dims,
