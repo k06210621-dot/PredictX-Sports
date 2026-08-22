@@ -3478,25 +3478,47 @@ Park Factor: {pf:.2f} ({park_interp})
                     else:
                         boost_reasons.append(f"Streak 差距 {streak_diff} 場（主{home_streak:+d}/客{away_streak:+d}）")
 
-                if feature_boost > 0:
-                    old_conf = normalized_conf
-                    normalized_conf = min(10.0, normalized_conf + feature_boost * 0.5)
-                    result["confidence"] = normalized_conf
-                    print(f"  📈 Recipe 7 置信度提升: {old_conf} → {normalized_conf} (依據: {', '.join(boost_reasons)})")
-
+                # 🆕 [2026-08-22] DISABLED: feature_boost 與實際命中率無正相關，反而加劇過度自信
+                # 實證：Conf 7-9 實際命中率僅 56-59%，遠低於理論 70-90%
+                # if feature_boost > 0:
+                #     old_conf = normalized_conf
+                #     normalized_conf = min(10.0, normalized_conf + feature_boost * 0.5)
+                #     result["confidence"] = normalized_conf
+                #     print(f"  📈 Recipe 7 置信度提升: {old_conf} → {normalized_conf} (依據: {', '.join(boost_reasons)})")
+                
+                # 🆕 [2026-08-22] P1: 統計校準映射表 - 取代 LLM 原始輸出
+                # 基於近期實際命中率反推：prob_diff -> calibrated confidence
+                # 理論：prob_diff 越大，理應給越高信心；但 LLM 系統性偏高，需強制校準
+                prob_diff = abs(home_prob - away_prob)
+                
+                CALIBRATED_CONFIDENCE_MAP = {
+                    # prob_diff (四捨五入到 0.05) -> calibrated confidence
+                    0.00: 3, 0.05: 4, 0.10: 5, 0.15: 6,
+                    0.20: 7, 0.25: 7, 0.30: 8, 0.35: 8,
+                    0.40: 9, 0.45: 9, 0.50: 10,
+                }
+                
+                # 取得校準後信心（以 prob_diff 查表）
+                prob_diff_rounded = round(prob_diff / 0.05) * 0.05
+                calibrated_conf = CALIBRATED_CONFIDENCE_MAP.get(prob_diff_rounded, 5)
+                
+                # 取 LLM 輸出與校準值的較小者（防止過度自信）
+                # 但保底不低於 3（避免極端低信心）
+                final_conf = max(3.0, min(normalized_conf, calibrated_conf))
+                result["confidence"] = round(final_conf, 1)
+                
+                if abs(normalized_conf - calibrated_conf) > 0.5:
+                    print(f"  📉 信心校準: LLM={normalized_conf:.1f} -> 校準={calibrated_conf:.1f} (prob_diff={prob_diff:.3f})")
+                
                 # 🆕 信心度-勝率一致性檢查
                 # 根據調整後的置信度,動態計算最低勝率差距門檻
                 # 強弱懸殊賽事(置信度 8-9)會自動要求更大勝率差距
-                prob_diff = abs(home_prob - away_prob)
-
-                # 🆕 [Recipe 7: 方法 B 改良] 主場優勢動態化
-                # 強隊主場 (戰績前 1/3): 0.56,一般: 0.54,弱隊主場: 0.52
-                # 應用於一致性檢查的最低差距門檻
                 home_advantage = 0.54
                 if home_win_pct_raw > 0.60:
                     home_advantage = 0.56  # 強隊主場優勢更明顯
                 elif home_win_pct_raw < 0.45:
                     home_advantage = 0.52  # 弱隊主場優勢較弱
+                
 
                 min_prob_diff_map = {
                     1: 0.00, 2: 0.00, 3: 0.00,
