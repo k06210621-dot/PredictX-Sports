@@ -516,97 +516,126 @@ class CPBLDataFetcher:
             else:
                 return None
 
-            print(f"  [CPBL SP fallback] PTT search for CPBL {search_md} 先發投手...", flush=True)
-            # 搜尋 PTT Baseball 板
+            current_year = _dt.now().year
+            article_candidates = []
+
+            # 🆕 [2026-08-22] 多策略搜尋：PTT 內部搜尋 + 外部搜尋引擎
+            # 策略 1: PTT 內部搜尋（可能排序不 ideal）
+            print(f"  [CPBL SP fallback] Strategy 1: PTT internal search for {search_md}...", flush=True)
             import urllib.parse
             query = urllib.parse.quote(f"CPBL {search_md} 先發投手")
             search_url = f"https://www.ptt.cc/bbs/Baseball/search?q={query}"
             search_resp = self.session.get(search_url, timeout=10)
-            if search_resp.status_code != 200:
-                print(f"  [CPBL SP fallback] PTT search HTTP {search_resp.status_code}", flush=True)
+            if search_resp.status_code == 200:
+                # 提取所有匹配的文章連結（不只是第一個）
+                links = re.findall(
+                    r'<a href="(/bbs/Baseball/M\.\d+\.A\.\w+\.html)">\[情報\]\s*CPBL\s*\d+/\d+\s*先發投手',
+                    search_resp.text
+                )
+                article_candidates.extend([f"https://www.ptt.cc{link}" for link in links])
+                print(f"  [CPBL SP fallback] PTT search found {len(links)} articles", flush=True)
+
+            # 🆕 策略 2: DuckDuckGo 外部搜尋（取前 20 筆結果）
+            print(f"  [CPBL SP fallback] Strategy 2: DuckDuckGo web search...", flush=True)
+            ddg_query = urllib.parse.quote(f"2026 CPBL {search_md} 先發投手 site:ptt.cc")
+            ddg_url = f"https://html.duckduckgo.com/html/?q={ddg_query}"
+            ddg_resp = self.session.get(ddg_url, timeout=15,
+                                        headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'})
+            if ddg_resp.status_code == 200:
+                # DuckDuckGo 搜尋結果中的 PTT 連結
+                ddg_links = re.findall(
+                    r'<a[^>]+href="(https://www\.ptt\.cc/bbs/Baseball/M\.\d+\.A\.\w+\.html)"[^>]*>.*?\[情報\]',
+                    ddg_resp.text, re.DOTALL
+                )
+                for link in ddg_links:
+                    if link not in article_candidates:
+                        article_candidates.append(link)
+                print(f"  [CPBL SP fallback] DuckDuckGo found {len(ddg_links)} PTT articles", flush=True)
+
+            # 🆕 策略 3: 直接已知URL模式（wewe0403 的發文習慣）
+            # 若前兩策略都失敗，嘗試直接構造常見 URL pattern
+            if not article_candidates:
+                print(f"  [CPBL SP fallback] Strategy 3: trying direct URL patterns...", flush=True)
+                # PTT 文章 ID 是時間戳，嘗試搜尋近期文章
+                import time
+                now = time.time()
+                for offset in range(0, 86400*3, 3600):  # 最近 3 天的時間戳
+                    ts = int(now - offset)
+                    url = f"https://www.ptt.cc/bbs/Baseball/M.{ts}.A.3E8.html"
+                    article_candidates.append(url)
+
+            if not article_candidates:
+                print(f"  [CPBL SP fallback] No article candidates found", flush=True)
                 return None
 
-            # 提取第一個搜尋結果的文章連結
-            link_m = re.search(
-                r'<a href="(/bbs/Baseball/M\.\d+\.A\.\w+\.html)">\[情報\]\s*CPBL\s*\d+/\d+\s*先發投手',
-                search_resp.text
-            )
-            if not link_m:
-                print(f"  [CPBL SP fallback] No CPBL starter article found on PTT", flush=True)
-                return None
-
-            article_url = "https://www.ptt.cc" + link_m.group(1)
-            print(f"  [CPBL SP fallback] Found article: {article_url}", flush=True)
-            article_resp = self.session.get(article_url, timeout=10)
-            if article_resp.status_code != 200:
-                print(f"  [CPBL SP fallback] Article HTTP {article_resp.status_code}", flush=True)
-                return None
-
-            # 🆕 [2026-07-24] 年份驗證：避免跨年抓到去年同日的舊文章
-            # PTT 搜尋結果會列出所有同名文章，若當年文章尚未發布，
-            # 第一筆結果可能是去年的，會污染資料。
-            # 解析 article meta 的時間戳，確保年份 = 當前年份
-            from datetime import datetime as _dt
-            current_year = _dt.now().year
-            time_m = re.search(
-                r'<span class="article-meta-value">([A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+\d+:\d+:\d+\s+(\d{4}))</span>',
-                article_resp.text
-            )
-            if time_m:
-                article_year = int(time_m.group(2))
-                if article_year != current_year:
-                    print(f"  [CPBL SP fallback] Article year {article_year} != {current_year}, ignoring stale data", flush=True)
-                    return None
-            else:
-                # 若無法解析年份，保守起見放行（避免因 meta 格式變化而完全失效）
-                print(f"  [CPBL SP fallback] Could not parse article year, proceeding cautiously", flush=True)
-
-            # 解析文章內文（同 get_today_starting_pitchers 結構）
-            m = re.search(
-                r'<div id="main-content"[^>]*>(.*?)<div class="push"',
-                article_resp.text, re.DOTALL
-            )
-            if not m:
-                print(f"  [CPBL SP fallback] Cannot extract article body", flush=True)
-                return None
-
-            content = m.group(1)
-            # 用 regex 抓所有 team+pitcher+stats 區塊
-            pattern = re.compile(
-                r'<span[^>]*>([^<]+)</span>\s*([^<\n]+)\n\n'
-                r'([\s\S]*?)(?=\n\n\n|\n\n<span|$)'
-            )
-            starters = {}
-            for m2 in pattern.finditer(content):
-                team_html = m2.group(1).strip()
-                pitcher = m2.group(2).strip()
-                stats_block = m2.group(3).strip()
-
-                team_cn = re.sub(r'<[^>]+>', '', team_html).strip()
-                team_en = TEAM_MAP.get(team_cn)
-                if not team_en or not pitcher:
+            # 依序嘗試每一篇文章，直到找到當年份的
+            for article_url in article_candidates[:10]:  # 最多嘗試前 10 篇
+                print(f"  [CPBL SP fallback] Trying: {article_url}", flush=True)
+                article_resp = self.session.get(article_url, timeout=10)
+                if article_resp.status_code != 200:
                     continue
 
-                # 提取 ERA，不一定有（例如 TBD 時）
-                era_m = re.search(r'ERA:(\d+\.?\d*)', stats_block)
-                win_m = re.search(r'(\d+)勝', stats_block)
-                loss_m = re.search(r'(\d+)敗', stats_block)
+                # 年份驗證
+                time_m = re.search(
+                    r'<span class="article-meta-value">([A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+\d+:\d+:\d+\s+(\d{4}))</span>',
+                    article_resp.text
+                )
+                article_year = None
+                if time_m:
+                    article_year = int(time_m.group(2))
+                
+                if article_year and article_year != current_year:
+                    print(f"  [CPBL SP fallback] Skipping {article_url}: year {article_year} != {current_year}", flush=True)
+                    continue
 
-                entry = {'name': pitcher}
-                if era_m:
-                    entry['era'] = era_m.group(1)
-                if win_m:
-                    entry['wins'] = win_m.group(1)
-                if loss_m:
-                    entry['losses'] = loss_m.group(1)
-                starters[team_en] = entry
+                # 解析文章內文
+                m = re.search(
+                    r'<div id="main-content"[^>]*>(.*?)<div class="push"',
+                    article_resp.text, re.DOTALL
+                )
+                if not m:
+                    print(f"  [CPBL SP fallback] Cannot extract article body from {article_url}", flush=True)
+                    continue
 
-            if starters:
-                print(f"  [CPBL SP fallback] PTT parsed {len(starters)} starters", flush=True)
-                return starters
-            else:
-                print(f"  [CPBL SP fallback] Parsed 0 starters from article", flush=True)
-                return None
+                content = m.group(1)
+                # 用 regex 抓所有 team+pitcher+stats 區塊
+                pattern = re.compile(
+                    r'<span[^>]*>([^<]+)</span>\s*([^<\n]+)\n\n'
+                    r'([\s\S]*?)(?=\n\n\n|\n\n<span|$)'
+                )
+                starters = {}
+                for m2 in pattern.finditer(content):
+                    team_html = m2.group(1).strip()
+                    pitcher = m2.group(2).strip()
+                    stats_block = m2.group(3).strip()
+
+                    team_cn = re.sub(r'<[^>]+>', '', team_html).strip()
+                    team_en = TEAM_MAP.get(team_cn)
+                    if not team_en or not pitcher:
+                        continue
+
+                    # 提取 ERA，不一定有（例如 TBD 時）
+                    era_m = re.search(r'ERA:(\d+\.?\d*)', stats_block)
+                    win_m = re.search(r'(\d+)勝', stats_block)
+                    loss_m = re.search(r'(\d+)敗', stats_block)
+
+                    entry = {'name': pitcher}
+                    if era_m:
+                        entry['era'] = era_m.group(1)
+                    if win_m:
+                        entry['wins'] = win_m.group(1)
+                    if loss_m:
+                        entry['losses'] = loss_m.group(1)
+                    starters[team_en] = entry
+
+                if starters:
+                    print(f"  [CPBL SP fallback] ✅ Parsed {len(starters)} starters from {article_url}", flush=True)
+                    return starters
+                else:
+                    print(f"  [CPBL SP fallback] Parsed 0 starters from {article_url}, trying next...", flush=True)
+
+            print(f"  [CPBL SP fallback] All candidates exhausted, no valid starters found", flush=True)
+            return None
 
         except Exception as e:
             print(f"  [CPBL SP fallback] Error: {e}", flush=True)
