@@ -3302,10 +3302,11 @@ Park Factor: {pf:.2f} ({park_interp})
                                 home_prob = 1.0 - away_prob
                             pitcher_adjustment_log.append(f"{reason} → 勝率調整 {adjustment:+.2f}")
 
-                    # 🆕 [P0-MLB/NPB/CPBL] 先發投手三振能力(K/9)與四壞球控制(BB/9)確定性加成
-                    # [2026-08-10] 從 NPB-only 擴大到 MLB/CPBL — 投手 K/BB 對所有棒球聯盟都是勝負關鍵
+                    # 🆕 [P0-MLB/NPB] 先發投手三振能力(K/9)與四壞球控制(BB/9)確定性加成
+                    # [2026-08-10] 從 NPB-only 擴大到 MLB — 投手 K/BB 對 MLB/NPB 是勝負關鍵
+                    # CPBL 使用 K%/BB%/ERA 規則（見 2598 行），此處移除 CPBL 避免單位錯誤
                     # 直接調整勝率（不依賴 LLM 感覺），與 Recipe 6 ERA 校正疊加
-                    if lg in ('MLB', 'NPB', 'CPBL'):
+                    if lg in ('MLB', 'NPB'):
                         kb_adjust_log = []
                         h_sp = (pitcher_data.get('home_pitcher') or {}).get('stats') or {}
                         a_sp = (pitcher_data.get('away_pitcher') or {}).get('stats') or {}
