@@ -217,7 +217,9 @@ class AnalysisEngine:
             self.conn = conn
             self.cur = conn.cursor(cursor_factory=RealDictCursor)
         else:
-            database_url = os.getenv('DATABASE_URL')
+            # Use DATABASE_PUBLIC_URL if available (works from outside Railway network)
+            # Fallback to DATABASE_URL, then DB_CONFIG
+            database_url = os.getenv('DATABASE_PUBLIC_URL') or os.getenv('DATABASE_URL')
             if database_url:
                 if database_url.startswith('postgres://'):
                     database_url = database_url.replace('postgres://', 'postgresql://', 1)
@@ -3522,25 +3524,41 @@ Park Factor: {pf:.2f} ({park_interp})
                 # 基於近期實際命中率反推：prob_diff -> calibrated confidence
                 # 理論：prob_diff 越大，理應給越高信心；但 LLM 系統性偏高，需強制校準
                 prob_diff = abs(home_prob - away_prob)
-                
+
                 CALIBRATED_CONFIDENCE_MAP = {
                     # prob_diff (四捨五入到 0.05) -> calibrated confidence
-                    0.00: 3, 0.05: 4, 0.10: 5, 0.15: 6,
-                    0.20: 7, 0.25: 7, 0.30: 8, 0.35: 8,
+                    # 🆕 [2026-08-23] 放寬映射：對齊 prompt 標準
+                    # prob_diff 0.10-0.15 (常見區間) -> 6-7 (對應 prompt「6: 推薦範圍」)
+                    0.00: 3, 0.05: 4, 0.10: 6, 0.15: 7,
+                    0.20: 7, 0.25: 8, 0.30: 8, 0.35: 9,
                     0.40: 9, 0.45: 9, 0.50: 10,
                 }
-                
+
                 # 取得校準後信心（以 prob_diff 查表）
                 prob_diff_rounded = round(prob_diff / 0.05) * 0.05
                 calibrated_conf = CALIBRATED_CONFIDENCE_MAP.get(prob_diff_rounded, 5)
-                
-                # 取 LLM 輸出與校準值的較小者（防止過度自信）
-                # 但保底不低於 3（避免極端低信心）
-                final_conf = max(3.0, min(normalized_conf, calibrated_conf))
+
+                # 🆕 [2026-08-23] 聯盟專屬微調
+                lg = (features.get('league') or '').upper()
+                if lg == 'CPBL':
+                    # CPBL 數據完整度高（先發、打擊、牛棚、歷史對戰皆有）
+                    # prob_diff 通常較小 (0.05-0.15) 但數據品質高，補償 +1
+                    calibrated_conf = min(10, calibrated_conf + 1)
+                elif lg == 'MLB' and prob_diff < 0.10:
+                    # MLB 弱差距比賽：數據完整但差距小，保底 5
+                    calibrated_conf = max(calibrated_conf, 5)
+                elif lg == 'NPB' and prob_diff < 0.15:
+                    # NPB 中差距比賽：數據穩定，保底 6
+                    calibrated_conf = max(calibrated_conf, 6)
+
+                # 🆕 [2026-08-23] 加權平均：LLM 經驗權重 0.3 + 統計校準權重 0.7
+                # 避免 min() 永遠向下拉，改用加權平均
+                # LLM 經驗權重 0.3 + 統計校準權重 0.7
+                final_conf = max(3.0, round(normalized_conf * 0.3 + calibrated_conf * 0.7, 1))
                 result["confidence"] = round(final_conf, 1)
-                
+
                 if abs(normalized_conf - calibrated_conf) > 0.5:
-                    print(f"  📉 信心校準: LLM={normalized_conf:.1f} -> 校準={calibrated_conf:.1f} (prob_diff={prob_diff:.3f})")
+                    print(f"  📉 信心校準: LLM={normalized_conf:.1f} -> 校準={calibrated_conf:.1f} -> 最終={final_conf:.1f} (prob_diff={prob_diff:.3f})")
                 
                 # 🆕 信心度-勝率一致性檢查
                 # 根據調整後的置信度,動態計算最低勝率差距門檻
