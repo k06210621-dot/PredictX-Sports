@@ -417,6 +417,22 @@ class WNBADataFetcher:
         home_stats = all_stats.get(home_key, {})
         away_stats = all_stats.get(away_key, {})
 
+        # 🆕 [2026-08-23] 球迷屋 fallback - 若 ESPN 缺少某隊資料，嘗試從球迷屋補
+        if not home_stats or not away_stats:
+            try:
+                from qiumiwu_fetcher import QiumiwuWNBAFetcher
+                qiumiwu = QiumiwuWNBAFetcher()
+                q_stats = qiumiwu.fetch_standings()
+                if q_stats:
+                    if not home_stats:
+                        home_stats = q_stats.get(home_key, {})
+                        print(f"  🆕 球迷屋 fallback: 補充 {home_team_name} ({home_key})")
+                    if not away_stats:
+                        away_stats = q_stats.get(away_key, {})
+                        print(f"  🆕 球迷屋 fallback: 補充 {away_team_name} ({away_key})")
+            except Exception as e:
+                print(f"  ⚠ 球迷屋 fallback 失敗: {e}")
+
         # 🆕 取得主力球員 Top 5（估算）
         home_top_players = self.get_top_players(home_key, 5)
         away_top_players = self.get_top_players(away_key, 5)
