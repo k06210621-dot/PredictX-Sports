@@ -543,6 +543,19 @@ class AnalysisEngine:
                 return None
 
         def pitcher_impact(pitcher_stats):
+            """
+            🆕 [2026-08-23] 重構邏輯：使用「淨優勢分數」避免矛盾。
+            
+            每個指標根據距離聯盟基準的差值打分：
+            - good: 距離正向 1 分
+            - bad:  距離負向 1 分
+            - 介於好壞之間: 0 分
+            
+            總分範圍 -3 ~ +3：
+            - +2 或以上 → 該投手為「好」→ 對手失分下修 1
+            - -2 或以下 → 該投手為「差」→ 對手失分上修 1
+            - 其他 → 不調整
+            """
             if not pitcher_stats:
                 return 0
             era = _safe(pitcher_stats.get('era'))
@@ -551,16 +564,35 @@ class AnalysisEngine:
             if era is None or k is None or bb is None:
                 return 0
 
-            good_era = era < bm['era'] - 0.3
-            good_k = k > bm['k_rate'] + 0.8
-            good_bb = bb < bm['bb_rate'] - 0.4
-            bad_era = era > bm['era'] + 0.6
-            bad_k = k < bm['k_rate'] - 0.8
-            bad_bb = bb > bm['bb_rate'] + 0.4
-
-            if sum([good_era, good_k, good_bb]) >= 2:
+            # ERA: 越低越好
+            if era < bm['era'] - 0.3:
+                era_score = 1
+            elif era > bm['era'] + 0.6:
+                era_score = -1
+            else:
+                era_score = 0
+            
+            # K rate: 越高越好
+            if k > bm['k_rate'] + 0.8:
+                k_score = 1
+            elif k < bm['k_rate'] - 0.8:
+                k_score = -1
+            else:
+                k_score = 0
+            
+            # BB rate: 越低越好
+            if bb < bm['bb_rate'] - 0.4:
+                bb_score = 1
+            elif bb > bm['bb_rate'] + 0.4:
+                bb_score = -1
+            else:
+                bb_score = 0
+            
+            total_score = era_score + k_score + bb_score
+            
+            if total_score >= 2:
                 return -1
-            if sum([bad_era, bad_k, bad_bb]) >= 2:
+            if total_score <= -2:
                 return 1
             return 0
 
