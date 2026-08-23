@@ -3581,6 +3581,7 @@ Park Factor: {pf:.2f} ({park_interp})
                 # 數值與 predicted_score 都應該服從 summary，而不是反向對齊 step4。
                 # 做法：從 summary 中抽出勝率與比分，覆寫 prediction 數字。
                 summary_text = (result.get("summary") or "").strip()
+                summary_predicted_score = None  # 🆕 [2026-08-23] 記住 summary 的比分，作為最終優先來源
                 if summary_text:
                     # 1) 從 summary 抽取顯式勝率，例如 "home win probability 55%" / "客隊勝率 45%"
                     hp_from_summary = _extract_rate(summary_text, side="home")
@@ -3598,10 +3599,8 @@ Park Factor: {pf:.2f} ({park_interp})
                         result["home_win_probability"] = round(home_prob, 4)
                         result["away_win_probability"] = round(away_prob, 4)
 
-                    # 2) 從 summary 抽取比分，例如 "5-3" / "3-6"，優先覆寫 predicted_score
-                    score_from_summary = _extract_score(summary_text)
-                    if score_from_summary:
-                        result["predicted_score"] = score_from_summary
+                    # 2) 從 summary 抽取比分，例如 "5-3" / "3-6"，記住後最後覆寫
+                    summary_predicted_score = _extract_score(summary_text)
 
                 # 🆕 校正 predicted_score：確保與勝率一致
                 # 若 home_prob > away_prob → home_score 應 > away_score，反之亦然
@@ -3622,6 +3621,22 @@ Park Factor: {pf:.2f} ({park_interp})
                 result["predicted_score"] = self._pitcher_score_adjustment(
                     features, result.get("predicted_score"), home_prob, away_prob
                 )
+
+                # 🆕 [2026-08-23] summary ↔ predicted_score 一致性：
+                # summary 是 AI 最終結論，無論中間 reconcile/pitcher 怎麼調整，
+                # 最終 predicted_score 必須與 summary 抽取的比分一致，
+                # 確保 iOS App 顯示的「深度分析摘要比分」與「模型推演比分」相同。
+                # 若 summary 有明確比分但目前結果不一致，調整為 summary 的版本。
+                if summary_predicted_score:
+                    import re as _re
+                    cur_m = _re.search(r'(\d+)\s*[-]\s*(\d+)', str(result.get("predicted_score") or ""))
+                    sum_m = _re.search(r'(\d+)\s*[-]\s*(\d+)', summary_predicted_score)
+                    if cur_m and sum_m:
+                        cur_h, cur_a = int(cur_m.group(1)), int(cur_m.group(2))
+                        sum_h, sum_a = int(sum_m.group(1)), int(sum_m.group(2))
+                        if (cur_h, cur_a) != (sum_h, sum_a):
+                            print(f"  🔄 summary 一致性: 模型 {cur_h}-{cur_a} → summary {sum_h}-{sum_a}")
+                            result["predicted_score"] = summary_predicted_score
 
                 # 🆕 [Recipe 8] radar_chart 補齊邏輯（修雷達圖消失 bug）
                 # 修正: LLM 常回傳空陣列的 radar_chart ({"categories": [], ...})
