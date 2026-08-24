@@ -1058,6 +1058,23 @@ class AnalysisEngine:
         # 4. 聯盟排名
         features['home_standings'] = self.get_league_standings(home_team_id)
         features['away_standings'] = self.get_league_standings(away_team_id)
+
+        # 🆕 [P0-2, 2026-08-24] 該聯盟 60 天比分分布特徵
+        # 給 LLM 知道「這個聯盟比分分布多寬」，避免強制套用單一規則
+        # 失敗時不影響主流程（features['league_distribution'] 留空，prompt 也不會注入）
+        if league:
+            try:
+                from league_score_distribution import compute_league_distribution
+                features['league_distribution'] = compute_league_distribution(league)
+                d = features['league_distribution']
+                fb_tag = ' [fallback]' if d.get('is_fallback') else ''
+                print(f"  📊 {league} score distribution: σ_run_diff={d.get('run_diff_std')}, blowout={d.get('blowout_rate')}, close={d.get('close_game_rate')}{fb_tag}")
+            except Exception as _dist_err:
+                print(f"  ⚠ league_distribution calc failed (non-fatal): {_dist_err}")
+                features['league_distribution'] = {}
+        else:
+            features['league_distribution'] = {}
+
         self.log_source("official_api")  # 遊戲基本資料
         self.log_source("official_api")  # 兩隊近期戰績 (2x)
         self.log_source("official_api")
@@ -2593,6 +2610,20 @@ Park Factor: {pf:.2f} ({park_interp})
 
             cpbl_analysis_guide = "\n===== " + cpbl_spec + "\n\n請根據以上 CPBL 特性，結合提供的數據進行分析。\n"
 
+        # 🆕 [P0-2b, 2026-08-24] 聯盟比分分布特徵注入 Prompt
+        # 條件式注入：只對棒球聯盟（MLB/NPB/CPBL）有效
+        # 樣本不足時 fallback 到預設值，prompt 仍會注入（讓 LLM 知道分布基準）
+        league_distribution_section = ""
+        try:
+            from league_score_distribution import format_distribution_prompt_section
+            _dist = features.get('league_distribution') or {}
+            if _dist and league and league.upper() in ('MLB', 'NPB', 'CPBL'):
+                league_distribution_section = format_distribution_prompt_section(_dist, league)
+        except Exception as _ld_err:
+            # 不影響主流程
+            print(f"  ⚠ league_distribution prompt section build failed (non-fatal): {_ld_err}")
+            league_distribution_section = ""
+
         # 球員名單注入（適用 MLB/NBA/WNBA/CPBL，通用化）
         rostersection = ""
         if league and league.upper() in ('MLB', 'NBA', 'WNBA', 'CPBL', 'NPB') and features.get('roster'):
@@ -2767,6 +2798,7 @@ Park Factor: {pf:.2f} ({park_interp})
 {cpbl_analysis_guide}
 {home_advantage_note}
 {rostersection}
+{league_distribution_section}
 
 ═══════════════════════════════════════
 🎯 主場優勢與聯盟特性
