@@ -131,18 +131,22 @@ def compute_league_distribution(
             cur = conn.cursor()
             cur.execute(
                 '''
-                SELECT ai_actual_score
-                FROM predictx.games
-                WHERE UPPER(league) = %s
-                  AND match_date >= CURRENT_DATE - INTERVAL '%s days'
-                  AND status = 'FINAL'
-                  AND ai_actual_score IS NOT NULL
+                SELECT ga.analysis_data->>'actual_score' AS actual_score
+                FROM predictx.game_analysis ga
+                JOIN predictx.games g ON ga.game_id = g.game_id
+                JOIN predictx.teams th ON g.home_team_id = th.team_id
+                JOIN predictx.teams ta ON g.away_team_id = ta.team_id
+                WHERE UPPER(th.league) = %s
+                  AND g.match_date >= CURRENT_DATE - INTERVAL '%s days'
+                  AND g.status = 'FINAL'
+                  AND ga.analysis_data->>'actual_score' IS NOT NULL
+                  AND ga.analysis_data->>'actual_score' != ''
                 ''',
                 (league_upper, days),
             )
             rows = cur.fetchall()
             for r in rows:
-                parsed = parse_score(r['ai_actual_score'])
+                parsed = parse_score(r['actual_score'])
                 if parsed:
                     parsed_scores.append(parsed)
     except Exception as e:
