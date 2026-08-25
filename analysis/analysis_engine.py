@@ -1284,6 +1284,26 @@ class AnalysisEngine:
                                 LIMIT 1
                             """, (team_id, sp_name))
                             row = self.cur.fetchone()
+                            # 🆕 [2026-08-25] 策略 1.5：透過 player_aliases 表匹配漢字名（如「涌井秀章」→ Hideaki Wakui）
+                            # games 表用漢字原名，players 表用羅馬拼音，中間靠 player_aliases 對應
+                            if not row:
+                                try:
+                                    self.cur.execute("""
+                                        SELECT s.era, s.ip, s.p_so, s.p_bb
+                                        FROM predictx.player_season_stats s
+                                        JOIN predictx.players p ON s.player_id = p.player_id
+                                        JOIN predictx.player_aliases pa ON pa.player_id = p.player_id
+                                        JOIN predictx.player_teams pt ON p.player_id = pt.player_id
+                                        WHERE pt.team_id = %s AND pa.alias_name = %s
+                                          AND s.kind = 'pitcher' AND s.era IS NOT NULL
+                                        ORDER BY s.ip DESC NULLS LAST
+                                        LIMIT 1
+                                    """, (team_id, sp_name))
+                                    row = self.cur.fetchone()
+                                    if row:
+                                        print(f"  🔗 NPB pitcher alias matched: {sp_name} (from games) → DB (via player_aliases)")
+                                except Exception as alias_err:
+                                    print(f"  ⚠ DB alias query error: {alias_err}")
                             # 策略 2：team_id + ERA 近似反查（lottonavi 給的 ERA 當錨點）
                             if not row and lot_era is not None:
                                 try:
