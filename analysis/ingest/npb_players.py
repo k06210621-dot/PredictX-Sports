@@ -325,6 +325,46 @@ def upsert_player_team(cur, player_id: str, team_id: str) -> bool:
     return True
 
 
+def upsert_pitcher_stats(cur, player_id: str, age: int, ip, era, fip, k9, whip, source: str = "npb_players_csv_2026"):
+    """寫入投手個人 stats（player_season_stats）。
+
+    來源 PITCHERS 清單欄位：(rank, name, team_key, age, ip, era, fip, k9, whip)
+    - K/9 = K*9/IP → K = K/9 * IP / 9
+    - BB/9 與 H 無法從 WHIP 單獨反推（缺 H 資料），留 NULL
+    - W/L/SV/HLD 等細項無來源，留 NULL
+    - avg/obp/slg 是打者數據，不適用投手
+
+    ON CONFLICT DO NOTHING：用獨立 source name (npb_players_csv_2026)，
+    若已有 npb_players_json (更精確) 紀錄就不會被覆蓋。
+    """
+    try:
+        ip_val = float(ip) if ip else 0
+        era_val = float(era) if era is not None else None
+        fip_val = float(fip) if fip is not None else None
+        k9_val = float(k9) if k9 is not None else None
+        whip_val = float(whip) if whip is not None else None
+        k_val = int(round(k9_val * ip_val / 9)) if k9_val and ip_val > 0 else None
+        # 估 ER（投手最重要的失分）— ERA = ER*9/IP → ER = ERA*IP/9
+        er_val = int(round(era_val * ip_val / 9)) if era_val is not None and ip_val > 0 else None
+    except (ValueError, TypeError):
+        return False
+
+    cur.execute("""
+        INSERT INTO predictx.player_season_stats
+            (player_id, league, season, kind,
+             era, ip, p_so, p_er, p_bb,
+             source, fetched_at)
+        VALUES (%s, 'NPB', 2026, 'pitcher',
+                %s, %s, %s, %s, NULL,
+                %s, NOW())
+        ON CONFLICT (player_id, season, source) DO NOTHING
+        RETURNING id
+    """, (player_id, era_val, ip_val, k_val, er_val, source))
+    row = cur.fetchone()
+    # 若同 source 已存在（DO NOTHING → row is None），仍算成功（沒覆蓋已存在的更精確資料）
+    return True
+
+
 def run(dry_run: bool = False) -> dict:
     result = {"teams_processed": 0, "batters_inserted": 0, "pitchers_inserted": 0, "errors": []}
 
@@ -367,6 +407,7 @@ def run(dry_run: bool = False) -> dict:
 
     # 處理投手
     logger.info("=== 投手匯入 ===")
+    result["pitchers_stats_written"] = 0
     for rank, name, team_key, age, ip, era, fip, k9, whip in PITCHERS:
         try:
             team_id = map_team_id(team_key, cur)
@@ -375,9 +416,13 @@ def run(dry_run: bool = False) -> dict:
                 continue
             ext_id = f"NPB-P-{rank:03d}"
             pid = upsert_player(cur, ext_id, name, "投手")
-            if upsert_player_team(cur, pid, team_id):
+            inserted_team = upsert_player_team(cur, pid, team_id)
+            if inserted_team:
                 result["pitchers_inserted"] += 1
                 team_processed.add(team_id)
+            # 🆕 [2026-08-25] 補寫投手個人 stats（ERA/IP/FIP/K9/WHIP → player_season_stats）
+            if upsert_pitcher_stats(cur, pid, age, ip, era, fip, k9, whip):
+                result["pitchers_stats_written"] += 1
         except Exception as e:
             result["errors"].append(f"投手 {name}: {e}")
     conn.commit()
