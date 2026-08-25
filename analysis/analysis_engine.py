@@ -3685,8 +3685,16 @@ Park Factor: {pf:.2f} ({park_interp})
                         cur_h, cur_a = int(cur_m.group(1)), int(cur_m.group(2))
                         sum_h, sum_a = int(sum_m.group(1)), int(sum_m.group(2))
                         if (cur_h, cur_a) != (sum_h, sum_a):
-                            print(f"  🔄 summary 一致性: 模型 {cur_h}-{cur_a} → summary {sum_h}-{sum_a}")
-                            result["predicted_score"] = summary_predicted_score
+                            # 🆕 [2026-08-25] 方向防護：summary 抽出的比分方向必須與勝率一致才覆寫。
+                            # 否則 summary 內含「主場3勝0敗」等戰績字樣被 _extract_score 誤抓成比分時，
+                            # 會把 reconcile 後方向正確的比分（如 2-4）覆寫成反向比分（如 3-0）。
+                            home_fav = home_prob > away_prob
+                            sum_direction_ok = (home_fav and sum_h > sum_a) or ((not home_fav) and sum_a > sum_h)
+                            if sum_direction_ok:
+                                print(f"  🔄 summary 一致性: 模型 {cur_h}-{cur_a} → summary {sum_h}-{sum_a}")
+                                result["predicted_score"] = summary_predicted_score
+                            else:
+                                print(f"  ⛔ summary 比分方向與勝率矛盾，保留模型比分 {cur_h}-{cur_a}（summary 誤抓 {sum_h}-{sum_a}）")
 
                 # 🆕 [Recipe 8] radar_chart 補齊邏輯（修雷達圖消失 bug）
                 # 修正: LLM 常回傳空陣列的 radar_chart ({"categories": [], ...})
