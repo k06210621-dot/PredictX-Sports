@@ -21,44 +21,44 @@ from psycopg2.extras import RealDictCursor
 LEAGUE_SAMPLE_THRESHOLD = 30  # 樣本少於此值時用 fallback
 DEFAULT_DAYS_BACK = 60
 
-# Fallback 預設值（基於 2026-08-23 實測 30 天資料 + 經驗值）
+# Fallback 預設值（基於 2026-08-25 實測 60 天真實結算數據）
+# 意義：樣本不足/DB 連線失敗時，用「歷史均值」作為最佳猜測
 FALLBACK_DISTRIBUTION = {
     'MLB': {
         'sample_size': 0,
         'is_fallback': True,
-        'team_score_mean': 4.5,
-        'team_score_std': 2.8,
-        'total_score_mean': 9.0,
-        'total_score_std': 3.8,
-        'run_diff_mean': 3.4,
-        'run_diff_std': 2.5,   # MLB 方差最大（核心指標）
-        'blowout_rate': 0.20,   # ≥6 分差比例
-        'close_game_rate': 0.50,  # ≤2 分差比例
+        'team_score_mean': 4.45,
+        'team_score_std': 3.27,
+        'total_score_mean': 8.89,
+        'total_score_std': 4.54,
+        'run_diff_mean': 3.59,
+        'run_diff_std': 3.06,
+        'blowout_rate': 0.196,   # ≥6 分差比例
+        'close_game_rate': 0.476,  # ≤2 分差比例
     },
     'NPB': {
         'sample_size': 0,
         'is_fallback': True,
-        'team_score_mean': 4.3,
-        'team_score_std': 2.3,
-        'total_score_mean': 8.4,
-        'total_score_std': 3.2,
-        'run_diff_mean': 3.3,
-        'run_diff_std': 2.0,   # NPB 方差中等
-        'blowout_rate': 0.15,
-        'close_game_rate': 0.55,
+        'team_score_mean': 3.71,
+        'team_score_std': 2.91,
+        'total_score_mean': 7.41,
+        'total_score_std': 3.88,
+        'run_diff_mean': 3.37,
+        'run_diff_std': 2.76,
+        'blowout_rate': 0.188,
+        'close_game_rate': 0.473,
     },
     'CPBL': {
-        # CPBL 樣本不足，暫用 NPB safety threshold
         'sample_size': 0,
         'is_fallback': True,
-        'team_score_mean': 4.4,
-        'team_score_std': 2.4,
-        'total_score_mean': 8.6,
-        'total_score_std': 3.4,
-        'run_diff_mean': 3.5,
-        'run_diff_std': 2.1,
-        'blowout_rate': 0.17,
-        'close_game_rate': 0.53,
+        'team_score_mean': 3.83,
+        'team_score_std': 3.12,
+        'total_score_mean': 7.66,
+        'total_score_std': 4.28,
+        'run_diff_mean': 3.54,
+        'run_diff_std': 2.84,
+        'blowout_rate': 0.216,
+        'close_game_rate': 0.495,
     },
 }
 
@@ -131,24 +131,25 @@ def compute_league_distribution(
             cur = conn.cursor()
             cur.execute(
                 '''
-                SELECT ga.analysis_data->>'actual_score' AS actual_score
-                FROM predictx.game_analysis ga
-                JOIN predictx.games g ON ga.game_id = g.game_id
+                SELECT g.home_team_score, g.away_team_score
+                FROM predictx.games g
                 JOIN predictx.teams th ON g.home_team_id = th.team_id
-                JOIN predictx.teams ta ON g.away_team_id = ta.team_id
                 WHERE UPPER(th.league) = %s
                   AND g.match_date >= CURRENT_DATE - INTERVAL '%s days'
                   AND g.status = 'FINAL'
-                  AND ga.analysis_data->>'actual_score' IS NOT NULL
-                  AND ga.analysis_data->>'actual_score' != ''
+                  AND g.home_team_score IS NOT NULL
+                  AND g.away_team_score IS NOT NULL
                 ''',
                 (league_upper, days),
             )
             rows = cur.fetchall()
             for r in rows:
-                parsed = parse_score(r['actual_score'])
-                if parsed:
-                    parsed_scores.append(parsed)
+                try:
+                    home = int(float(r['home_team_score']))
+                    away = int(float(r['away_team_score']))
+                    parsed_scores.append((home, away))
+                except (ValueError, TypeError):
+                    continue
     except Exception as e:
         print(f'  ⚠ league_distribution: query failed, using fallback: {e}')
         return _get_fallback(league_upper)
@@ -247,8 +248,8 @@ def format_distribution_prompt_section(dist: dict, league: str) -> str:
             '比分預測應反映此分布特徵，但同樣不得機械式套用。'
         ),
         'CPBL': (
-            'CPBL 樣本累積中，暫以 NPB safety threshold 為基準（σ={run_diff_std}）；\n'
-            '未來累積更多資料後會自動更新。'
+            'CPBL 比分變異度介於 MLB 與 NPB 之間（σ={run_diff_std}），大比分率約 {blowout_rate_pct}%；\n'
+            '比分預測應反映此分布特徵，但同樣不得機械式套用。'
         ),
     }
 
