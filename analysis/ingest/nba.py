@@ -12,7 +12,7 @@ from .base import BaseIngester
 
 LOGGER = logging.getLogger("ingest.nba")
 
-ESPN_NBA_SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
+ESPN_NBA_SCOREBOARD = "https://site.web.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
 
 
 class NBAIngester(BaseIngester):

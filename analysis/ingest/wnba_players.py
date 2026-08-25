@@ -35,8 +35,8 @@ import urllib.request
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
 
-ESPN_TEAMS_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/teams"
-ESPN_ROSTER_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/teams/{team_id}/roster"
+ESPN_TEAMS_URL = "https://site.web.api.espn.com/apis/site/v2/sports/basketball/wnba/teams"
+ESPN_ROSTER_URL = "https://site.web.api.espn.com/apis/site/v2/sports/basketball/wnba/teams/{team_id}/roster"
 ESPN_ATHLETE_URL = "https://site.web.api.espn.com/apis/common/v3/sports/basketball/wnba/athletes/{player_id}"
 
 WNBA_LEAGUE_CODE = "WNBA"

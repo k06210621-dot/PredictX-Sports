@@ -15,8 +15,8 @@ import urllib.request
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
 
-ESPN_TEAMS_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams"
-ESPN_ROSTER_URL = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/{team_id}/roster"
+ESPN_TEAMS_URL = "https://site.web.api.espn.com/apis/site/v2/sports/basketball/nba/teams"
+ESPN_ROSTER_URL = "https://site.web.api.espn.com/apis/site/v2/sports/basketball/nba/teams/{team_id}/roster"
 LEAGUE_CODE = "NBA"
 
 ESPN_TO_DB_ABBREV = {}  # 將用 english_name matching

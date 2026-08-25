@@ -16,7 +16,7 @@ from .base import BaseIngester
 LOGGER = logging.getLogger("ingest.wnba")
 
 # ESPN WNBA public scoreboard endpoint（無需 API key）
-ESPN_WNBA_SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/basketball/wnba/scoreboard"
+ESPN_WNBA_SCOREBOARD = "https://site.web.api.espn.com/apis/site/v2/sports/basketball/wnba/scoreboard"
 
 
 class WNBAIngester(BaseIngester):
