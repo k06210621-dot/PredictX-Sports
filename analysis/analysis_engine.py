@@ -98,7 +98,7 @@ USE_CLOUD = MODEL_NAME == "cloud"
 
 
 def _extract_rate(text, side="home"):
-    """從 summary 抽出 home/away 顯式勝率。回傳 0-1 的 float，找不到回 None。
+    r"""從 summary 抽出 home/away 顯式勝率。回傳 0-1 的 float，找不到回 None。
 
     修正 [2026-08-17] Bug fix：
     - 原 regex `r"客隊.*?(\d+(?:\.\d+)?)\s*%"` 過於寬鬆，會抓到「客隊...主場戰績20%」中的20%
