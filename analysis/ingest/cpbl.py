@@ -182,15 +182,28 @@ class CPBLIngester(BaseIngester):
             # target_date 是 "YYYY-MM-DD"，需轉為 "YYYY/MM/DD"
             date_str = target_date.replace('-', '/')
             starters = fetcher.get_today_starting_pitchers(date_str)
+
+            # 🆕 [2026-08-26] 過濾佔位字串，避免 "TBD"/"尚未公布" 覆寫已正確的投手資料
+            # 與 api_server._clean_pitcher_name 對齊
+            PLACEHOLDERS = {'', '尚未公布', '未定', 'TBD', 'tbd', '-', '--', '---'}
+
+            def _is_placeholder(value):
+                if value is None:
+                    return True
+                if isinstance(value, dict):
+                    name = value.get('name')
+                    return not name or str(name).strip() in PLACEHOLDERS
+                return str(value).strip() in PLACEHOLDERS
+
             if starters:
                 enriched = 0
                 for g in games:
                     home = g.get('home_team')
                     away = g.get('away_team')
-                    if home in starters:
+                    if home in starters and not _is_placeholder(starters[home]):
                         g['home_pitcher'] = starters[home]
                         enriched += 1
-                    if away in starters:
+                    if away in starters and not _is_placeholder(starters[away]):
                         g['away_pitcher'] = starters[away]
                 LOGGER.info(f"CPBL {target_date} 補入先發投手: {enriched} 筆")
             else:
