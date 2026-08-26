@@ -513,69 +513,69 @@ class CPBLDataFetcher:
                 month = str(int(parts[1]))  # 去掉 leading zero → "7"
                 day = str(int(parts[2]))    # "24"
                 search_md = f"{month}/{day}"
+                target_date = _dt.strptime(date_str, '%Y/%m/%d').date()
             else:
                 return None
 
             current_year = _dt.now().year
+
             article_candidates = []
 
             # 🆕 [2026-08-22] 多策略搜尋：PTT 內部搜尋 + 外部搜尋引擎
-            # 策略 1: PTT 內部搜尋（可能排序不 ideal）
+            # 策略 1: PTT 內部搜尋（用「先發投手預告」4字關鍵字；3字會被2025年舊文洗版）
             print(f"  [CPBL SP fallback] Strategy 1: PTT internal search for {search_md}...", flush=True)
             import urllib.parse
-            query = urllib.parse.quote(f"CPBL {search_md} 先發投手")
+            # 🆕 [2026-08-26] 改用「先發投手預告」精確匹配 wewe0403 系列文
+            # 避免「先發投手」+「8/26」撈到 2025-08-26 的同名舊文
+            query = urllib.parse.quote("先發投手預告")
             search_url = f"https://www.ptt.cc/bbs/Baseball/search?q={query}"
             search_resp = self.session.get(search_url, timeout=10)
             if search_resp.status_code == 200:
-                # 提取所有匹配的文章連結（不只是第一個）
-                links = re.findall(
-                    r'<a href="(/bbs/Baseball/M\.\d+\.A\.\w+\.html)">\[情報\]\s*CPBL\s*\d+/\d+\s*先發投手',
+                # 提取所有 CPBL 先發投手預告文章的「賽事日期」+ URL + 標題
+                all_cpbl = re.findall(
+                    r'<a href="(/bbs/Baseball/M\.\d+\.A\.\w+\.html)">(\[情報\]\s*CPBL\s*(\d+)/(\d+)\s*先發投手預告)</a>',
                     search_resp.text
                 )
-                article_candidates.extend([f"https://www.ptt.cc{link}" for link in links])
-                print(f"  [CPBL SP fallback] PTT search found {len(links)} articles", flush=True)
+                # 🆕 [2026-08-26] 過濾：文章標題中的 M/D 必須 = 目標日期的 M/D
+                # （不要用文章發文時間，因為 wewe0403 是賽事前一天發文）
+                filtered = []
+                for url, title, m_str, d_str in all_cpbl:
+                    if int(m_str) == target_date.month and int(d_str) == target_date.day:
+                        filtered.append(f"https://www.ptt.cc{url}")
+                article_candidates.extend(filtered)
+                print(f"  [CPBL SP fallback] PTT search found {len(all_cpbl)} articles, {len(filtered)} match target date {search_md}", flush=True)
 
             # 🆕 策略 2: DuckDuckGo 外部搜尋（取前 20 筆結果）
-            print(f"  [CPBL SP fallback] Strategy 2: DuckDuckGo web search...", flush=True)
-            ddg_query = urllib.parse.quote(f"2026 CPBL {search_md} 先發投手 site:ptt.cc")
-            ddg_url = f"https://html.duckduckgo.com/html/?q={ddg_query}"
-            ddg_resp = self.session.get(ddg_url, timeout=15,
-                                        headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'})
-            if ddg_resp.status_code == 200:
-                # DuckDuckGo 搜尋結果中的 PTT 連結
-                ddg_links = re.findall(
-                    r'<a[^>]+href="(https://www\.ptt\.cc/bbs/Baseball/M\.\d+\.A\.\w+\.html)"[^>]*>.*?\[情報\]',
-                    ddg_resp.text, re.DOTALL
-                )
-                for link in ddg_links:
-                    if link not in article_candidates:
-                        article_candidates.append(link)
-                print(f"  [CPBL SP fallback] DuckDuckGo found {len(ddg_links)} PTT articles", flush=True)
-
-            # 🆕 策略 3: 直接已知URL模式（wewe0403 的發文習慣）
-            # 若前兩策略都失敗，嘗試直接構造常見 URL pattern
             if not article_candidates:
-                print(f"  [CPBL SP fallback] Strategy 3: trying direct URL patterns...", flush=True)
-                # PTT 文章 ID 是時間戳，嘗試搜尋近期文章
-                import time
-                now = time.time()
-                for offset in range(0, 86400*3, 3600):  # 最近 3 天的時間戳
-                    ts = int(now - offset)
-                    url = f"https://www.ptt.cc/bbs/Baseball/M.{ts}.A.3E8.html"
-                    article_candidates.append(url)
+                print(f"  [CPBL SP fallback] Strategy 2: DuckDuckGo web search...", flush=True)
+                ddg_query = urllib.parse.quote(f"{current_year} CPBL {search_md} 先發投手預告 site:ptt.cc")
+                ddg_url = f"https://html.duckduckgo.com/html/?q={ddg_query}"
+                ddg_resp = self.session.get(ddg_url, timeout=15,
+                                            headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'})
+                if ddg_resp.status_code == 200:
+                    # DuckDuckGo 搜尋結果中的 PTT 連結 + 標題
+                    ddg_links = re.findall(
+                        r'<a[^>]+href="(https://www\.ptt\.cc/bbs/Baseball/M\.\d+\.A\.\w+\.html)"[^>]*>(\[情報\]\s*CPBL\s*(\d+)/(\d+)\s*先發投手預告)',
+                        ddg_resp.text, re.DOTALL
+                    )
+                    for url, title, m_str, d_str in ddg_links:
+                        if int(m_str) == target_date.month and int(d_str) == target_date.day:
+                            if url not in article_candidates:
+                                article_candidates.append(url)
+                    print(f"  [CPBL SP fallback] DuckDuckGo found {len(ddg_links)} PTT articles", flush=True)
 
             if not article_candidates:
                 print(f"  [CPBL SP fallback] No article candidates found", flush=True)
                 return None
 
-            # 依序嘗試每一篇文章，直到找到當年份的
-            for article_url in article_candidates[:10]:  # 最多嘗試前 10 篇
+            # 依序嘗試每一篇文章
+            for article_url in article_candidates[:5]:  # 最多嘗試前 5 篇
                 print(f"  [CPBL SP fallback] Trying: {article_url}", flush=True)
                 article_resp = self.session.get(article_url, timeout=10)
                 if article_resp.status_code != 200:
                     continue
 
-                # 年份驗證
+                # 年份驗證（雙重保險）
                 time_m = re.search(
                     r'<span class="article-meta-value">([A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+\d+:\d+:\d+\s+(\d{4}))</span>',
                     article_resp.text
@@ -583,7 +583,7 @@ class CPBLDataFetcher:
                 article_year = None
                 if time_m:
                     article_year = int(time_m.group(2))
-                
+
                 if article_year and article_year != current_year:
                     print(f"  [CPBL SP fallback] Skipping {article_url}: year {article_year} != {current_year}", flush=True)
                     continue
