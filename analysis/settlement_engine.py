@@ -47,7 +47,11 @@ class SettlementEngine:
                 JOIN predictx.game_analysis ga ON g.game_id = ga.game_id
                 JOIN predictx.teams ht ON g.home_team_id = ht.team_id
                 WHERE (LOWER(g.status) = 'final')
-                  AND (ga.analysis_data->'actual_result' IS NULL)
+                  -- 🆕 [2026-08-26] 包含「之前被標記為 POSTPONED 但實際後來打完」的賽事
+                  -- 修法：把 (actual_result IS NULL) 放寬為「NULL 或 reason 含 POSTPONED」
+                  -- 避免賽事從 POSTPONED 變 FINAL 後永遠不被結算
+                  AND (ga.analysis_data->'actual_result' IS NULL
+                       OR (ga.analysis_data->'actual_result'->>'reason') ILIKE '%postponed%')
                   AND g.home_team_score IS NOT NULL
                   AND g.away_team_score IS NOT NULL
                   AND g.match_date <= (CURRENT_DATE AT TIME ZONE 'Asia/Taipei')::date
