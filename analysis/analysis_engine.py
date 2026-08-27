@@ -690,7 +690,26 @@ class AnalysisEngine:
         a = int(m.group(2))
         h = max(0, h + a_adj)
         a = max(0, a + h_adj)
-        return f"{h}-{a}"
+        score = f"{h}-{a}"
+
+        # 🆕 [2026-08-27] 棒球無平手：若投手調整後變平手，強制 favorite 勝 1 分
+        if h == a and predicted_score != score:
+            # 從調整方向推測誰該勝：若原 predicted_score 已有方向（h>a 或 a>h），保留
+            if int(m.group(1)) > int(m.group(2)):
+                # 原 home 勝 → 平手後調整為 home 勝 1 分（降 a）
+                a = max(0, a - 1) if a > 0 else h + 1
+            elif int(m.group(1)) < int(m.group(2)):
+                # 原 away 勝 → 平手後調整為 away 勝 1 分（降 h）
+                h = max(0, h - 1) if h > 0 else a + 1
+            else:
+                # 原已是平手（罕見，傳進來不會發生），依 home_prob 決定
+                if home_prob >= away_prob:
+                    a = max(0, a - 1) if a > 0 else h + 1
+                else:
+                    h = max(0, h - 1) if h > 0 else a + 1
+            score = f"{h}-{a}"
+            print(f"  ⚠ 投手調整後出現平手 → 強制修正為 {score}")
+        return score
 
     def get_team_recent_form(self, team_id, league, limit=10):
         """
