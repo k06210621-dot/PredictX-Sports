@@ -598,12 +598,61 @@ class AnalysisEngine:
                 return 1
             return 0
 
-        pitcher_data = (
-            features.get('mlb_pitchers')
-            or features.get('npb_pitchers')
-            or features.get('cpbl_pitchers')
-            or {}
-        )
+        # 🆕 [2026-08-27] CPBL 投手資料結構特殊：cpbl_pitchers 是 dict[team_en] -> list[pitcher]，
+        # 不像 MLB/NPB 是 {home_pitcher: {stats}}。先偵測結構，若為 CPBL 格式就包裝成 MLB 格式再走原邏輯。
+        raw_cpbl_pitchers = features.get('cpbl_pitchers') or {}
+        cpbl_starters = features.get('cpbl_starting_pitchers') or {}
+        if (
+            isinstance(raw_cpbl_pitchers, dict)
+            and raw_cpbl_pitchers
+            and not raw_cpbl_pitchers.get('home_pitcher')
+            and not raw_cpbl_pitchers.get('away_pitcher')
+            and cpbl_starters
+        ):
+            # cpbl_pitchers keys 是英文隊名；cpbl_starting_pitchers keys 是中文隊名
+            # 用 TEAM_MAP 反查：英文隊名 -> 中文隊名
+            from cpbl_data_fetcher import TEAM_MAP as _CPBL_TEAM_MAP
+            en_to_cn = {v: k for k, v in _CPBL_TEAM_MAP.items()}
+            home_team_raw = features.get('home_team_en') or features.get('home_team')
+            away_team_raw = features.get('away_team_en') or features.get('away_team')
+            home_cn = en_to_cn.get(home_team_raw, home_team_raw)
+            away_cn = en_to_cn.get(away_team_raw, away_team_raw)
+            home_sp = cpbl_starters.get(home_cn) or {}
+            away_sp = cpbl_starters.get(away_cn) or {}
+
+            def _resolve_sp(team_en_key, sp_info):
+                """依先發投手姓名到 cpbl_pitchers[team_en_key] 找對應 stats"""
+                if not sp_info or not sp_info.get('name'):
+                    return {}
+                name = sp_info['name']
+                candidates = raw_cpbl_pitchers.get(team_en_key) or []
+                for c in candidates:
+                    if c.get('name') == name:
+                        # cpbl_pitchers 內 stats 用 k_pct/bb_pct。函式預期 k_per_9 / bb_per_9。
+                        # 為了讓聯盟基準（k_rate=15.8 / bb_rate=9.4）對得起來，補回同值別名。
+                        stats = dict(c)
+                        stats.setdefault('k_per_9', stats.get('k_pct'))
+                        stats.setdefault('bb_per_9', stats.get('bb_pct'))
+                        return stats
+                return {}
+
+            pitcher_data = {
+                'home_pitcher': {
+                    'name': home_sp.get('name'),
+                    'stats': _resolve_sp(home_team_raw, home_sp),
+                },
+                'away_pitcher': {
+                    'name': away_sp.get('name'),
+                    'stats': _resolve_sp(away_team_raw, away_sp),
+                },
+            }
+        else:
+            pitcher_data = (
+                features.get('mlb_pitchers')
+                or features.get('npb_pitchers')
+                or features.get('cpbl_pitchers')
+                or {}
+            )
 
         def _side_stats(side):
             p = (pitcher_data.get(f'{side}_pitcher') or {}).get('stats') or {}
@@ -625,6 +674,14 @@ class AnalysisEngine:
 
         if h_adj == 0 and a_adj == 0:
             return predicted_score
+
+        # 🆕 [2026-08-27] 印出實際觸發的投手調整，讓 deploy log 可見
+        h_name = (home_stats or {}).get('name', 'home')
+        a_name = (away_stats or {}).get('name', 'away')
+
+        def _fmt_adj(v):
+            return ('+' if v > 0 else '') + str(v) if v != 0 else '±0'
+        print(f"  ⚾ [CPBL 投手調整] {h_name}→對手 {a_name} 失分 {_fmt_adj(a_adj)}; {a_name}→對手 {h_name} 失分 {_fmt_adj(h_adj)}")
 
         m = re.search(r'(\d+)\s*[-－–]\s*(\d+)', str(predicted_score))
         if not m:
