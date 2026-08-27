@@ -260,6 +260,17 @@ def format_distribution_prompt_section(dist: dict, league: str) -> str:
         close_rate_pct=int(dist.get('close_game_rate', 0) * 100),
     )
 
+    # 🆕 [2026-08-27] 總分均值引導：明確要求預測比分總和接近聯盟實際均值
+    # 根因：LLM 傾向輸出低比分（CPBL 預測總分 6.57 vs 實際 7.83，低估 1.26 分）
+    # 解法：把「單場總得分均值」轉成明確的比分總和引導，而非只講變異度
+    total_mean = dist.get('total_score_mean', 0)
+    team_mean = dist.get('team_score_mean', 0)
+    total_guidance = (
+        f"\n- **比分總和校準**：本聯盟單場總得分平均約 {total_mean} 分（單隊平均 {team_mean} 分）。"
+        f"預測比分時，兩隊得分總和應落在 {total_mean} 分附近（合理區間 ±1 分），"
+        f"避免系統性低估總分。"
+    )
+
     section = f"""
 ===== {league.upper()} 比分分布特徵（最近 {DEFAULT_DAYS_BACK} 天實際結算）=====
 {source_note}
@@ -271,6 +282,7 @@ def format_distribution_prompt_section(dist: dict, league: str) -> str:
 
 💡 分析指引：
 {guidance}
+{total_guidance}
 """
     return section
 
