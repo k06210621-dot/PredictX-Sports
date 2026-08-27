@@ -16,14 +16,15 @@ logger = logging.getLogger("cpbl_rosters")
 LEAGUE_CODE = "CPBL"
 SEASON = 2026
 
-TEAM_MAP = {
-    "樂天桃猿": "Rakuten Monkeys",
-    "味全龍": "Wei Chuan Dragons",
-    "台鋼雄鷹": "TSG Hawks",
-    "統一7-ELEVEn獅": "Uni-President 7-ELEVEn Lions",
-    "中信兄弟": "CTBC Brothers",
-    "富邦悍將": "Fubon Guardians",
-}
+# CPBL 6 隊英文名，用於從 teams 表查 team_id
+CPBL_TEAMS_EN = (
+    "Rakuten Monkeys",
+    "Wei Chuan Dragons",
+    "TSG Hawks",
+    "Uni-President 7-ELEVEn Lions",
+    "CTBC Brothers",
+    "Fubon Guardians",
+)
 
 
 def fetch_players_json(out_path: str) -> dict:
@@ -64,16 +65,15 @@ def ingest_from_json(json_path: str, db_url: str, roster_date: str) -> dict:
 
     cur.execute(
         "SELECT team_id, english_name FROM predictx.teams WHERE english_name IN %s",
-        (tuple(TEAM_MAP.values()),),
+        (CPBL_TEAMS_EN,),
     )
     team_id_map = {r["english_name"]: r["team_id"] for r in cur.fetchall()}
 
-    for team_cn, ps in players.items():
-        team_en = TEAM_MAP.get(team_cn, team_cn)
-        team_id = team_id_map.get(team_en)
-        if not team_id:
+    for team_en, ps in players.items():
+        if team_en not in team_id_map:
             result["errors"].append(f"teams 表找不到 {team_en}")
             continue
+        team_id = team_id_map[team_en]
 
         new_p = new_pt = new_r = existing = 0
         try:
