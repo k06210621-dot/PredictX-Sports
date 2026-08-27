@@ -1517,20 +1517,37 @@ class AnalysisEngine:
                     a_sp = cpbl_starters.get(away_cn, {})
                     h_name = h_sp.get('name', 'TBD') if h_sp else 'TBD'
                     a_name = a_sp.get('name', 'TBD') if a_sp else 'TBD'
+
+                    # 🆕 [2026-08-27] placeholder 過濾：避免把 'TBD' / '尚未公布' 寫回 games 表
+                    def _is_real_pitcher(name):
+                        if not name:
+                            return False
+                        s = str(name).strip()
+                        return s not in ('', 'TBD', 'tbd', '尚未公布', '未定', '-', '--', '---')
+                    real_h_name = h_name if _is_real_pitcher(h_name) else None
+                    real_a_name = a_name if _is_real_pitcher(a_name) else None
                     print(f"  🏆 CPBL starting pitchers: {sp_home_name}={h_name}, {sp_away_name}={a_name}")
 
                     # 寫回 games 表，讓 API 端點 /api/games 回傳先發投手名稱
-                    try:
-                        self.cur.execute(
-                            """UPDATE predictx.games
-                               SET home_pitcher_name = %s,
-                                   away_pitcher_name = %s
-                               WHERE game_id = %s""",
-                            (h_name, a_name, game_id)
-                        )
-                        self.conn.commit()
-                    except Exception as db_err:
-                        print(f"  ⚠ CPBL pitcher DB write error: {db_err}")
+                    # 只有當 fetcher 真正拿到非 placeholder 時才更新，避免覆蓋手動維護的正確資料
+                    if real_h_name or real_a_name:
+                        set_clauses = []
+                        set_vals = []
+                        if real_h_name:
+                            set_clauses.append('home_pitcher_name = %s')
+                            set_vals.append(real_h_name)
+                        if real_a_name:
+                            set_clauses.append('away_pitcher_name = %s')
+                            set_vals.append(real_a_name)
+                        set_vals.append(game_id)
+                        try:
+                            self.cur.execute(
+                                f"UPDATE predictx.games SET {', '.join(set_clauses)} WHERE game_id = %s",
+                                tuple(set_vals)
+                            )
+                            self.conn.commit()
+                        except Exception as db_err:
+                            print(f"  ⚠ CPBL pitcher DB write error: {db_err}")
                 fetcher2.close()
             except Exception as e:
                 print(f"  ⚠ CPBL starting pitcher fetch error: {e}")
