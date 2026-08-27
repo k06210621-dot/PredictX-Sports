@@ -144,29 +144,35 @@ def _extract_rate(text, side="home"):
     # 備援：個別匹配（必須含「勝率/機率」關鍵字以避免誤抓）
     if side == "home":
         specific_patterns = [
-            r"home win probability[^\d]*?(\d+(?:\.\d+)?)\s*%?",
-            r"home_win_probability[^\d]*?(\d+(?:\.\d+)?)\s*%?",
-            r"主隊(?:勝率|勝出機率|獲勝機率|勝算)[^\d]*?(\d+(?:\.\d+)?)\s*%",
-            r"主隊[^\d]*?機率[^\d]*?(\d+(?:\.\d+)?)\s*%",
-            r"home\s+win[^\d]*?(\d+(?:\.\d+)?)\s*%",
+            r"home win probability[^\d]{0,80}?(\d+(?:\.\d+)?)\s*%",
+            r"home_win_probability[^\d]{0,80}?(\d+(?:\.\d+)?)\s*%",
+            r"home\s+win\s+probability[^\d]{0,80}?(\d+(?:\.\d+)?)\s*%",
+            r"主隊(?:勝率|勝出機率|獲勝機率|勝算)[^\d]{0,40}?(\d+(?:\.\d+)?)\s*%",
+            r"主隊[^\d]{0,40}?機率[^\d]{0,40}?(\d+(?:\.\d+)?)\s*%",
         ]
     else:
         specific_patterns = [
-            r"away win probability[^\d]*?(\d+(?:\.\d+)?)\s*%?",
-            r"away_win_probability[^\d]*?(\d+(?:\.\d+)?)\s*%?",
-            r"客隊(?:勝率|勝出機率|獲勝機率|勝算)[^\d]*?(\d+(?:\.\d+)?)\s*%",
-            r"客隊[^\d]*?機率[^\d]*?(\d+(?:\.\d+)?)\s*%",
-            r"away\s+win[^\d]*?(\d+(?:\.\d+)?)\s*%",
+            r"away win probability[^\d]{0,80}?(\d+(?:\.\d+)?)\s*%",
+            r"away_win_probability[^\d]{0,80}?(\d+(?:\.\d+)?)\s*%",
+            r"away\s+win\s+probability[^\d]{0,80}?(\d+(?:\.\d+)?)\s*%",
+            r"客隊(?:勝率|勝出機率|獲勝機率|勝算)[^\d]{0,40}?(\d+(?:\.\d+)?)\s*%",
+            r"客隊[^\d]{0,40}?機率[^\d]{0,40}?(\d+(?:\.\d+)?)\s*%",
         ]
     text_lower = text.lower()
     all_matches = []
     for pat in specific_patterns:
-        all_matches.extend(re.findall(pat, text_lower))
+        found = re.findall(pat, text_lower)
+        if found:
+            print(f"  [pattern: {pat[:40]}...] matched: {found}")
+            all_matches.extend(found)
     if all_matches:
         try:
-            return float(all_matches[0]) / 100.0
+            val = float(all_matches[0]) / 100.0
+            print(f"  [FALLBACK MATCH] returning {val}")
+            return val
         except (ValueError, TypeError):
             pass
+    print(f"  [NO MATCH] 返回 None")
     return None
 
 
@@ -3751,25 +3757,43 @@ Park Factor: {pf:.2f} ({park_interp})
                 # 做法：從 summary 中抽出勝率與比分，覆寫 prediction 數字。
                 summary_text = (result.get("summary") or "").strip()
                 summary_predicted_score = None  # 🆕 [2026-08-23] 記住 summary 的比分，作為最終優先來源
+                hp_from_summary = None
+                ap_from_summary = None
                 if summary_text:
                     # 1) 從 summary 抽取顯式勝率，例如 "home win probability 55%" / "客隊勝率 45%"
                     hp_from_summary = _extract_rate(summary_text, side="home")
                     ap_from_summary = _extract_rate(summary_text, side="away")
-                    if hp_from_summary is not None and ap_from_summary is not None:
-                        home_prob = max(0.20, min(0.80, hp_from_summary))
-                        away_prob = max(0.20, min(0.80, ap_from_summary))
-                        # 🆕 [Bug fix 2026-08-18] 概率歸一化：home + away 必須 = 1.0
-                        # 修法前：50% + 40% = 90% 不歸一
-                        # 修法：按比例重新分配
-                        total = home_prob + away_prob
-                        if total > 0:
-                            home_prob = home_prob / total
-                            away_prob = away_prob / total
-                        result["home_win_probability"] = round(home_prob, 4)
-                        result["away_win_probability"] = round(away_prob, 4)
+                # 🆕 [2026-08-28] summary 抽取的勝率必須與 LLM 原始勝率差距不能太大，
+                # 否則很可能是 _extract_rate 誤抓（例如 away 段抓成 "ERA 1.68" 而非 65%）
+                # 原始 LLM home_prob（line 3372）尚未被後續校正修改前是這個值
+                original_llm_home = float(result.get("home_win_probability", 0.0))
+                original_llm_away = float(result.get("away_win_probability", 0.0))
+                # 如果 summary 抽出的 away_prob < 5%（明顯異常，例如 0.0168），放棄整段覆寫
+                ap_suspicious = (ap_from_summary is not None and ap_from_summary < 0.05)
+                hp_suspicious = (hp_from_summary is not None and hp_from_summary < 0.05)
+                summary_prob_too_far_from_llm = (
+                    hp_from_summary is not None and ap_from_summary is not None and
+                    abs(hp_from_summary - original_llm_home) > 0.15
+                )
+                if ap_suspicious or hp_suspicious or summary_prob_too_far_from_llm:
+                    print(f"  ⚠ summary 勝率抽取異常（hp={hp_from_summary}, ap={ap_from_summary} vs LLM home={original_llm_home}, away={original_llm_away}），跳過覆寫")
+                    hp_from_summary = None
+                    ap_from_summary = None
+                if hp_from_summary is not None and ap_from_summary is not None:
+                    home_prob = max(0.20, min(0.80, hp_from_summary))
+                    away_prob = max(0.20, min(0.80, ap_from_summary))
+                    # 🆕 [Bug fix 2026-08-18] 概率歸一化：home + away 必須 = 1.0
+                    # 修法前：50% + 40% = 90% 不歸一
+                    # 修法：按比例重新分配
+                    total = home_prob + away_prob
+                    if total > 0:
+                        home_prob = home_prob / total
+                        away_prob = away_prob / total
+                    result["home_win_probability"] = round(home_prob, 4)
+                    result["away_win_probability"] = round(away_prob, 4)
 
-                    # 2) 從 summary 抽取比分，例如 "5-3" / "3-6"，記住後最後覆寫
-                    summary_predicted_score = _extract_score(summary_text)
+                # 2) 從 summary 抽取比分，例如 "5-3" / "3-6"，記住後最後覆寫
+                summary_predicted_score = _extract_score(summary_text)
 
                 # 🆕 校正 predicted_score：確保與勝率一致
                 # 若 home_prob > away_prob → home_score 應 > away_score，反之亦然
