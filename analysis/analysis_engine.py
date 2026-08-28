@@ -1354,6 +1354,7 @@ class AnalysisEngine:
                         if not sp_name or sp_name in ('TBD', '尚未公布', '未定', '-', '--', '---'):
                             return None
                         try:
+                            row = None  # 🆕 [2026-08-28 fix] 明確初始化避免 unbound
                             # 策略 1：名字精確匹配（日文名/英文名均可）
                             self.cur.execute("""
                                 SELECT s.era, s.ip, s.p_so, s.p_bb
@@ -1414,14 +1415,16 @@ class AnalysisEngine:
                                         'source': 'db'}
                         except Exception as db_err:
                             print(f"  ⚠ DB pitcher stats query error: {db_err}")
+                        # 🆕 [2026-08-28 fix] lot_era 也可能為 None,fallback 到預設 ERA=4.5
+                        if lot_era is None or lot_era == '':
+                            lot_era = 4.5
                         # 🆕 [2026-07-18] DB 未命中時，用 lot_era 估算 K9/BB9 作為Fallback
-                        if lot_era is not None:
-                            try:
-                                est_k9 = round(float(lot_era) * 1.1, 1)
-                                est_bb9 = round(float(lot_era) * 0.35, 1)
-                                return {'era': float(lot_era), 'k_per_9': est_k9, 'bb_per_9': est_bb9, 'source': 'lottonavi_estimated'}
-                            except:
-                                pass
+                        try:
+                            est_k9 = round(float(lot_era) * 1.1, 1)
+                            est_bb9 = round(float(lot_era) * 0.35, 1)
+                            return {'era': float(lot_era), 'k_per_9': est_k9, 'bb_per_9': est_bb9, 'source': 'lottonavi_estimated'}
+                        except:
+                            pass
                         return None
 
                     # 讀取兩隊 team_id
@@ -1435,7 +1438,7 @@ class AnalysisEngine:
                     away_sp_stats = away_db_stats or ({'era': lottonavi_away_era, 'source': 'lottonavi'} if lottonavi_away_era else None)
 
                     # 🆕 [2026-08-28 debug] 印出 NPB 注入前 4 個變數,定位為何 features.npb_pitchers 沒建立
-                    print(f"  🐛 [npb-debug] home_pitchers={len(home_pitchers) if home_pitchers else 0}, away_pitchers={len(away_pitchers) if away_pitchers else 0}, home_sp_stats={home_sp_stats}, away_sp_stats={away_sp_stats}, lot_era_home={lottonavi_home_era}, lot_era_away={lottonavi_away_era}")
+                    print(f"  🐛 [npb-debug] home_pitchers={len(home_pitchers) if home_pitchers else 0}, away_pitchers={len(away_pitchers) if away_pitchers else 0}, home_sp_stats={home_sp_stats}, away_sp_stats={away_sp_stats}, lot_era_home={lottonavi_home_era}, lot_era_away={lottonavi_away_era}", flush=True)
                     if home_pitchers or away_pitchers or home_sp_stats or away_sp_stats:
                         features['npb_pitchers'] = {
                             'home_team': home_name,
