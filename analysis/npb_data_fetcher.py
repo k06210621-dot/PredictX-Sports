@@ -542,14 +542,18 @@ class NPBDataFetcher:
         try:
             resp = self.session.get(url, timeout=15)
             if resp.status_code != 200:
+                print(f"  ⚠ [npb-lottonavi] HTTP {resp.status_code} for {url}", flush=True)
                 return None
             # 強制正確編碼（網站編碼偵測錯誤）
             if resp.encoding and resp.encoding.lower() in ('iso-8859-1', 'latin-1'):
                 resp.encoding = 'utf-8'
-        except:
+        except Exception as lot_err:
+            print(f"  ⚠ [npb-lottonavi] request error for {url}: {type(lot_err).__name__}: {lot_err}", flush=True)
             return None
 
         soup = BeautifulSoup(resp.text, 'lxml')
+        if not soup.find_all('div', class_='table-responsive'):
+            print(f"  ⚠ [npb-lottonavi] no .table-responsive divs found (HTML 結構可能改版), len(text)={len(resp.text)}", flush=True)
         self.fetched_sources.append("lottonavi.com")
         result = {}
 
