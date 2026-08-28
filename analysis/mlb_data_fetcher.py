@@ -675,7 +675,17 @@ class MLBDataFetcher:
                 'ip': round(ip, 1),
             }
         except Exception as e:
-            print(f"  ⚠ get_bullpen_stats error ({team_name}): {e}")
+            # 🆕 [2026-08-28] 印出 traceback + 已知資訊（mlb_id / API endpoint）方便 debug
+            # 過去只印 'list index out of range' 沒 traceback，無法定位是哪個 API 端點或 step 失敗
+            import traceback as _tb
+            mlb_id_dbg = locals().get('mlb_id', 'n/a')
+            endpoint_dbg = locals().get('roster_url', locals().get('stats_url', 'n/a'))
+            print(f"  ⚠ get_bullpen_stats error ({team_name}, mlb_id={mlb_id_dbg}): {type(e).__name__}: {e}")
+            print(f"    [bullpen-debug] failed endpoint={endpoint_dbg}")
+            print(f"    [bullpen-debug] reliever_ids_count={len(locals().get('reliever_ids', []))}")
+            print(f"    [bullpen-debug] traceback:")
+            for line in _tb.format_exc().splitlines():
+                print(f"      {line}")
             return None
 
     def close(self):
