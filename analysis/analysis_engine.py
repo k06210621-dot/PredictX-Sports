@@ -1434,6 +1434,8 @@ class AnalysisEngine:
                     home_sp_stats = home_db_stats or ({'era': lottonavi_home_era, 'source': 'lottonavi'} if lottonavi_home_era else None)
                     away_sp_stats = away_db_stats or ({'era': lottonavi_away_era, 'source': 'lottonavi'} if lottonavi_away_era else None)
 
+                    # 🆕 [2026-08-28 debug] 印出 NPB 注入前 4 個變數,定位為何 features.npb_pitchers 沒建立
+                    print(f"  🐛 [npb-debug] home_pitchers={len(home_pitchers) if home_pitchers else 0}, away_pitchers={len(away_pitchers) if away_pitchers else 0}, home_sp_stats={home_sp_stats}, away_sp_stats={away_sp_stats}, lot_era_home={lottonavi_home_era}, lot_era_away={lottonavi_away_era}")
                     if home_pitchers or away_pitchers or home_sp_stats or away_sp_stats:
                         features['npb_pitchers'] = {
                             'home_team': home_name,
