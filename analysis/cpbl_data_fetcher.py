@@ -238,10 +238,9 @@ class CPBLDataFetcher:
         Returns:
             list of dict: [{name, avg, obp, slg, ops, hr, rbi, hits, ab}, ...]
         """
-        # 1) 優先從 DB 取（更可靠、含 OBP/SLG）
+        # 1) 優先從 DB 取（含 Statcast 進階數據或傳統 AVG/OBP/SLG）
         db_batters = self.get_top_batters_from_db(team_en, top_n)
         if db_batters:
-            self.fetched_sources.append("sportify_tw (DB)")
             return db_batters
 
         # 2) Fallback: cpbl.com.tw 爬蟲（Railway 相容）
@@ -300,19 +299,82 @@ class CPBLDataFetcher:
         return result
 
     def get_top_batters_from_db(self, team_en, top_n=5):
-        """從 DB 取 CPBL 球隊前 N 名打者（依 RBI 排序）
+        """從 DB 取 CPBL 球隊前 N 名打者（依 wOBA 排序）
 
-        DB 內 CPBL 打者用 kind='batter'（與 NPB 的 kind='hitter' 不同），
-        來源為 sportify_tw。DB 沒存 OPS 欄位，使用 OBP+SLG 即時計算。
+        優先讀 cpbl_player_pr（CPBL 官方 Statcast 進階數據），
+        含 wOBA/ISO/擊球初速/Hard%/K%/BB%/Whiff%/Chase%。
+        若 cpbl_player_pr 無資料，fallback 到 player_season_stats
+        （傳統 AVG/OBP/SLG/HR/RBI）。
 
         Args:
             team_en: 球隊英文名（如 'CTBC Brothers'）
             top_n: 取前 N 名（預設 5）
 
         Returns:
-            list of dict: [{name, avg, obp, slg, ops, hr, rbi, hits, ab}, ...]
+            list of dict: 含 name/avg/obp/slg/ops/hr/rbi/h/ab + Statcast 進階指標
             若 DB 無資料回傳空陣列
         """
+        # 1) 優先讀 cpbl_player_pr（含 Statcast 進階數據）
+        try:
+            self.cur.execute("""
+                SELECT
+                    pr.player_name, pr.ranking, pr.woba, pr.avg, pr.obp, pr.slg, pr.iso,
+                    pr.exit_velo_avg_kmh, pr.exit_velo_max_kmh, pr.hard_hit_pct,
+                    pr.k_pct, pr.bb_pct, pr.whiff_pct, pr.chase_pct, pr.barrel_count, pr.wrc_plus
+                FROM predictx.cpbl_player_pr pr
+                JOIN predictx.teams t ON pr.team_id = t.team_id
+                WHERE pr.season = 2026
+                  AND pr.source = 'CPBL_PR_2026_official_batting'
+                  AND t.english_name = %s
+                  AND pr.woba IS NOT NULL
+                ORDER BY pr.woba DESC NULLS LAST
+                LIMIT %s
+            """, (team_en, top_n))
+            rows = self.cur.fetchall()
+            if rows:
+                def to_float(v):
+                    try:
+                        return float(v) if v not in (None, '') else None
+                    except (ValueError, TypeError):
+                        return None
+                result = []
+                for r in rows:
+                    avg = to_float(r['avg'])
+                    obp = to_float(r['obp'])
+                    slg = to_float(r['slg'])
+                    ops = (obp + slg) if (obp is not None and slg is not None) else None
+                    result.append({
+                        'name': r['player_name'],
+                        'position': '',
+                        'avg': avg,
+                        'obp': obp,
+                        'slg': slg,
+                        'ops': ops,
+                        'hr': 0,       # cpbl_player_pr 無 HR 欄位
+                        'rbi': 0,      # cpbl_player_pr 無 RBI 欄位
+                        'hits': 0,     # cpbl_player_pr 無 H 欄位
+                        'ab': 0,       # cpbl_player_pr 無 AB 欄位
+                        # 🆕 Statcast 進階指標
+                        'woba': to_float(r['woba']),
+                        'iso': to_float(r['iso']),
+                        'exit_velo_avg_kmh': to_float(r['exit_velo_avg_kmh']),
+                        'exit_velo_max_kmh': to_float(r['exit_velo_max_kmh']),
+                        'hard_hit_pct': to_float(r['hard_hit_pct']),
+                        'k_pct': to_float(r['k_pct']),
+                        'bb_pct': to_float(r['bb_pct']),
+                        'whiff_pct': to_float(r['whiff_pct']),
+                        'chase_pct': to_float(r['chase_pct']),
+                        'barrel_count': int(r['barrel_count']) if r['barrel_count'] is not None else 0,
+                        'wrc_plus': int(r['wrc_plus']) if r['wrc_plus'] is not None else None,
+                        'ranking': int(r['ranking']) if r['ranking'] is not None else None,
+                        'source': 'cpbl_player_pr (Statcast)'
+                    })
+                self.fetched_sources.append('cpbl_player_pr (Statcast)')
+                return result
+        except Exception as db_err:
+            print(f"  ⚠ CPBL cpbl_player_pr query error: {db_err}")
+
+        # 2) Fallback: player_season_stats（傳統 AVG/OBP/SLG/HR/RBI）
         try:
             self.cur.execute("""
                 SELECT DISTINCT ON (p.player_id)
@@ -342,7 +404,6 @@ class CPBLDataFetcher:
                 avg = float(r['avg']) if r['avg'] is not None else None
                 obp = float(r['obp']) if r['obp'] is not None else None
                 slg = float(r['slg']) if r['slg'] is not None else None
-                # DB 沒有 OPS 欄位，由 OBP + SLG 即時計算
                 ops = (obp + slg) if (obp is not None and slg is not None) else None
                 result.append({
                     'name': r['player_name'],
@@ -357,9 +418,10 @@ class CPBLDataFetcher:
                     'ab': int(r['ab']) if r['ab'] is not None else 0,
                     'source': 'sportify_tw (DB)'
                 })
+            self.fetched_sources.append('sportify_tw (DB)')
             return result
         except Exception as db_err:
-            print(f"  ⚠ CPBL DB top_batters query error: {db_err}")
+            print(f"  ⚠ CPBL player_season_stats fallback error: {db_err}")
             return []
 
     def get_team_standings(self):
