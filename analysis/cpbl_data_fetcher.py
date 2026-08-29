@@ -34,7 +34,7 @@ class CPBLDataFetcher:
             self.cur = conn.cursor(cursor_factory=RealDictCursor)
         else:
             try:
-                database_url = os.getenv('DATABASE_URL')
+                database_url = os.getenv('DATABASE_PUBLIC_URL') or os.getenv('DATABASE_URL')
                 if database_url:
                     if database_url.startswith('postgres://'):
                         database_url = database_url.replace('postgres://', 'postgresql://', 1)
@@ -228,8 +228,8 @@ class CPBLDataFetcher:
     def get_top_batters(self, team_en, top_n=5):
         """取得 CPBL 指定球隊前 N 名主力打者（依 RBI 排序）
 
-        預設使用 cpbl.com.tw（Railway 相容），
-        若需 OPS/OBP/SLG 等進階數據，可手動啟用 sportify.tw 數據源。
+        優先從 DB 取（player_season_stats kind='batter'），
+        若 DB 無資料再 fallback 到 cpbl.com.tw 爬蟲。
 
         Args:
             team_en: 球隊英文名（如 'CTBC Brothers'）
@@ -237,13 +237,18 @@ class CPBLDataFetcher:
 
         Returns:
             list of dict: [{name, avg, obp, slg, ops, hr, rbi, hits, ab}, ...]
-            若抓取失敗回傳空陣列
         """
-        # 預設使用 cpbl.com.tw（Railway 相容）
+        # 1) 優先從 DB 取（更可靠、含 OBP/SLG）
+        db_batters = self.get_top_batters_from_db(team_en, top_n)
+        if db_batters:
+            self.fetched_sources.append("sportify_tw (DB)")
+            return db_batters
+
+        # 2) Fallback: cpbl.com.tw 爬蟲（Railway 相容）
         # sportify.tw 需要 TLS 1.2+，在舊版 LibreSSL 環境會失敗
         hitters = self.get_hitting_leaderboard()
         source = 'cpbl.com.tw'
-        
+
         # 嘗試 sportify.tw（若需要進階數據）
         # 註：在本地 macOS 可能成功，但在 Railway 會因 SSL 限制失敗
         # if not hitters or source == 'cpbl.com.tw':
@@ -251,7 +256,7 @@ class CPBLDataFetcher:
         #     if sportify_hitters:
         #         hitters = sportify_hitters
         #         source = 'sportify.tw'
-        
+
         if not hitters:
             return []
 
@@ -272,7 +277,7 @@ class CPBLDataFetcher:
             hr = int(h.get('hr', 0) or 0)
             rbi = int(h.get('rbi', 0) or 0)
             hits = int(h.get('hits', 0) or 0)
-            
+
             # 計算 AB（打數）= PA - BB - HBP（粗略估算）
             pa = int(h.get('pa', 0) or 0)
             bb = int(h.get('bb', 0) or 0)
@@ -293,6 +298,69 @@ class CPBLDataFetcher:
 
         self.fetched_sources.append(source)
         return result
+
+    def get_top_batters_from_db(self, team_en, top_n=5):
+        """從 DB 取 CPBL 球隊前 N 名打者（依 RBI 排序）
+
+        DB 內 CPBL 打者用 kind='batter'（與 NPB 的 kind='hitter' 不同），
+        來源為 sportify_tw。DB 沒存 OPS 欄位，使用 OBP+SLG 即時計算。
+
+        Args:
+            team_en: 球隊英文名（如 'CTBC Brothers'）
+            top_n: 取前 N 名（預設 5）
+
+        Returns:
+            list of dict: [{name, avg, obp, slg, ops, hr, rbi, hits, ab}, ...]
+            若 DB 無資料回傳空陣列
+        """
+        try:
+            self.cur.execute("""
+                SELECT DISTINCT ON (p.player_id)
+                    p.player_name, s.avg, s.b_hr, s.rbi, s.b_h, s.ab,
+                    s.obp, s.slg, s.pa
+                FROM predictx.player_season_stats s
+                JOIN predictx.players p ON s.player_id = p.player_id
+                JOIN predictx.player_teams pt ON p.player_id = pt.player_id
+                JOIN predictx.teams t ON pt.team_id = t.team_id
+                WHERE s.kind = 'batter'
+                  AND t.league = 'CPBL'
+                  AND t.english_name = %s
+                  AND s.avg IS NOT NULL
+                  AND s.rbi IS NOT NULL
+                ORDER BY p.player_id, s.rbi DESC NULLS LAST
+            """, (team_en,))
+            rows = self.cur.fetchall()
+            if not rows:
+                return []
+
+            # 依 RBI 排序（降冪）後取 top N
+            rows.sort(key=lambda r: int(r['rbi'] or 0), reverse=True)
+            top_rows = rows[:top_n]
+
+            result = []
+            for r in top_rows:
+                avg = float(r['avg']) if r['avg'] is not None else None
+                obp = float(r['obp']) if r['obp'] is not None else None
+                slg = float(r['slg']) if r['slg'] is not None else None
+                # DB 沒有 OPS 欄位，由 OBP + SLG 即時計算
+                ops = (obp + slg) if (obp is not None and slg is not None) else None
+                result.append({
+                    'name': r['player_name'],
+                    'position': '',
+                    'avg': avg,
+                    'obp': obp,
+                    'slg': slg,
+                    'ops': ops,
+                    'hr': int(r['b_hr']) if r['b_hr'] is not None else 0,
+                    'rbi': int(r['rbi']) if r['rbi'] is not None else 0,
+                    'hits': int(r['b_h']) if r['b_h'] is not None else 0,
+                    'ab': int(r['ab']) if r['ab'] is not None else 0,
+                    'source': 'sportify_tw (DB)'
+                })
+            return result
+        except Exception as db_err:
+            print(f"  ⚠ CPBL DB top_batters query error: {db_err}")
+            return []
 
     def get_team_standings(self):
         resp = self.session.get("https://www.cpbl.com.tw/standings/season", timeout=15)
@@ -444,18 +512,18 @@ class CPBLDataFetcher:
     def get_player_pr_data(self, team_name, top_n=10):
         """
         從 predictx.cpbl_player_pr 表取球隊的 PR 進階打擊數據
-        改為回傳原始數值（woba/avg/slg/obp/iso 等），而非 percentile
+        依 PR ranking（PR 值越高越前面）取前 N 名
         """
         team_id = self.get_local_team_id(team_name)
         if not team_id:
             return []
         try:
             self.cur.execute("""
-                SELECT player_name, ranking, wrc_plus,
-                       woba, avg, slg, obp, iso,
-                       exit_velo_avg, exit_velo_max,
-                       hard_hit_pct, barrel_count, barrel_pct,
-                       k_pct, bb_pct, whiff_pct, chase_pct
+                SELECT player_name, ranking, wrc_plus, avg_percentile, slg_percentile,
+                       obp_percentile, iso_percentile, exit_velo_avg_percentile,
+                       exit_velo_max_percentile, hard_hit_pct_percentile, barrel_count,
+                       barrel_pct_percentile, k_pct_percentile, bb_pct_percentile,
+                       whiff_pct_percentile, chase_pct_percentile
                 FROM predictx.cpbl_player_pr
                 WHERE team_id = %s AND season = 2026
                 ORDER BY ranking ASC
@@ -513,129 +581,100 @@ class CPBLDataFetcher:
                 month = str(int(parts[1]))  # 去掉 leading zero → "7"
                 day = str(int(parts[2]))    # "24"
                 search_md = f"{month}/{day}"
-                target_date = _dt.strptime(date_str, '%Y/%m/%d').date()
             else:
                 return None
 
-            current_year = _dt.now().year
-
-            article_candidates = []
-
-            # 🆕 [2026-08-22] 多策略搜尋：PTT 內部搜尋 + 外部搜尋引擎
-            # 策略 1: PTT 內部搜尋（用「先發投手預告」4字關鍵字；3字會被2025年舊文洗版）
-            print(f"  [CPBL SP fallback] Strategy 1: PTT internal search for {search_md}...", flush=True)
+            print(f"  [CPBL SP fallback] PTT search for CPBL {search_md} 先發投手...", flush=True)
+            # 搜尋 PTT Baseball 板
             import urllib.parse
-            # 🆕 [2026-08-26] 改用「先發投手預告」精確匹配 wewe0403 系列文
-            # 避免「先發投手」+「8/26」撈到 2025-08-26 的同名舊文
-            query = urllib.parse.quote("先發投手預告")
+            query = urllib.parse.quote(f"CPBL {search_md} 先發投手")
             search_url = f"https://www.ptt.cc/bbs/Baseball/search?q={query}"
             search_resp = self.session.get(search_url, timeout=10)
-            if search_resp.status_code == 200:
-                # 提取所有 CPBL 先發投手預告文章的「賽事日期」+ URL + 標題
-                all_cpbl = re.findall(
-                    r'<a href="(/bbs/Baseball/M\.\d+\.A\.\w+\.html)">(\[情報\]\s*CPBL\s*(\d+)/(\d+)\s*先發投手預告)</a>',
-                    search_resp.text
-                )
-                # 🆕 [2026-08-26] 過濾：文章標題中的 M/D 必須 = 目標日期的 M/D
-                # （不要用文章發文時間，因為 wewe0403 是賽事前一天發文）
-                filtered = []
-                for url, title, m_str, d_str in all_cpbl:
-                    if int(m_str) == target_date.month and int(d_str) == target_date.day:
-                        filtered.append(f"https://www.ptt.cc{url}")
-                article_candidates.extend(filtered)
-                print(f"  [CPBL SP fallback] PTT search found {len(all_cpbl)} articles, {len(filtered)} match target date {search_md}", flush=True)
-
-            # 🆕 策略 2: DuckDuckGo 外部搜尋（取前 20 筆結果）
-            if not article_candidates:
-                print(f"  [CPBL SP fallback] Strategy 2: DuckDuckGo web search...", flush=True)
-                ddg_query = urllib.parse.quote(f"{current_year} CPBL {search_md} 先發投手預告 site:ptt.cc")
-                ddg_url = f"https://html.duckduckgo.com/html/?q={ddg_query}"
-                ddg_resp = self.session.get(ddg_url, timeout=15,
-                                            headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'})
-                if ddg_resp.status_code == 200:
-                    # DuckDuckGo 搜尋結果中的 PTT 連結 + 標題
-                    ddg_links = re.findall(
-                        r'<a[^>]+href="(https://www\.ptt\.cc/bbs/Baseball/M\.\d+\.A\.\w+\.html)"[^>]*>(\[情報\]\s*CPBL\s*(\d+)/(\d+)\s*先發投手預告)',
-                        ddg_resp.text, re.DOTALL
-                    )
-                    for url, title, m_str, d_str in ddg_links:
-                        if int(m_str) == target_date.month and int(d_str) == target_date.day:
-                            if url not in article_candidates:
-                                article_candidates.append(url)
-                    print(f"  [CPBL SP fallback] DuckDuckGo found {len(ddg_links)} PTT articles", flush=True)
-
-            if not article_candidates:
-                print(f"  [CPBL SP fallback] No article candidates found", flush=True)
+            if search_resp.status_code != 200:
+                print(f"  [CPBL SP fallback] PTT search HTTP {search_resp.status_code}", flush=True)
                 return None
 
-            # 依序嘗試每一篇文章
-            for article_url in article_candidates[:5]:  # 最多嘗試前 5 篇
-                print(f"  [CPBL SP fallback] Trying: {article_url}", flush=True)
-                article_resp = self.session.get(article_url, timeout=10)
-                if article_resp.status_code != 200:
+            # 提取第一個搜尋結果的文章連結
+            link_m = re.search(
+                r'<a href="(/bbs/Baseball/M\.\d+\.A\.\w+\.html)">\[情報\]\s*CPBL\s*\d+/\d+\s*先發投手',
+                search_resp.text
+            )
+            if not link_m:
+                print(f"  [CPBL SP fallback] No CPBL starter article found on PTT", flush=True)
+                return None
+
+            article_url = "https://www.ptt.cc" + link_m.group(1)
+            print(f"  [CPBL SP fallback] Found article: {article_url}", flush=True)
+            article_resp = self.session.get(article_url, timeout=10)
+            if article_resp.status_code != 200:
+                print(f"  [CPBL SP fallback] Article HTTP {article_resp.status_code}", flush=True)
+                return None
+
+            # 🆕 [2026-07-24] 年份驗證：避免跨年抓到去年同日的舊文章
+            # PTT 搜尋結果會列出所有同名文章，若當年文章尚未發布，
+            # 第一筆結果可能是去年的，會污染資料。
+            # 解析 article meta 的時間戳，確保年份 = 當前年份
+            from datetime import datetime as _dt
+            current_year = _dt.now().year
+            time_m = re.search(
+                r'<span class="article-meta-value">([A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+\d+:\d+:\d+\s+(\d{4}))</span>',
+                article_resp.text
+            )
+            if time_m:
+                article_year = int(time_m.group(2))
+                if article_year != current_year:
+                    print(f"  [CPBL SP fallback] Article year {article_year} != {current_year}, ignoring stale data", flush=True)
+                    return None
+            else:
+                # 若無法解析年份，保守起見放行（避免因 meta 格式變化而完全失效）
+                print(f"  [CPBL SP fallback] Could not parse article year, proceeding cautiously", flush=True)
+
+            # 解析文章內文（同 get_today_starting_pitchers 結構）
+            m = re.search(
+                r'<div id="main-content"[^>]*>(.*?)<div class="push"',
+                article_resp.text, re.DOTALL
+            )
+            if not m:
+                print(f"  [CPBL SP fallback] Cannot extract article body", flush=True)
+                return None
+
+            content = m.group(1)
+            # 用 regex 抓所有 team+pitcher+stats 區塊
+            pattern = re.compile(
+                r'<span[^>]*>([^<]+)</span>\s*([^<\n]+)\n\n'
+                r'([\s\S]*?)(?=\n\n\n|\n\n<span|$)'
+            )
+            starters = {}
+            for m2 in pattern.finditer(content):
+                team_html = m2.group(1).strip()
+                pitcher = m2.group(2).strip()
+                stats_block = m2.group(3).strip()
+
+                team_cn = re.sub(r'<[^>]+>', '', team_html).strip()
+                team_en = TEAM_MAP.get(team_cn)
+                if not team_en or not pitcher:
                     continue
 
-                # 年份驗證（雙重保險）
-                time_m = re.search(
-                    r'<span class="article-meta-value">([A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+\d+:\d+:\d+\s+(\d{4}))</span>',
-                    article_resp.text
-                )
-                article_year = None
-                if time_m:
-                    article_year = int(time_m.group(2))
+                # 提取 ERA，不一定有（例如 TBD 時）
+                era_m = re.search(r'ERA:(\d+\.?\d*)', stats_block)
+                win_m = re.search(r'(\d+)勝', stats_block)
+                loss_m = re.search(r'(\d+)敗', stats_block)
 
-                if article_year and article_year != current_year:
-                    print(f"  [CPBL SP fallback] Skipping {article_url}: year {article_year} != {current_year}", flush=True)
-                    continue
+                entry = {'name': pitcher}
+                if era_m:
+                    entry['era'] = era_m.group(1)
+                if win_m:
+                    entry['wins'] = win_m.group(1)
+                if loss_m:
+                    entry['losses'] = loss_m.group(1)
+                starters[team_en] = entry
 
-                # 解析文章內文
-                m = re.search(
-                    r'<div id="main-content"[^>]*>(.*?)<div class="push"',
-                    article_resp.text, re.DOTALL
-                )
-                if not m:
-                    print(f"  [CPBL SP fallback] Cannot extract article body from {article_url}", flush=True)
-                    continue
-
-                content = m.group(1)
-                # 用 regex 抓所有 team+pitcher+stats 區塊
-                pattern = re.compile(
-                    r'<span[^>]*>([^<]+)</span>\s*([^<\n]+)\n\n'
-                    r'([\s\S]*?)(?=\n\n\n|\n\n<span|$)'
-                )
-                starters = {}
-                for m2 in pattern.finditer(content):
-                    team_html = m2.group(1).strip()
-                    pitcher = m2.group(2).strip()
-                    stats_block = m2.group(3).strip()
-
-                    team_cn = re.sub(r'<[^>]+>', '', team_html).strip()
-                    team_en = TEAM_MAP.get(team_cn)
-                    if not team_en or not pitcher:
-                        continue
-
-                    # 提取 ERA，不一定有（例如 TBD 時）
-                    era_m = re.search(r'ERA:(\d+\.?\d*)', stats_block)
-                    win_m = re.search(r'(\d+)勝', stats_block)
-                    loss_m = re.search(r'(\d+)敗', stats_block)
-
-                    entry = {'name': pitcher}
-                    if era_m:
-                        entry['era'] = era_m.group(1)
-                    if win_m:
-                        entry['wins'] = win_m.group(1)
-                    if loss_m:
-                        entry['losses'] = loss_m.group(1)
-                    starters[team_en] = entry
-
-                if starters:
-                    print(f"  [CPBL SP fallback] ✅ Parsed {len(starters)} starters from {article_url}", flush=True)
-                    return starters
-                else:
-                    print(f"  [CPBL SP fallback] Parsed 0 starters from {article_url}, trying next...", flush=True)
-
-            print(f"  [CPBL SP fallback] All candidates exhausted, no valid starters found", flush=True)
-            return None
+            if starters:
+                print(f"  [CPBL SP fallback] PTT parsed {len(starters)} starters", flush=True)
+                return starters
+            else:
+                print(f"  [CPBL SP fallback] Parsed 0 starters from article", flush=True)
+                return None
 
         except Exception as e:
             print(f"  [CPBL SP fallback] Error: {e}", flush=True)
@@ -934,17 +973,8 @@ class CPBLDataFetcher:
                 away_acnt = (detail.get('VisitingFirstAcnt') or '').strip()
 
                 # 中文隊名映射
-                team_cn_map = {
-                    "中信兄弟": "CTBC Brothers",
-                    "統一獅": "Uni-President 7-ELEVEn Lions",
-                    "統一7-ELEVEn獅": "Uni-President 7-ELEVEn Lions",
-                    "富邦悍將": "Fubon Guardians",
-                    "味全龍": "Wei Chuan Dragons",
-                    "台鋼雄鷹": "TSG Hawks",
-                    "樂天桃猿": "Rakuten Monkeys",
-                }
-                home_en = team_cn_map.get(home_team, home_team)
-                away_en = team_cn_map.get(away_team, away_team)
+                home_en = self.TEAM_CN_TO_EN.get(home_team, home_team)
+                away_en = self.TEAM_CN_TO_EN.get(away_team, away_team)
 
                 if home_en and home_pname:
                     starters[home_en] = {'name': home_pname, 'acnt': home_acnt}
@@ -1005,7 +1035,6 @@ class CPBLDataFetcher:
         """
         從 sportify.tw 爬取 CPBL 全聯盟投手個人數據
         使用 curl 繞過 Python 3.9 SSL 限制
-        ERA fallback：若 sportify.tw 缺 ERA，從 predictx.cpbl_pitcher_pr 補讀
         """
         import subprocess, re, json
         
@@ -1040,26 +1069,6 @@ class CPBLDataFetcher:
         if not pitchers:
             return None
         
-        # 🆕 [2026-08-21] ERA fallback：從 cpbl_pitcher_pr 表建立名稱→ERA 映射
-        era_fallback = {}
-        try:
-            import psycopg2
-            db_url = os.environ.get("DATABASE_PUBLIC_URL", "") or os.environ.get("DATABASE_URL", "") or os.environ.get("POSTGRES_URL", "")
-            if db_url:
-                _conn = psycopg2.connect(db_url)
-                _cur = _conn.cursor()
-                _cur.execute("""
-                    SELECT player_name, era
-                    FROM predictx.cpbl_pitcher_pr
-                    WHERE season = %s AND era IS NOT NULL AND era > 0
-                """, (season,))
-                for row in _cur.fetchall():
-                    era_fallback[row[0]] = float(row[1])
-                _cur.close()
-                _conn.close()
-        except Exception:
-            pass
-        
         teams = {}
         for p in pitchers:
             tn = p.get('team_name', '')
@@ -1091,15 +1100,10 @@ class CPBLDataFetcher:
             else:
                 try:
                     ip = float(ip_str)
-                except:
+                except (ValueError, TypeError):
                     ip = 0
             
             era_val = float(p.get('era', 0)) if p.get('era') else 0
-            # 🆕 fallback：sportify.tw 無 ERA 時，從 DB 讀取
-            if era_val == 0:
-                pname = p.get('player_name', '')
-                era_val = era_fallback.get(pname, 0)
-            
             whip_val = float(p.get('whip', 0)) if p.get('whip') else 0
             
             teams[team_en].append({
