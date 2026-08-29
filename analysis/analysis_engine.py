@@ -2505,9 +2505,12 @@ Park Factor: {pf:.2f} ({park_interp})
                             )
                         # 計算團隊平均
                         if pr_list:
-                            avg_wrc = sum(p.get('wrc_plus') or 0 for p in pr_list) / max(len([p for p in pr_list if p.get('wrc_plus') is not None]), 1)
-                            avg_obp = sum(p.get('obp') or 0 for p in pr_list) / max(len([p for p in pr_list if p.get('obp') is not None]), 1)
-                            avg_ev = sum(p.get('exit_velo_max_kmh') or 0 for p in pr_list) / max(len([p for p in pr_list if p.get('exit_velo_max_kmh') is not None]), 1)
+                            def _num(v):
+                                try: return float(v)
+                                except: return 0
+                            avg_wrc = sum(_num(p.get('wrc_plus')) for p in pr_list) / max(len([p for p in pr_list if p.get('wrc_plus') is not None]), 1)
+                            avg_obp = sum(_num(p.get('obp')) for p in pr_list) / max(len([p for p in pr_list if p.get('obp') is not None]), 1)
+                            avg_ev = sum(_num(p.get('exit_velo_max_kmh')) for p in pr_list) / max(len([p for p in pr_list if p.get('exit_velo_max_kmh') is not None]), 1)
                             cpbl_spec += f"\n  → 球隊主力平均: wRC+={avg_wrc:.1f}, OBP={avg_obp:.1f}, EVmax={avg_ev:.1f}"
 
                 # 🆕 [2026-07-25] 投手被打進階數據（Pitcher Batting Against PR，越低越好）
