@@ -3028,13 +3028,21 @@ Park Factor: {pf:.2f} ({park_interp})
 }}
 
 【🚨 內部一致性強制要求（必讀，輸出前自我檢查）】
-你輸出的 JSON 必須同時滿足以下四條不可違反的一致性規則：
+你輸出的 JSON 必須同時滿足以下五條不可違反的一致性規則：
 1. 勝率方向一致：若 home_win_probability > 0.5，summary 與 reasoning.step4_probability_calc 的結尾必須寫「主隊勝/主隊佔優/主隊小勝/主隊看好/主隊略佔」其中之一，**禁止**寫「客隊勝/客隊佔優/客隊小勝/客隊看好/客隊略佔/主隊敗/主隊輸/主隊勝率低於五成」等含客隊勝意思的詞。反之亦然（away_win_probability > 0.5 時同規則對調）。
 2. 比分方向一致：若 home_win_probability > 0.5，predicted_score 內 X-Y 中的 X 必須大於 Y。summary 與 reasoning.step6_score_rationale 結尾出現的「X-Y」比分，X、Y 的大小關係也必須與 home_win_probability > 0.5 一致（主隊分數 > 客隊分數）。反之亦然。
 3. 百分比精確：summary 與 reasoning.step4_probability_calc 結尾出現的「主隊/客隊勝率 N%」的 N，必須等於 home_win_probability 或 away_win_probability 四捨五入到整數後的百分比（例：home_win_probability=0.44 → N=44）。
-4. **CPBL 投手加減分落實**：若本場聯賽為 CPBL，且 predicted_score 已根據「對方先發投手近 3 場 K%、BB%、ERA」做了 -1/-2/+1/+2 的加減分，則 reasoning.step6_score_rationale 結尾必須明確寫出「投手調整 ±1/±2」字樣，否則視為遺漏，**必須回 step 6 補做**。
 
-請在輸出前最後自我檢查這四條。如果任何一條不符，**修正後再輸出 JSON**。**禁止輸出結構欄位與文字結論矛盾的結果**。
+🆕 [2026-08-29] 新增規則 5 — 生成順序強制要求：
+**你必須先寫完 summary 與 reasoning（含 step4_probability_calc），然後再寫 JSON 數字欄位**。
+summary/step4 中明確提到的「主隊/客隊」和「勝率百分比」就是 JSON 數字欄位的絕對來源。
+如果 step4 寫「客隊勝率 58%」，那 JSON 的 away_win_probability 必須 ≈ 0.58，home_win_probability 必須 ≈ 0.42。
+**禁止出現「summary 寫客隊勝率 58% 但 JSON 的 home_win_probability=0.573」這種主客顛倒的情況。**
+JSON 數字欄位必須嚴格對應 summary/step4 的方向。
+
+5. **CPBL 投手加減分落實**：若本場聯賽為 CPBL，且 predicted_score 已根據「對方先發投手近 3 場 K%、BB%、ERA」做了 -1/-2/+1/+2 的加減分，則 reasoning.step6_score_rationale 結尾必須明確寫出「投手調整 ±1/±2」字樣，否則視為遺漏，**必須回 step 6 補做**。
+
+請在輸出前最後自我檢查這五條。如果任何一條不符，**修正後再輸出 JSON**。**禁止輸出結構欄位與文字結論矛盾的結果**。
 
 請只輸出這個 JSON object，不要有任何其他文字。
 '''
@@ -3819,6 +3827,33 @@ Park Factor: {pf:.2f} ({park_interp})
                     print(f"  ⚠ summary 勝率抽取異常（hp={hp_from_summary}, ap={ap_from_summary} vs LLM home={original_llm_home}, away={original_llm_away}），跳過覆寫")
                     hp_from_summary = None
                     ap_from_summary = None
+
+                # 🆕 [2026-08-29] 方向檢測：summary 文字方向與 JSON 數字方向不一致時，以文字為準
+                # 因為 summary/step4 是 LLM 的最終自然語言結論，比 JSON 數字欄位更可靠
+                # 當 summary 明確寫「客隊勝率 58%」但 JSON home_win_probability=0.573 時，
+                # 應強制以 summary 的方向為準（主客對調），而不是沿用錯誤的 JSON 數字。
+                reason_text = ""
+                reasoning_data = result.get("reasoning", {})
+                if isinstance(reasoning_data, dict):
+                    reason_text = str(reasoning_data.get("step4_probability_calc", ""))
+
+                hp_extracted = hp_from_summary
+                ap_extracted = ap_from_summary
+
+                # 🆕 若 summary 提取成功（未被跳過），且 summary 方向與 LLM 原始 JSON 方向矛盾，強制對調
+                if hp_from_summary is not None and ap_from_summary is not None:
+                    llm_home = result.get("home_win_probability", 0.0)
+                    llm_away = result.get("away_win_probability", 0.0)
+                    summary_home_favored = hp_from_summary > ap_from_summary
+                    json_home_favored = llm_home > llm_away
+
+                    if summary_home_favored != json_home_favored:
+                        # 方向矛盾：summary 文字說客隊優，但 JSON 數字說主隊優（或反之）
+                        # 以 summary 文字為準，強制對調 JSON 數字
+                        print(f"  🚨 [方向檢測] summary 與 JSON 方向矛盾！summary: home_favored={summary_home_favored}, JSON: home_favored={json_home_favored}")
+                        print(f"    summary text 方向為正確，強制對調：home={ap_from_summary:.3f}, away={hp_from_summary:.3f}")
+                        hp_from_summary, ap_from_summary = ap_from_summary, hp_from_summary
+
                 if hp_from_summary is not None and ap_from_summary is not None:
                     home_prob = max(0.20, min(0.80, hp_from_summary))
                     away_prob = max(0.20, min(0.80, ap_from_summary))
