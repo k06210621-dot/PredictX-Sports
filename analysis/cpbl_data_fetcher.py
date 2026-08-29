@@ -575,17 +575,20 @@ class CPBLDataFetcher:
         """
         從 predictx.cpbl_player_pr 表取球隊的 PR 進階打擊數據
         依 PR ranking（PR 值越高越前面）取前 N 名
+
+        只查詢 DB 實際存在的欄位（cpbl_player_pr schema 沒有 *_percentile），
+        否則會引發 transaction abort 連帶讓後續 query 全部失敗。
         """
         team_id = self.get_local_team_id(team_name)
         if not team_id:
             return []
         try:
             self.cur.execute("""
-                SELECT player_name, ranking, wrc_plus, avg_percentile, slg_percentile,
-                       obp_percentile, iso_percentile, exit_velo_avg_percentile,
-                       exit_velo_max_percentile, hard_hit_pct_percentile, barrel_count,
-                       barrel_pct_percentile, k_pct_percentile, bb_pct_percentile,
-                       whiff_pct_percentile, chase_pct_percentile
+                SELECT player_name, ranking, wrc_plus,
+                       woba, avg, obp, slg, iso,
+                       exit_velo_avg_kmh, exit_velo_max_kmh,
+                       hard_hit_pct, k_pct, bb_pct, whiff_pct, chase_pct,
+                       barrel_count
                 FROM predictx.cpbl_player_pr
                 WHERE team_id = %s AND season = 2026
                 ORDER BY ranking ASC
@@ -594,6 +597,11 @@ class CPBLDataFetcher:
             return list(self.cur.fetchall())
         except Exception as e:
             print(f"  ⚠ get_player_pr_data error: {e}")
+            # 關鍵：transaction abort 時需要 ROLLBACK 才能讓 cursor 恢復
+            try:
+                self.conn.rollback()
+            except Exception:
+                pass
             return []
 
     def get_pitcher_against_pr_data(self, team_name, top_n=10):
@@ -621,6 +629,10 @@ class CPBLDataFetcher:
             return list(self.cur.fetchall())
         except Exception as e:
             print(f"  ⚠ get_pitcher_against_pr_data error: {e}")
+            try:
+                self.conn.rollback()
+            except Exception:
+                pass
             return []
 
     def _get_ptt_starting_pitchers(self, date_str):
