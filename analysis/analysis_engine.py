@@ -2439,6 +2439,38 @@ Park Factor: {pf:.2f} ({park_interp})
                     a_names = ", ".join([p['name'] for p in a_ps[:8]])
                     cpbl_spec += f"\n玩家名單 — 主隊 {home_team}（{len(h_ps)}人）: {h_names} | 客隊 {away_team}（{len(a_ps)}人）: {a_names}"
 
+                # 🆕 [2026-08-29] CPBL 主力打者 Statcast 數據（從 cpbl_player_pr 注入）
+                tb = cpbl_data.get('top_batters') or {}
+                h_tb_list = tb.get('home') or []
+                a_tb_list = tb.get('away') or []
+                if h_tb_list or a_tb_list:
+                    cpbl_spec += "\n\n===== CPBL 主力打者 Statcast 數據（依 wOBA 排序 Top 5）====="
+                    cpbl_spec += "\n指標：wOBA（加權上壘率，最強單一指標）、ISO（純長打）、擊球初速 Avg/Max（爆發力）、Hard%（強擊球率）、K%（被三振率）、Whiff%（揮空率）、Chase%（追打率）、wRC+（標準化攻擊指數）"
+                    for side, label in [('home', '主隊'), ('away', '客隊')]:
+                        tb_list = h_tb_list if side == 'home' else a_tb_list
+                        team_label = f"{label} {home_team if side == 'home' else away_team}"
+                        if not tb_list:
+                            continue
+                        cpbl_spec += f"\n{team_label} 主力打者（wOBA 排序 Top {len(tb_list)}）:"
+                        for i, b in enumerate(tb_list[:5], 1):
+                            name = b.get('name', '?')
+                            woba = b.get('woba', '?')
+                            avg = b.get('avg', '?')
+                            iso = b.get('iso', '?')
+                            ev_avg = b.get('exit_velo_avg_kmh', '?')
+                            ev_max = b.get('exit_velo_max_kmh', '?')
+                            hard = b.get('hard_hit_pct', '?')
+                            k_pct = b.get('k_pct', '?')
+                            whiff = b.get('whiff_pct', '?')
+                            chase = b.get('chase_pct', '?')
+                            wrc = b.get('wrc_plus', '?')
+                            cpbl_spec += (
+                                f"\n  #{i} {name}: "
+                                f"wOBA={woba}, AVG={avg}, ISO={iso}, "
+                                f"EV_avg={ev_avg}km/h, EV_max={ev_max}km/h, Hard%={hard}, "
+                                f"K%={k_pct}, Whiff%={whiff}, Chase%={chase}, wRC+={wrc}"
+                            )
+
                 # 🆕 [2026-07-14] CPBL 球員 PR 進階打擊數據（PR percentile：99 為最高、0 為最低）
                 pr = cpbl_data.get('player_pr') or {}
                 h_pr_list = pr.get('home') or []
@@ -2461,7 +2493,7 @@ Park Factor: {pf:.2f} ({park_interp})
                             slg = p.get('slg', '?')
                             obp = p.get('obp', '?')
                             iso = p.get('iso', '?')
-                            ev = p.get('exit_velo_max', '?')
+                            ev = p.get('exit_velo_max_kmh', '?')
                             hard = p.get('hard_hit_pct', '?')
                             barrel = p.get('barrel_pct', '?')
                             k_pct = p.get('k_pct', '?')
@@ -2475,7 +2507,7 @@ Park Factor: {pf:.2f} ({park_interp})
                         if pr_list:
                             avg_wrc = sum(p.get('wrc_plus') or 0 for p in pr_list) / max(len([p for p in pr_list if p.get('wrc_plus') is not None]), 1)
                             avg_obp = sum(p.get('obp') or 0 for p in pr_list) / max(len([p for p in pr_list if p.get('obp') is not None]), 1)
-                            avg_ev = sum(p.get('exit_velo_max') or 0 for p in pr_list) / max(len([p for p in pr_list if p.get('exit_velo_max') is not None]), 1)
+                            avg_ev = sum(p.get('exit_velo_max_kmh') or 0 for p in pr_list) / max(len([p for p in pr_list if p.get('exit_velo_max_kmh') is not None]), 1)
                             cpbl_spec += f"\n  → 球隊主力平均: wRC+={avg_wrc:.1f}, OBP={avg_obp:.1f}, EVmax={avg_ev:.1f}"
 
                 # 🆕 [2026-07-25] 投手被打進階數據（Pitcher Batting Against PR，越低越好）
