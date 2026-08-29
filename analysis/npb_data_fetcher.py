@@ -447,7 +447,10 @@ class NPBDataFetcher:
         return pitchers[:top_n]
 
     def get_top_batters(self, team_name, top_n=5):
-        """取得 NPB 球隊前 N 名主力打者（依打點排序）
+        """取得 NPB 球隊前 N 名主力打者（依 RBI 排序）
+
+        優先從 DB 取（player_season_stats kind='hitter'），
+        若 DB 無資料再 fallback 到 baseball-data.com 爬蟲。
 
         Args:
             team_name: NPB 球隊英文名（如 'Yomiuri Giants'）
@@ -455,8 +458,12 @@ class NPBDataFetcher:
 
         Returns:
             list of dict: [{name, avg, hr, rbi, hits, ab}, ...]
-            若抓取失敗回傳空陣列
         """
+        batters = self.get_top_batters_from_db(team_name, top_n)
+        if batters:
+            self.fetched_sources.append("npb_hitter_rankings_2026 (DB)")
+            return batters
+
         code = TEAM_URL_CODES.get(team_name)
         if not code:
             return []
@@ -466,7 +473,7 @@ class NPBDataFetcher:
         if resp.status_code != 200:
             return []
 
-        soup = BeautifulSoup(resp.text, 'xml')
+        soup = BeautifulSoup(resp.text, 'html.parser')
         self.fetched_sources.append("baseball-data.com")
         
         batters = []
@@ -504,16 +511,77 @@ class NPBDataFetcher:
                             'rbi': rbi,
                             'hits': hits,
                             'ab': ab,
+                            'source': 'baseball-data.com'
                         })
                     except (ValueError, IndexError):
                         continue
 
         # 依 RBI 排序（降冪）
-        batters.sort(key=lambda x: x['rbi'] or 0, reverse=True)
+        batters.sort(key=lambda x: x.get('rbi') or 0, reverse=True)
         return batters[:top_n]
 
+    def get_top_batters_from_db(self, team_name, top_n=5):
+        """從 DB 取 NPB 球隊前 N 名打者（依 RBI 排序）
+
+        Args:
+            team_name: NPB 球隊英文名（如 'Yomiuri Giants'）
+            top_n: 取前 N 名（預設 5）
+
+        Returns:
+            list of dict: [{name, avg, hr, rbi, hits, ab, source}, ...]
+            若 DB 無資料回傳空陣列
+        """
+        try:
+            # 先取 team_id
+            self.cur.execute(
+                "SELECT team_id FROM predictx.teams WHERE english_name = %s AND league = 'NPB'",
+                (team_name,)
+            )
+            team_row = self.cur.fetchone()
+            if not team_row:
+                return []
+            team_id = team_row['team_id']
+
+            # 取該隊打者 stats，依 RBI 排序
+            self.cur.execute("""
+                SELECT p.player_name, s.avg, s.b_hr, s.rbi, s.b_h, s.ab, s.obp, s.slg
+                FROM predictx.player_season_stats s
+                JOIN predictx.players p ON s.player_id = p.player_id
+                JOIN predictx.player_teams pt ON p.player_id = pt.player_id
+                LEFT JOIN predictx.player_aliases pa ON pa.player_id = p.player_id
+                WHERE pt.team_id = %s
+                  AND s.kind = 'hitter'
+                  AND s.avg IS NOT NULL
+                  AND s.rbi IS NOT NULL
+                ORDER BY s.rbi DESC NULLS LAST, s.b_hr DESC NULLS LAST
+                LIMIT %s
+            """, (team_id, top_n))
+            rows = self.cur.fetchall()
+            if not rows:
+                return []
+
+            batters = []
+            for r in rows:
+                batters.append({
+                    'name': r['player_name'],
+                    'position': '',
+                    'avg': float(r['avg']) if r['avg'] is not None else None,
+                    'obp': float(r['obp']) if r['obp'] is not None else None,
+                    'slg': float(r['slg']) if r['slg'] is not None else None,
+                    'ops': (float(r['obp']) + float(r['slg'])) if (r['obp'] is not None and r['slg'] is not None) else None,
+                    'hr': int(r['b_hr']) if r['b_hr'] is not None else 0,
+                    'rbi': int(r['rbi']) if r['rbi'] is not None else 0,
+                    'hits': int(r['b_h']) if r['b_h'] is not None else 0,
+                    'ab': int(r['ab']) if r['ab'] is not None else 0,
+                    'source': 'npb_hitter_rankings_2026 (DB)'
+                })
+            return batters
+        except Exception as db_err:
+            print(f"  ⚠ DB top_batters query error: {db_err}")
+            return []
 
     def get_local_team_id(self, team_name):
+        """查詢本地資料庫的 NPB 隊伍 ID"""
         """查詢本地資料庫的 NPB 隊伍 ID"""
         self.cur.execute(
             "SELECT team_id FROM predictx.teams WHERE english_name ILIKE %s AND league='NPB'",
