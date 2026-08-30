@@ -671,7 +671,11 @@ def import_cpbl_rebas():
             JOIN predictx.teams t ON pt.team_id = t.team_id
             WHERE t.league = 'CPBL'
         """)
-        player_team_map = {r[0]: r[1] for r in cur.fetchall()}
+        player_team_map = {}
+        for r in cur.fetchall():
+            name = r['player_name'] if isinstance(r, dict) else r[0]
+            team_id = r['team_id'] if isinstance(r, dict) else r[1]
+            player_team_map[name] = team_id
 
         def to_float(val):
             if val is None or str(val).strip() in ('', '-', '—'):
