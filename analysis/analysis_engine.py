@@ -3819,40 +3819,35 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                 # 如果 summary 抽出的 away_prob < 5%（明顯異常，例如 0.0168），放棄整段覆寫
                 ap_suspicious = (ap_from_summary is not None and ap_from_summary < 0.05)
                 hp_suspicious = (hp_from_summary is not None and hp_from_summary < 0.05)
+
+                # 🆕 [2026-08-30 修正] 方向檢測必須在「差距判斷」之前做：
+                # 先判斷 summary 方向 vs LLM JSON 方向是否矛盾。
+                # 矛盾時 → 信任 summary（LLM JSON 的 home/away 方向填反了），
+                #          此時不能再用「差距 > 0.15」來否定 summary（否則會誤傷正確值）。
+                direction_conflict = False
+                if hp_from_summary is not None and ap_from_summary is not None:
+                    summary_home_favored = hp_from_summary > ap_from_summary
+                    json_home_favored = original_llm_home > original_llm_away
+                    direction_conflict = (summary_home_favored != json_home_favored)
+
+                # 差距判斷：僅在「方向一致」時才用差距 > 0.15 判斷誤抓。
+                # 方向矛盾時，差距大恰恰說明 JSON 填反了，summary 才是對的，不能否定 summary。
                 summary_prob_too_far_from_llm = (
+                    not direction_conflict and
                     hp_from_summary is not None and ap_from_summary is not None and
                     abs(hp_from_summary - original_llm_home) > 0.15
                 )
+
                 if ap_suspicious or hp_suspicious or summary_prob_too_far_from_llm:
                     print(f"  ⚠ summary 勝率抽取異常（hp={hp_from_summary}, ap={ap_from_summary} vs LLM home={original_llm_home}, away={original_llm_away}），跳過覆寫")
                     hp_from_summary = None
                     ap_from_summary = None
-
-                # 🆕 [2026-08-29] 方向檢測：summary 文字方向與 JSON 數字方向不一致時，以文字為準
-                # 因為 summary/step4 是 LLM 的最終自然語言結論，比 JSON 數字欄位更可靠
-                # 當 summary 明確寫「客隊勝率 58%」但 JSON home_win_probability=0.573 時，
-                # 應強制以 summary 的方向為準（主客對調），而不是沿用錯誤的 JSON 數字。
-                reason_text = ""
-                reasoning_data = result.get("reasoning", {})
-                if isinstance(reasoning_data, dict):
-                    reason_text = str(reasoning_data.get("step4_probability_calc", ""))
-
-                hp_extracted = hp_from_summary
-                ap_extracted = ap_from_summary
-
-                # 🆕 若 summary 提取成功（未被跳過），且 summary 方向與 LLM 原始 JSON 方向矛盾，強制對調
-                if hp_from_summary is not None and ap_from_summary is not None:
-                    llm_home = result.get("home_win_probability", 0.0)
-                    llm_away = result.get("away_win_probability", 0.0)
-                    summary_home_favored = hp_from_summary > ap_from_summary
-                    json_home_favored = llm_home > llm_away
-
-                    if summary_home_favored != json_home_favored:
-                        # 方向矛盾：summary 文字說客隊優，但 JSON 數字說主隊優（或反之）
-                        # 以 summary 文字為準，強制對調 JSON 數字
-                        print(f"  🚨 [方向檢測] summary 與 JSON 方向矛盾！summary: home_favored={summary_home_favored}, JSON: home_favored={json_home_favored}")
-                        print(f"    summary text 方向為正確，強制對調：home={ap_from_summary:.3f}, away={hp_from_summary:.3f}")
-                        hp_from_summary, ap_from_summary = ap_from_summary, hp_from_summary
+                elif direction_conflict:
+                    # 方向矛盾且通過 sanity check：以 summary 為準（不做對調，直接覆寫）
+                    print(f"  🚨 [方向檢測] summary 與 JSON 方向矛盾！")
+                    print(f"    summary 提取: home={hp_from_summary:.3f}, away={ap_from_summary:.3f} (summary_home_favored={hp_from_summary > ap_from_summary})")
+                    print(f"    LLM JSON:     home={original_llm_home:.3f}, away={original_llm_away:.3f} (json_home_favored={original_llm_home > original_llm_away})")
+                    print(f"    → 以 summary 文字為準，覆寫 JSON 數字")
 
                 if hp_from_summary is not None and ap_from_summary is not None:
                     home_prob = max(0.20, min(0.80, hp_from_summary))
