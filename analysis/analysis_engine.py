@@ -3824,6 +3824,17 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                 # 先判斷 summary 方向 vs LLM JSON 方向是否矛盾。
                 # 矛盾時 → 信任 summary（LLM JSON 的 home/away 方向填反了），
                 #          此時不能再用「差距 > 0.15」來否定 summary（否則會誤傷正確值）。
+                #
+                # 🆕 [2026-08-30 v2] 補丁：當 summary 只明確寫了單邊勝率（例如只寫「客隊勝率 54%」，
+                # 沒寫「主隊勝率 46%」），另一邊自動補為 1 - 已抽到的值。
+                # LLM 的 summary 經常只提一邊的勝率，導致 _extract_rate 只有一邊有值，進而整段覆寫失效。
+                if (ap_from_summary is not None) and (hp_from_summary is None):
+                    hp_from_summary = round(1.0 - ap_from_summary, 4)
+                    print(f"  ℹ️ summary 僅抽到客隊勝率 {ap_from_summary}，自動補主隊為 {hp_from_summary}")
+                if (hp_from_summary is not None) and (ap_from_summary is None):
+                    ap_from_summary = round(1.0 - hp_from_summary, 4)
+                    print(f"  ℹ️ summary 僅抽到主隊勝率 {hp_from_summary}，自動補客隊為 {ap_from_summary}")
+
                 direction_conflict = False
                 if hp_from_summary is not None and ap_from_summary is not None:
                     summary_home_favored = hp_from_summary > ap_from_summary
