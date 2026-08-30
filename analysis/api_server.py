@@ -634,6 +634,181 @@ def run_analysis():
         return jsonify({"error": str(e), "type": type(e).__name__}), 500
 
 
+@app.route('/api/import-cpbl-rebas', methods=['POST'])
+def import_cpbl_rebas():
+    """匯入 CPBL rebas.tw 投手 + 打者進階資料
+
+    用途：給 Playwright 抓取腳本呼叫的 webhook
+    body 格式：
+      {
+        "secret": "ADMIN_SECRET",
+        "pitchers": [{"rank": 1, "name": "...", "ip": "...", "era": "...", ...}],
+        "batters": [{"rank": 1, "name": "...", "pa": "...", "ops": "...", ...}]
+      }
+    """
+    try:
+        body = request.get_json(silent=True) or {}
+
+        # 認證檢查
+        ok, err = _check_admin_secret(body)
+        if not ok:
+            return err
+
+        pitchers = body.get('pitchers') or []
+        batters = body.get('batters') or []
+
+        if not pitchers and not batters:
+            return jsonify({"error": "missing pitchers/batters"}), 400
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        # 取得 player_teams 映射
+        cur.execute("""
+            SELECT p.player_name, pt.team_id
+            FROM predictx.players p
+            JOIN predictx.player_teams pt ON p.player_id = pt.player_id AND pt.is_active=true
+            JOIN predictx.teams t ON pt.team_id = t.team_id
+            WHERE t.league = 'CPBL'
+        """)
+        player_team_map = {r[0]: r[1] for r in cur.fetchall()}
+
+        def to_float(val):
+            if val is None or str(val).strip() in ('', '-', '—'):
+                return None
+            try:
+                return float(str(val).replace('%', '').replace(',', ''))
+            except:
+                return None
+
+        def to_int(val):
+            if val is None or str(val).strip() in ('', '-', '—'):
+                return None
+            try:
+                return int(float(str(val).replace(',', '')))
+            except:
+                return None
+
+        results = {
+            "pitcher": {"received": len(pitchers), "inserted": 0, "skipped": 0},
+            "batter": {"received": len(batters), "inserted": 0, "skipped": 0}
+        }
+
+        # --- 投手 ---
+        pitcher_source = "CPBL_PR_2026_rebas"
+        cur.execute("DELETE FROM predictx.cpbl_pitcher_pr WHERE source = %s", (pitcher_source,))
+
+        for p in pitchers:
+            name = p.get('name')
+            if not name:
+                continue
+            team_id = player_team_map.get(name)
+            if not team_id:
+                results['pitcher']['skipped'] += 1
+                continue
+
+            vals = {
+                'ranking': p.get('rank'),
+                'games': to_int(p.get('games')),
+                'ip': to_float(p.get('ip')),
+                'era': to_float(p.get('era')),
+                'era_plus': to_float(p.get('era_plus')),
+                'fip': to_float(p.get('fip')),
+                'whip': to_float(p.get('whip')),
+                'lob_pct': to_float(p.get('lob_pct')),
+                'babip': to_float(p.get('babip')),
+                'b_avg': to_float(p.get('b_avg')),
+                'b_obp': to_float(p.get('b_obp')),
+                'b_slg': to_float(p.get('b_slg')),
+                'ops_plus': to_float(p.get('ops_plus')),
+                'h9': to_float(p.get('h9')),
+                'hr9': to_float(p.get('hr9')),
+                'bb_pct': to_float(p.get('bb_pct')),
+                'k_pct': to_float(p.get('k_pct')),
+                'whiff_pct': to_float(p.get('whiff_pct')),
+                'sb_pct': to_float(p.get('sb_pct')),
+            }
+
+            cols = ['team_id', 'season', 'player_name'] + list(vals.keys()) + ['source']
+            placeholders = ', '.join(['%s'] * len(cols))
+            params = [team_id, 2026, name] + [vals[k] for k in vals.keys()] + [pitcher_source]
+            update_cols = list(vals.keys()) + ['source']
+            update_set = ', '.join([f"{c} = EXCLUDED.{c}" for c in update_cols])
+
+            cur.execute(f"""
+                INSERT INTO predictx.cpbl_pitcher_pr ({', '.join(cols)})
+                VALUES ({placeholders})
+                ON CONFLICT (team_id, season, player_name)
+                DO UPDATE SET {update_set}
+            """, params)
+            results['pitcher']['inserted'] += 1
+
+        # --- 打者 ---
+        batter_source = "CPBL_PR_2026_rebas_batter"
+        cur.execute("DELETE FROM predictx.cpbl_player_pr WHERE source = %s", (batter_source,))
+
+        for b in batters:
+            name = b.get('name')
+            if not name:
+                continue
+            team_id = player_team_map.get(name)
+            if not team_id:
+                results['batter']['skipped'] += 1
+                continue
+
+            vals = {
+                'ranking': b.get('rank'),
+                'games': to_int(b.get('games')),
+                'pa': to_int(b.get('pa')),
+                'ops': to_float(b.get('ops')),
+                'ops_plus': to_float(b.get('ops_plus')),
+                'avg': to_float(b.get('avg')),
+                'obp': to_float(b.get('obp')),
+                'slg': to_float(b.get('slg')),
+                'iso': to_float(b.get('iso')),
+                'babip': to_float(b.get('babip')),
+                'bip': to_float(b.get('bip')),
+                'rc': to_float(b.get('rc')),
+                'woba': to_float(b.get('woba')),
+                'bb_pct': to_float(b.get('bb_pct')),
+                'bb_k': to_float(b.get('bb_k')),
+                'k_pct': to_float(b.get('k_pct')),
+                'whiff_pct': to_float(b.get('whiff_pct')),
+                'sb_pct': to_float(b.get('sb_pct')),
+            }
+
+            cols = ['team_id', 'season', 'player_name'] + list(vals.keys()) + ['source']
+            placeholders = ', '.join(['%s'] * len(cols))
+            params = [team_id, 2026, name] + [vals[k] for k in vals.keys()] + [batter_source]
+            update_cols = list(vals.keys()) + ['source']
+            update_set = ', '.join([f"{c} = EXCLUDED.{c}" for c in update_cols])
+
+            cur.execute(f"""
+                INSERT INTO predictx.cpbl_player_pr ({', '.join(cols)})
+                VALUES ({placeholders})
+                ON CONFLICT (team_id, season, player_name)
+                DO UPDATE SET {update_set}
+            """, params)
+            results['batter']['inserted'] += 1
+
+        conn.commit()
+
+        total_inserted = results['pitcher']['inserted'] + results['batter']['inserted']
+        total_skipped = results['pitcher']['skipped'] + results['batter']['skipped']
+        logger.info(f"import-cpbl-rebas: pitchers={results['pitcher']}, batters={results['batter']}")
+
+        return jsonify({
+            "status": "success",
+            "total_inserted": total_inserted,
+            "total_skipped": total_skipped,
+            "details": results
+        }), 200
+    except Exception as e:
+        import traceback
+        logger.error(f"import-cpbl-rebas: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e), "type": type(e).__name__}), 500
+
+
 @app.route('/api/insert_games', methods=['POST'])
 def insert_games():
     """接受外部傳入的賽程資料並寫入資料庫"""
