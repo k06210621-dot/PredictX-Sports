@@ -1543,10 +1543,13 @@ class AnalysisEngine:
                             _conn = psycopg2.connect(db_url)
                             _cur = _conn.cursor()
                             _cur.execute("""
-                                SELECT t.english_name, p.player_name, p.era, p.k_pct, p.bb_pct
+                                SELECT t.english_name, p.player_name, p.era, p.k_pct, p.bb_pct,
+                                       p.fip, p.whip, p.lob_pct, p.babip, p.h9, p.hr9,
+                                       p.whiff_pct, p.sb_pct, p.era_plus, p.ip, p.games
                                 FROM predictx.cpbl_pitcher_pr p
                                 JOIN predictx.teams t ON p.team_id = t.team_id
                                 WHERE p.season = 2026 AND p.era IS NOT NULL AND p.era > 0
+                                  AND p.source = 'CPBL_PR_2026_rebas'
                             """)
                             rows = _cur.fetchall() or []
                             _cur.close()
@@ -1554,16 +1557,26 @@ class AnalysisEngine:
                             
                             fb = {}
                             for r in rows:
-                                team_en, pname, era, k_pct, bb_pct = r
+                                (team_en, pname, era, k_pct, bb_pct, fip, whip, lob_pct,
+                                 babip, h9, hr9, whiff_pct, sb_pct, era_plus, ip, games) = r
                                 if team_en not in fb:
                                     fb[team_en] = []
                                 fb[team_en].append({
                                     'name': pname,
                                     'era': float(era) if era else 0,
-                                    'whip': 0,
+                                    'fip': float(fip) if fip else None,
+                                    'whip': float(whip) if whip else None,
                                     'k_pct': float(k_pct) if k_pct else 0,
                                     'bb_pct': float(bb_pct) if bb_pct else 0,
-                                    'ip': 0,
+                                    'lob_pct': float(lob_pct) if lob_pct else None,
+                                    'babip': float(babip) if babip else None,
+                                    'h9': float(h9) if h9 else None,
+                                    'hr9': float(hr9) if hr9 else None,
+                                    'whiff_pct': float(whiff_pct) if whiff_pct else None,
+                                    'sb_pct': float(sb_pct) if sb_pct else None,
+                                    'era_plus': float(era_plus) if era_plus else None,
+                                    'ip': float(ip) if ip else 0,
+                                    'games': int(games) if games else 0,
                                     'wins': 0,
                                     'losses': 0,
                                 })
@@ -2629,21 +2642,53 @@ Park Factor: {pf:.2f} ({park_interp})
                         # CPBL 投手個人資料（從 sportify.tw）
             cpbl_pitchers = features.get('cpbl_pitchers', {})
             if cpbl_pitchers:
-                cpbl_spec += "\n\n===== CPBL 投手數據（來源：sportify.tw）====="
+                cpbl_spec += "\n\n===== CPBL 投手數據（來源：sportify.tw / cpbl_pitcher_pr）====="
                 h_ps = cpbl_pitchers.get(home_team, [])
                 a_ps = cpbl_pitchers.get(away_team, [])
+
+                def _fmt_pitcher_line(i, p):
+                    era = p.get('era', 0) or 0
+                    whip = p.get('whip')
+                    k_pct = p.get('k_pct', 0) or 0
+                    bb_pct = p.get('bb_pct', 0) or 0
+                    ip = p.get('ip', 0) or 0
+                    wins = p.get('wins', 0) or 0
+                    losses = p.get('losses', 0) or 0
+                    fip = p.get('fip')
+                    lob = p.get('lob_pct')
+                    babip = p.get('babip')
+                    h9 = p.get('h9')
+                    hr9 = p.get('hr9')
+                    whiff = p.get('whiff_pct')
+                    era_plus = p.get('era_plus')
+
+                    line = f"\n  #{i} {p['name']}: ERA={era:.2f}, K%={k_pct:.1f}, BB%={bb_pct:.1f}, {wins}W-{losses}L, {ip:.1f}局"
+                    if whip is not None:
+                        line += f", WHIP={whip:.3f}"
+                    if fip is not None:
+                        line += f", FIP={fip:.2f}"
+                    if lob is not None:
+                        line += f", LOB%={lob:.1f}"
+                    if babip is not None:
+                        line += f", BABIP={babip:.3f}"
+                    if h9 is not None:
+                        line += f", H/9={h9:.2f}"
+                    if hr9 is not None:
+                        line += f", HR/9={hr9:.2f}"
+                    if whiff is not None:
+                        line += f", Whiff%={whiff:.1f}"
+                    if era_plus is not None:
+                        line += f", ERA+={era_plus:.0f}"
+                    return line
+
                 if h_ps:
                     cpbl_spec += "\n主隊 %s 投手群：" % home_team
                     for i, p in enumerate(h_ps, 1):
-                        line = "\n  #%d %s: ERA=%.2f, WHIP=%.3f, K%%=%.1f, BB%%=%.1f, %dW-%dL, %.1f局" % (
-                            i, p['name'], p['era'], p['whip'], p['k_pct'], p['bb_pct'], p['wins'], p['losses'], p['ip'])
-                        cpbl_spec += line
+                        cpbl_spec += _fmt_pitcher_line(i, p)
                 if a_ps:
                     cpbl_spec += "\n客隊 %s 投手群：" % away_team
                     for i, p in enumerate(a_ps, 1):
-                        line = "\n  #%d %s: ERA=%.2f, WHIP=%.3f, K%%=%.1f, BB%%=%.1f, %dW-%dL, %.1f局" % (
-                            i, p['name'], p['era'], p['whip'], p['k_pct'], p['bb_pct'], p['wins'], p['losses'], p['ip'])
-                        cpbl_spec += line
+                        cpbl_spec += _fmt_pitcher_line(i, p)
 
             # 🆕 [2026-07-06] CPBL 當日 SP 個人 stats（從 predictx.player_season_stats）
             # 🆕 [2026-07-25] 外籍投手/洋將 fallback：若不在 player_season_stats 中，
