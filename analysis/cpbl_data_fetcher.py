@@ -44,6 +44,10 @@ class CPBLDataFetcher:
                 self.cur = self.conn.cursor(cursor_factory=RealDictCursor)
             except Exception:
                 pass  # DB 連線失敗不影響 HTTP-based 方法（如 get_today_starting_pitchers）
+        # 🆕 [2026-08-30 fix] TEAM_CN_TO_EN 屬性別名（與 cpbl_standings.py 的 TEAM_CN_TO_EN 同步）
+        # 修法：get_today_starting_pitchers_via_proxy 內部使用 self.TEAM_CN_TO_EN（line 1050-1051），
+        # 但類別原本只有 TEAM_MAP。補上這個 alias 避免 AttributeError，導致 ingest 寫入錯誤投手資料。
+        self.TEAM_CN_TO_EN = TEAM_MAP
         self.session = requests.Session()
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
