@@ -228,39 +228,39 @@ class CPBLDataFetcher:
         except Exception as e:
             print(f"  ⚠ sportify.tw fetch error: {e}")
             return None
-
     def get_top_batters(self, team_en, top_n=5):
-        """取得 CPBL 指定球隊前 N 名主力打者（依 RBI 排序）
+        """取得 CPBL 指定球隊前 N 名主力打者（依 wOBA 排序）
 
-        優先從 DB 取（player_season_stats kind='batter'），
-        若 DB 無資料再 fallback 到 cpbl.com.tw 爬蟲。
+        優先從 DB 取（cpbl_player_pr 表），若 DB 無資料則 fallback 至
+        cpbl.com.tw 爬蟲。確保即便 web scraping 失敗，仍能取得打線強度資料。
 
         Args:
             team_en: 球隊英文名（如 'CTBC Brothers'）
             top_n: 取前 N 名（預設 5）
 
         Returns:
-            list of dict: [{name, avg, obp, slg, ops, hr, rbi, hits, ab}, ...]
+            list of dict: [{name, avg, obp, slg, ops, hr, rbi, hits, ab, ...}, ...]
+            若兩種來源都失敗則回傳空陣列
         """
         # 1) 優先從 DB 取（含 Statcast 進階數據或傳統 AVG/OBP/SLG）
         db_batters = self.get_top_batters_from_db(team_en, top_n)
         if db_batters:
             return db_batters
 
-        # 2) Fallback: cpbl.com.tw 爬蟲（Railway 相容）
-        # sportify.tw 需要 TLS 1.2+，在舊版 LibreSSL 環境會失敗
+        # 2) DB 也無資料，嘗試 web scraping 做為降級方案
+        print(f"  ⚠ _extract_rate: DB top_batters 為空，嘗試 web scraping ({team_en})")
         hitters = self.get_hitting_leaderboard()
         source = 'cpbl.com.tw'
 
         # 嘗試 sportify.tw（若需要進階數據）
-        # 註：在本地 macOS 可能成功，但在 Railway 會因 SSL 限制失敗
-        # if not hitters or source == 'cpbl.com.tw':
-        #     sportify_hitters = self.get_hitting_leaderboard_from_sportify()
-        #     if sportify_hitters:
-        #         hitters = sportify_hitters
-        #         source = 'sportify.tw'
+        if not hitters or source == 'cpbl.com.tw':
+            sportify_hitters = self.get_hitting_leaderboard_from_sportify()
+            if sportify_hitters:
+                hitters = sportify_hitters
+                source = 'sportify.tw'
 
         if not hitters:
+            print(f"  ⚠ _extract_rate: web scraping 也無資料 ({team_en})")
             return []
 
         # 過濾指定球隊
@@ -305,8 +305,8 @@ class CPBLDataFetcher:
     def get_top_batters_from_db(self, team_en, top_n=5):
         """從 DB 取 CPBL 球隊前 N 名打者（依 wOBA 排序）
 
-        優先讀 cpbl_player_pr（CPBL 官方 Statcast 進階數據），
-        含 wOBA/ISO/擊球初速/Hard%/K%/BB%/Whiff%/Chase%。
+        優先讀 cpbl_player_pr（rebas 進階數據），
+        含 wOBA/OPS/OPS+/BABIP/RC/SB%/ISO/K%/BB%/Whiff%。
         若 cpbl_player_pr 無資料，fallback 到 player_season_stats
         （傳統 AVG/OBP/SLG/HR/RBI）。
 
@@ -318,17 +318,17 @@ class CPBLDataFetcher:
             list of dict: 含 name/avg/obp/slg/ops/hr/rbi/h/ab + Statcast 進階指標
             若 DB 無資料回傳空陣列
         """
-        # 1) 優先讀 cpbl_player_pr（含 Statcast 進階數據）
+        # 1) 優先讀 cpbl_player_pr（含 rebas 進階數據）
         try:
             self.cur.execute("""
                 SELECT
-                    pr.player_name, pr.ranking, pr.woba, pr.avg, pr.obp, pr.slg, pr.iso,
-                    pr.exit_velo_avg_kmh, pr.exit_velo_max_kmh, pr.hard_hit_pct,
-                    pr.k_pct, pr.bb_pct, pr.whiff_pct, pr.chase_pct, pr.barrel_count, pr.wrc_plus
+                    pr.player_name, pr.ranking, pr.woba, pr.ops, pr.ops_plus,
+                    pr.avg, pr.obp, pr.slg, pr.iso, pr.babip, pr.rc, pr.sb_pct,
+                    pr.k_pct, pr.bb_pct, pr.whiff_pct
                 FROM predictx.cpbl_player_pr pr
                 JOIN predictx.teams t ON pr.team_id = t.team_id
                 WHERE pr.season = 2026
-                  AND pr.source = 'CPBL_PR_2026_official_batting'
+                  AND pr.source = 'CPBL_PR_2026_rebas_batter'
                   AND t.english_name = %s
                   AND pr.woba IS NOT NULL
                 ORDER BY pr.woba DESC NULLS LAST
@@ -346,34 +346,34 @@ class CPBLDataFetcher:
                     avg = to_float(r['avg'])
                     obp = to_float(r['obp'])
                     slg = to_float(r['slg'])
-                    ops = (obp + slg) if (obp is not None and slg is not None) else None
+                    ops_val = to_float(r['ops'])
+                    if ops_val is None:
+                        ops_val = (obp + slg) if (obp is not None and slg is not None) else None
                     result.append({
                         'name': r['player_name'],
                         'position': '',
                         'avg': avg,
                         'obp': obp,
                         'slg': slg,
-                        'ops': ops,
-                        'hr': 0,       # cpbl_player_pr 無 HR 欄位
-                        'rbi': 0,      # cpbl_player_pr 無 RBI 欄位
-                        'hits': 0,     # cpbl_player_pr 無 H 欄位
-                        'ab': 0,       # cpbl_player_pr 無 AB 欄位
-                        # 🆕 Statcast 進階指標
+                        'ops': ops_val,
+                        'hr': 0,
+                        'rbi': 0,
+                        'hits': 0,
+                        'ab': 0,
+                        # rebas 進階指標
                         'woba': to_float(r['woba']),
+                        'ops_plus': to_float(r['ops_plus']),
                         'iso': to_float(r['iso']),
-                        'exit_velo_avg_kmh': to_float(r['exit_velo_avg_kmh']),
-                        'exit_velo_max_kmh': to_float(r['exit_velo_max_kmh']),
-                        'hard_hit_pct': to_float(r['hard_hit_pct']),
+                        'babip': to_float(r['babip']),
+                        'rc': to_float(r['rc']),
+                        'sb_pct': to_float(r['sb_pct']),
                         'k_pct': to_float(r['k_pct']),
                         'bb_pct': to_float(r['bb_pct']),
                         'whiff_pct': to_float(r['whiff_pct']),
-                        'chase_pct': to_float(r['chase_pct']),
-                        'barrel_count': int(r['barrel_count']) if r['barrel_count'] is not None else 0,
-                        'wrc_plus': int(r['wrc_plus']) if r['wrc_plus'] is not None else None,
                         'ranking': int(r['ranking']) if r['ranking'] is not None else None,
-                        'source': 'cpbl_player_pr (Statcast)'
+                        'source': 'cpbl_player_pr (rebas)'
                     })
-                self.fetched_sources.append('cpbl_player_pr (Statcast)')
+                self.fetched_sources.append('cpbl_player_pr (rebas)')
                 return result
         except Exception as db_err:
             print(f"  ⚠ CPBL cpbl_player_pr query error: {db_err}")

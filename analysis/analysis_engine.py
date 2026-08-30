@@ -2468,20 +2468,20 @@ Park Factor: {pf:.2f} ({park_interp})
                         for i, b in enumerate(tb_list[:5], 1):
                             name = b.get('name', '?')
                             woba = b.get('woba', '?')
+                            ops = b.get('ops', '?')
+                            ops_plus = b.get('ops_plus', '?')
                             avg = b.get('avg', '?')
                             iso = b.get('iso', '?')
-                            ev_avg = b.get('exit_velo_avg_kmh', '?')
-                            ev_max = b.get('exit_velo_max_kmh', '?')
-                            hard = b.get('hard_hit_pct', '?')
+                            babip = b.get('babip', '?')
+                            rc = b.get('rc', '?')
+                            sb_pct = b.get('sb_pct', '?')
                             k_pct = b.get('k_pct', '?')
                             whiff = b.get('whiff_pct', '?')
-                            chase = b.get('chase_pct', '?')
-                            wrc = b.get('wrc_plus', '?')
                             cpbl_spec += (
                                 f"\n  #{i} {name}: "
-                                f"wOBA={woba}, AVG={avg}, ISO={iso}, "
-                                f"EV_avg={ev_avg}km/h, EV_max={ev_max}km/h, Hard%={hard}, "
-                                f"K%={k_pct}, Whiff%={whiff}, Chase%={chase}, wRC+={wrc}"
+                                f"wOBA={woba}, OPS={ops}, OPS+={ops_plus}, "
+                                f"AVG={avg}, ISO={iso}, BABIP={babip}, "
+                                f"RC={rc}, SB%={sb_pct}, K%={k_pct}, Whiff%={whiff}"
                             )
 
                 # 🆕 [2026-07-14] CPBL 球員 PR 進階打擊數據（PR percentile：99 為最高、0 為最低）
