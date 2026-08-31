@@ -410,16 +410,19 @@ class AnalysisEngine:
         """
         校正 predicted_score，確保與勝率一致。
 
-        規則：
-        - home_prob > away_prob → home 分數必須 > away 分數
-        - away_prob > home_prob → away 分數必須 > home 分數
-        - 勝率差距大 → 分數差距也應明顯（2-3 分以上）
+        規則（🆕 [2026-08-31] 重寫）：
+        - home_prob > away_prob → home 分數必須 > away 分數（方向）
+        - away_prob > home_prob → away 分數必須 > home 分數（方向）
+        - 「贏多少」由聯盟基準分差決定，而非勝率差距。
 
-        棒球/籃球典型比分範圍：1-12 分
-        - 棒球：低分（1-9），強弱差距 1-3 分
-        - 籃球：高分（80-130），強弱差距 5-15 分
+        🆕 關鍵改變（數據驅動）：2026-08-31 統計發現
+        「勝率差 ↔ 分差」幾乎無關（勝率差 30%+ 的場次分差 2.86，
+        反比五五波場次 3.42 小）。棒球是低分運動，分差本質是「隨機爆擊」，
+        不是勝率差距的線性延伸。因此分差改由「聯盟中位數分差 + 分差分佈抽樣」決定，
+        勝率只決定方向，不決定贏多少。
         """
         import re
+        import random
 
         # 不同聯盟的合理分數範圍
         # ⚠️ CPBL 實際主隊 0-19、客隊 0-11，擴大上限避免裁切真實吹盤比分
@@ -431,6 +434,7 @@ class AnalysisEngine:
             "CPBL": (0, 12),  # 2026-08-21 調整：實際觀測 0-19/0-11，取保守上限 12
         }
         lo, hi = score_ranges.get((league or "").upper(), (2, 9))
+        league_upper = (league or "").upper()
 
         # 解析 LLM 給的 predicted_score（如 "5-3"）
         original_score = None
@@ -445,104 +449,96 @@ class AnalysisEngine:
 
         # 解析原比分為 (home, away)
         if original_score is None:
-            # LLM 沒給有效比分，從範圍中位數開始
             mid = (lo + hi) // 2
             original_score = (mid, mid)
         h_score, a_score = original_score
 
-        # 偵測矛盾：favorite 的比分是否 <= underdog（包含平手）
-        # 棒球/籃球都沒有平手（棒球延長賽分勝負、籃球 OT 分勝負）
-        # 因此 h_score == a_score 也視為矛盾，需修正為「favorite 勝 1 分以上」
+        # 🆕 [2026-08-31] 聯盟基準分差表（基於 2026-08-20~08-30 實測）
+        # 每個聯盟的「常見分差」＝中位數，長尾用抽樣模擬
+        # 資料來源：predictx-score-gap-analysis 統計
+        league_gap_profile = {
+            # league: (median_gap, p25, p75, blowout_prob, blowout_gap_range)
+            #   median_gap: 中位數分差
+            #   p25/p75: 四分位數
+            #   blowout_prob: 4+ 分大比分出現機率
+            #   blowout_gap_range: 大比分時的分差範圍 (min, max)
+            "MLB":  (4, 1, 5, 0.37, (4, 7)),
+            "NPB":  (2, 1, 3, 0.15, (4, 5)),
+            "CPBL": (2, 1, 3, 0.16, (4, 6)),
+        }
+        profile = league_gap_profile.get(league_upper, (2, 1, 3, 0.15, (4, 5)))
+        median_gap, p25, p75, blowout_prob, blowout_range = profile
+
+        # 🆕 [2026-08-31] 目標分差 = 聯盟基準（抽樣），而非勝率驅動
+        # 1. 基礎分差：以中位數為基準（MLB=3, NPB/CPBL=2）
+        # 2. 分差分佈抽樣：以機率決定落在 P25 / 中位數 / P75 / 大比分
+        #    - 模擬「長尾」：blowout_prob 機率爆到 4-6 分
+        #    - 整體分差分佈接近真實（中位數 + 長尾），而非全被壓在低分
+        # 3. ✅ deterministic：用 game_id (或比分) hash 作為 seed，
+        #    讓同一場比賽每次分析都產生相同分差（可重現），但不同場次之間
+        #    自然呈現分布（避免純 random 導致同一場比分每次跳動）。
+        seed_src = str(predicted_score) + str(home_prob) + str(away_prob) + league_upper
+        seed = 0
+        for ch in seed_src:
+            seed = (seed * 31 + ord(ch)) & 0xFFFFFFFF
+        rng = random.Random(seed)
+        r = rng.random()
+        if r < 0.25:
+            base_gap = p25
+        elif r < 0.50:
+            base_gap = int((p25 + median_gap) / 2)
+        elif r < 0.75:
+            base_gap = median_gap
+        elif r < (0.75 + blowout_prob * 0.5):
+            # 中度大比分（介於中位數和 blowout 之間）
+            base_gap = int((median_gap + blowout_range[0]) / 2)
+        else:
+            # 大比分（blowout）
+            base_gap = rng.randint(blowout_range[0], blowout_range[1])
+
+        # 3. 勝率差只做「微調」（權重降低，不再主導）
+        #    - 極端強弱（prob_diff > 0.3）→ +1
+        #    - 五五波（prob_diff < 0.05）→ 維持基準（不強制拉大，讓棒球的隨機性自然呈現）
+        target_gap = base_gap
+        if prob_diff > 0.3:
+            target_gap = min(target_gap + 1, blowout_range[1])
+
+        # 4. 打爆係數：投手/打線極端時額外拉大
+        if blowout_bonus > 0:
+            target_gap = max(target_gap, 1 + blowout_bonus)
+            target_gap = min(target_gap, blowout_range[1] + 1)
+
+        # 修正矛盾（方向必須正確）
         is_tie = (h_score == a_score)
         contradiction = (home_favorite and h_score <= a_score) or (not home_favorite and a_score <= h_score) or is_tie
 
-        # 🆕 [2026-08-31] 聯盟基準下限必須永遠套用（不只是矛盾時）
-        # 根因：原本「無矛盾直接 return」會繞過 target_gap，導致 LLM 給 3-2 就回 3-2。
-        # 改法：先計算 league_min_gap 套用，再處理矛盾/無矛盾。
-        league_min_gap = {
-            "MLB": 2,    # 場均分差 3.61
-            "NPB": 2,    # 場均分差 2.70
-            "CPBL": 2,   # 場均分差 2.89（CPBL 最低門檻 2，避免 79% 1 分差）
-        }.get((league or "").upper(), 1)
-
-        if not contradiction:
-            # 🆕 [2026-08-31] 即使無矛盾，也要檢查聯盟基準分差下限
-            current_gap = abs(h_score - a_score)
-            if league_min_gap > 1 and current_gap < league_min_gap:
-                # 分差小於聯盟基準 → 拉大到聯盟基準
-                # 維持方向，擴大 favorite 分數
+        if contradiction:
+            # 有矛盾：先把方向修正（favorite +1）
+            if h_score == a_score:
                 if home_favorite:
-                    h_score = min(hi, h_score + (league_min_gap - current_gap))
+                    h_score = min(h_score + 1, hi)
                 else:
-                    a_score = min(hi, a_score + (league_min_gap - current_gap))
-                return f"{h_score}-{a_score}"
-            return f"{h_score}-{a_score}"
+                    a_score = min(a_score + 1, hi)
+            else:
+                new_fav = max(h_score, a_score) + 1
+                new_und = min(h_score, a_score)
+                if home_favorite:
+                    h_score, a_score = new_fav, new_und
+                else:
+                    h_score, a_score = new_und, new_fav
 
-        # 🆕 [fix] 有矛盾時一律修正，不再因 prob_diff < 0.05 跳過
-        # 修正策略：favorite 分數 = max(原分數) + 1，underdog = min(原分數)
-        # 若原分數相同（如 2-2），favorite +1
-        if h_score == a_score:
-            if home_favorite:
-                h_score = min(h_score + 1, hi)
-            else:
-                a_score = min(a_score + 1, hi)
-        else:
-            new_fav = max(h_score, a_score) + 1
-            new_und = min(h_score, a_score)
-            if home_favorite:
-                h_score, a_score = new_fav, new_und
-            else:
-                h_score, a_score = new_und, new_fav
-        # 確保在範圍內
         h_score = max(lo, min(hi, h_score))
         a_score = max(lo, min(hi, a_score))
 
-        # 差距加強（如果原本差距太小）
+        # 套用目標分差（favorite 應領先 target_gap 分）
         favorite_score = h_score if home_favorite else a_score
         underdog_score = a_score if home_favorite else h_score
 
-        # 🆕 [fix] 根據勝率差距動態調整比分差距
-        # prob_diff > 0.4 → favorite 應至少贏 4 分以上
-        # prob_diff > 0.3 → 至少 3 分差距
-        # prob_diff > 0.2 → 至少 2 分差距
-        # prob_diff > 0.1 → 至少 1 分差距
-        # 🆕 [2026-08-31] 聯盟基準修正：CPBL 實際平均分差 2.89（統計 19 場）、
-        #   NPB 2.70、MLB 3.61，但 LLM 預測 CPBL 79% 為 1 分差，系統性低估。
-        #   改法：拉低門檻 + 強制聯盟基準分差下限，避免弱隊主場或微勝率場次
-        #   落入「只贏 1 分」的死板模式。
-        target_gap = 1
-        if prob_diff > 0.4:
-            target_gap = 4
-        elif prob_diff > 0.3:
-            target_gap = 3
-        elif prob_diff > 0.2:
-            target_gap = 2
-        elif prob_diff > 0.1:
-            target_gap = 2  # 🆕 [2026-08-31] 原本 1 → 2：prob_diff 0.1+ 場次拉大到 2 分
-        # 🆕 [2026-08-31] 聯盟基準下限：依實際統計校正
-        # CPBL 場均分差 2.89，即使 prob_diff 0 也至少要 2 分
-        league_min_gap = {
-            "MLB": 2,    # 場均分差 3.61，門檻 2 合理
-            "NPB": 2,    # 場均分差 2.70
-            "CPBL": 2,   # 場均分差 2.89（CPBL 場次最低門檻 2，避免 79% 1 分差）
-        }.get((league or "").upper(), 1)
-        target_gap = max(target_gap, league_min_gap)
-
-        # 🆕 [2026-07-18] 打爆係數：先發易被狙擊 + 對手打線強 → 額外拉大差距
-        if blowout_bonus > 0:
-            target_gap = max(target_gap, 1 + blowout_bonus)
-            target_gap = min(target_gap, 6)
-
-        # 確保 favorite_score >= target_gap + lo，否則先提升 favorite
         current_gap = favorite_score - underdog_score
         if current_gap < target_gap:
-            # 計算需要多少調整
             deficit = target_gap - current_gap
-            # 先提升 favorite_score
             favorite_score = min(hi, favorite_score + deficit)
-            # 再降低 underdog_score，但不能低於 lo
             underdog_score = max(lo, underdog_score)
-            # 若還不夠，就再降 underdog（但不能低於 lo）
             if favorite_score - underdog_score < target_gap:
                 underdog_score = max(lo, favorite_score - target_gap)
 
