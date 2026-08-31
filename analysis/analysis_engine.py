@@ -456,8 +456,26 @@ class AnalysisEngine:
         is_tie = (h_score == a_score)
         contradiction = (home_favorite and h_score <= a_score) or (not home_favorite and a_score <= h_score) or is_tie
 
+        # 🆕 [2026-08-31] 聯盟基準下限必須永遠套用（不只是矛盾時）
+        # 根因：原本「無矛盾直接 return」會繞過 target_gap，導致 LLM 給 3-2 就回 3-2。
+        # 改法：先計算 league_min_gap 套用，再處理矛盾/無矛盾。
+        league_min_gap = {
+            "MLB": 2,    # 場均分差 3.61
+            "NPB": 2,    # 場均分差 2.70
+            "CPBL": 2,   # 場均分差 2.89（CPBL 最低門檻 2，避免 79% 1 分差）
+        }.get((league or "").upper(), 1)
+
         if not contradiction:
-            # 無矛盾，直接回傳（即使 prob_diff 很小）
+            # 🆕 [2026-08-31] 即使無矛盾，也要檢查聯盟基準分差下限
+            current_gap = abs(h_score - a_score)
+            if league_min_gap > 1 and current_gap < league_min_gap:
+                # 分差小於聯盟基準 → 拉大到聯盟基準
+                # 維持方向，擴大 favorite 分數
+                if home_favorite:
+                    h_score = min(hi, h_score + (league_min_gap - current_gap))
+                else:
+                    a_score = min(hi, a_score + (league_min_gap - current_gap))
+                return f"{h_score}-{a_score}"
             return f"{h_score}-{a_score}"
 
         # 🆕 [fix] 有矛盾時一律修正，不再因 prob_diff < 0.05 跳過
@@ -488,6 +506,10 @@ class AnalysisEngine:
         # prob_diff > 0.3 → 至少 3 分差距
         # prob_diff > 0.2 → 至少 2 分差距
         # prob_diff > 0.1 → 至少 1 分差距
+        # 🆕 [2026-08-31] 聯盟基準修正：CPBL 實際平均分差 2.89（統計 19 場）、
+        #   NPB 2.70、MLB 3.61，但 LLM 預測 CPBL 79% 為 1 分差，系統性低估。
+        #   改法：拉低門檻 + 強制聯盟基準分差下限，避免弱隊主場或微勝率場次
+        #   落入「只贏 1 分」的死板模式。
         target_gap = 1
         if prob_diff > 0.4:
             target_gap = 4
@@ -496,7 +518,15 @@ class AnalysisEngine:
         elif prob_diff > 0.2:
             target_gap = 2
         elif prob_diff > 0.1:
-            target_gap = 1
+            target_gap = 2  # 🆕 [2026-08-31] 原本 1 → 2：prob_diff 0.1+ 場次拉大到 2 分
+        # 🆕 [2026-08-31] 聯盟基準下限：依實際統計校正
+        # CPBL 場均分差 2.89，即使 prob_diff 0 也至少要 2 分
+        league_min_gap = {
+            "MLB": 2,    # 場均分差 3.61，門檻 2 合理
+            "NPB": 2,    # 場均分差 2.70
+            "CPBL": 2,   # 場均分差 2.89（CPBL 場次最低門檻 2，避免 79% 1 分差）
+        }.get((league or "").upper(), 1)
+        target_gap = max(target_gap, league_min_gap)
 
         # 🆕 [2026-07-18] 打爆係數：先發易被狙擊 + 對手打線強 → 額外拉大差距
         if blowout_bonus > 0:
