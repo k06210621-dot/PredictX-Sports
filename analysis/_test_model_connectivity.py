@@ -18,7 +18,8 @@ elif PROVIDER == "nous":
     MODEL = os.environ.get("CLOUD_LLM_MODEL", "stepfun/step-3.7-flash:free")
     KEY = os.environ.get("NOUS_API_KEY", "")
 elif PROVIDER == "ollama":
-    URL = "https://api.ollama.com/api/chat"
+    # 🆕 [2026-09-01] Fix: 同步改用 OpenAI 兼容端點（與 analysis_engine.py 一致）
+    URL = "https://ollama.com/v1/chat/completions"
     MODEL = os.environ.get("CLOUD_LLM_MODEL", "qwen3-coder-next")
     KEY = os.environ.get("OLLAMA_API_KEY", "")
 else:
