@@ -642,12 +642,18 @@ class AnalysisEngine:
         # 不像 MLB/NPB 是 {home_pitcher: {stats}}。先偵測結構，若為 CPBL 格式就包裝成 MLB 格式再走原邏輯。
         raw_cpbl_pitchers = features.get('cpbl_pitchers') or {}
         cpbl_starters = features.get('cpbl_starting_pitchers') or {}
+        # 🆕 [2026-09-03] 先發投手名 fallback：cpbl_starting_pitchers 在 Railway 環境常抓不到
+        # （HiNetCDN 擋 stats.cpbl.com.tw / gamedetail），導致 CPBL 投手 ±1 微調失效。
+        # 改從 game_info 讀取手動補的投手名（games.home_pitcher_name / away_pitcher_name）。
+        game_info = features.get('game_info') or {}
+        gi_home_sp = game_info.get('home_pitcher_name')
+        gi_away_sp = game_info.get('away_pitcher_name')
         if (
             isinstance(raw_cpbl_pitchers, dict)
             and raw_cpbl_pitchers
             and not raw_cpbl_pitchers.get('home_pitcher')
             and not raw_cpbl_pitchers.get('away_pitcher')
-            and cpbl_starters
+            and (cpbl_starters or gi_home_sp or gi_away_sp)
         ):
             # cpbl_pitchers keys 是英文隊名；cpbl_starting_pitchers keys 是中文隊名
             # 用 TEAM_MAP 反查：英文隊名 -> 中文隊名
@@ -659,6 +665,11 @@ class AnalysisEngine:
             away_cn = en_to_cn.get(away_team_raw, away_team_raw)
             home_sp = cpbl_starters.get(home_cn) or {}
             away_sp = cpbl_starters.get(away_cn) or {}
+            # 🆕 [2026-09-03] fallback：cpbl_starters 抓不到時，用 game_info 的手動補投手名
+            if not home_sp.get('name') and gi_home_sp:
+                home_sp = {'name': gi_home_sp}
+            if not away_sp.get('name') and gi_away_sp:
+                away_sp = {'name': gi_away_sp}
 
             def _resolve_sp(team_en_key, sp_info):
                 """依先發投手姓名到 cpbl_pitchers[team_en_key] 找對應 stats"""
