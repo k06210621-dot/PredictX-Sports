@@ -74,7 +74,8 @@ elif CLOUD_LLM_PROVIDER == "nous":
     CLOUD_LLM_MODEL = os.environ.get("CLOUD_LLM_MODEL", "stepfun/step-3.7-flash:free")
     CLOUD_LLM_API_KEY = os.environ.get("NOUS_API_KEY", "")
 elif CLOUD_LLM_PROVIDER == "ollama":
-    CLOUD_LLM_URL = "https://api.ollama.com/api/chat"
+    # 🆕 [2026-09-01] Fix: ollama.com 沒有 api. 前綴子網域（Cloudflare 1010 封鎖），改用 OpenAI 兼容端點
+    CLOUD_LLM_URL = "https://ollama.com/v1/chat/completions"
     CLOUD_LLM_MODEL = os.environ.get("CLOUD_LLM_MODEL", "qwen3-coder-next")
     CLOUD_LLM_API_KEY = os.environ.get("OLLAMA_API_KEY", "")
 else:
