@@ -2691,6 +2691,12 @@ Park Factor: {pf:.2f} ({park_interp})
                 h_ps = cpbl_pitchers.get(home_team, [])
                 a_ps = cpbl_pitchers.get(away_team, [])
 
+                # 🆕 [2026-09-04] 過濾極小樣本投手（games < 5），避免 ERA 離群值誤導 LLM
+                # 實證：rebas 來源 games<5 的 18 位投手 ERA 離群（1.5~9.0，avg 4.82 vs 正常 3.69），
+                # 且「有投手數據」場次方向正確率 32.1% 反而低於「無投手數據」47.6%
+                h_ps = [p for p in h_ps if (p.get('games') or 0) >= 5]
+                a_ps = [p for p in a_ps if (p.get('games') or 0) >= 5]
+
                 def _fmt_pitcher_line(i, p):
                     era = p.get('era', 0) or 0
                     whip = p.get('whip')
