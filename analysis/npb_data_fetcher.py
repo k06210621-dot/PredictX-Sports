@@ -31,6 +31,22 @@ TEAM_NAME_MAP = {
     "日本ハム": "Hokkaido Nippon-Ham Fighters",
 }
 
+# npb.jp 官方「予告先発投手」頁面 logo alt 全稱 → 英文全名對照
+NPB_OFFICIAL_TEAM_MAP = {
+    "東京ヤクルトスワローズ": "Tokyo Yakult Swallows",
+    "中日ドラゴンズ": "Chunichi Dragons",
+    "広島東洋カープ": "Hiroshima Toyo Carp",
+    "読売ジャイアンツ": "Yomiuri Giants",
+    "東北楽天ゴールデンイーグルス": "Tohoku Rakuten Golden Eagles",
+    "北海道日本ハムファイターズ": "Hokkaido Nippon-Ham Fighters",
+    "オリックス・バファローズ": "ORIX Buffaloes",
+    "千葉ロッテマリーンズ": "Chiba Lotte Marines",
+    "福岡ソフトバンクホークス": "Fukuoka SoftBank Hawks",
+    "埼玉西武ライオンズ": "Saitama Seibu Lions",
+    "阪神タイガース": "Hanshin Tigers",
+    "横浜DeNAベイスターズ": "Yokohama DeNA BayStars",
+}
+
 # 運彩報馬仔隊名縮寫 → 英文全名對照
 LOTTONAVI_TEAM_MAP = {
     "中日": "Chunichi Dragons",
@@ -598,7 +614,7 @@ class NPBDataFetcher:
         return row['team_id'] if row else None
 
     def get_today_starters(self, match_date=None):
-        """從 lottonavi.com 爬取 NPB 當日先發投手名單
+        """從 npb.jp 官方「予告先発投手」頁面爬取 NPB 當日先發投手名單
         
         Args:
             match_date: "YYYYMMDD" 格式字串（預設為今天）
@@ -606,6 +622,13 @@ class NPBDataFetcher:
         if match_date is None:
             from datetime import date
             match_date = date.today().strftime('%Y%m%d')
+
+        # 🆕 第一來源：npb.jp 官方公告頁（比 lottonavi 更可靠，Railway 不擋）
+        official = self._get_starters_from_npb_official(match_date)
+        if official:
+            return official
+
+        # 第二來源：lottonavi.com（Railway IP 常被 403）
         url = f"https://www.lottonavi.com/matches/npb/{match_date}"
         try:
             resp = self.session.get(url, timeout=15)
@@ -668,6 +691,99 @@ class NPBDataFetcher:
                 except:
                     continue
         
+        return result
+
+    def _get_starters_from_npb_official(self, match_date):
+        """從 npb.jp 官方「予告先発投手」頁面爬取當日先發投手
+
+        URL: https://npb.jp/announcement/starter/
+        頁面結構：每個 <div class="unit cl_N">（央聯）或 <div class="unit pl_N">（洋聯）
+        代表一場賽事，內含：
+          - <div class="team_left">  = 主隊先發投手（姓　名，全形空格 U+3000）
+          - <div class="team_right"> = 客隊先發投手
+          - <img alt="東京ヤクルトスワローズ"> = 主隊 logo
+          - <img alt="中日ドラゴンズ"> = 客隊 logo
+          - （球場）18:00 = 球場與開賽時間
+
+        Args:
+            match_date: "YYYYMMDD" 格式字串
+        Returns:
+            dict: {f"{home_en}_vs_{away_en}": {"home_team", "away_team",
+                   "home_pitcher": {"name", ...}, "away_pitcher": {...}}}
+            失敗或無資料時回傳 None（讓呼叫端 fallback 到 lottonavi）
+        """
+        url = "https://npb.jp/announcement/starter/"
+        try:
+            resp = self.session.get(url, timeout=15)
+            if resp.status_code != 200:
+                print(f"  ⚠ [npb-official] HTTP {resp.status_code} for {url}", flush=True)
+                return None
+            if resp.encoding and resp.encoding.lower() in ('iso-8859-1', 'latin-1'):
+                resp.encoding = 'utf-8'
+        except Exception as e:
+            print(f"  ⚠ [npb-official] request error for {url}: {type(e).__name__}: {e}", flush=True)
+            return None
+
+        soup = BeautifulSoup(resp.text, 'lxml')
+
+        # 定位當日段：格式「9月4日の予告先発投手」
+        try:
+            y, m, d = int(match_date[:4]), int(match_date[4:6]), int(match_date[6:8])
+        except (ValueError, IndexError):
+            return None
+        target_text = f"{m}月{d}日の予告先発投手"
+        idx = resp.text.find(target_text)
+        if idx == -1:
+            print(f"  ⚠ [npb-official] 找不到「{target_text}」段（可能尚未公布）", flush=True)
+            return None
+
+        # 只解析當日段之後的 HTML（避免抓到其他日期）
+        chunk = resp.text[idx:]
+        day_soup = BeautifulSoup(chunk, 'lxml')
+
+        # 每場賽事 = <div class="unit cl_N"> 或 <div class="unit pl_N">
+        units = day_soup.find_all('div', class_=re.compile(r'unit\s+(cl|pl)_\d+'))
+        if not units:
+            print(f"  ⚠ [npb-official] 未找到任何 unit cl/pl 賽事區塊", flush=True)
+            return None
+
+        self.fetched_sources.append("npb.jp/announcement/starter/")
+        result = {}
+
+        for u in units:
+            left = u.find('div', class_='team_left')
+            right = u.find('div', class_='team_right')
+            logos = [img.get('alt', '') for img in u.find_all('img') if img.get('alt')]
+
+            # 主客隊：logo 順序 [主隊, 客隊]
+            home_en = None
+            away_en = None
+            for alt in logos:
+                en = NPB_OFFICIAL_TEAM_MAP.get(alt)
+                if en and home_en is None:
+                    home_en = en
+                elif en:
+                    away_en = en
+            if not home_en or not away_en:
+                continue
+
+            home_pitcher_name = left.get_text(strip=True) if left else ""
+            away_pitcher_name = right.get_text(strip=True) if right else ""
+            if not home_pitcher_name or not away_pitcher_name:
+                continue
+
+            result[f"{home_en}_vs_{away_en}"] = {
+                "home_team": home_en,
+                "away_team": away_en,
+                "home_pitcher": {"name": home_pitcher_name, "record": "", "era": ""},
+                "away_pitcher": {"name": away_pitcher_name, "record": "", "era": ""},
+            }
+
+        if not result:
+            print(f"  ⚠ [npb-official] 解析到 0 場有效賽事", flush=True)
+            return None
+
+        print(f"  ✅ [npb-official] 取得 {len(result)} 場先發投手", flush=True)
         return result
 
     def _extract_lottonavi_teams(self, raw_text):
