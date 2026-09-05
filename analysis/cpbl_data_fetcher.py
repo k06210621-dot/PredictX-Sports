@@ -664,8 +664,10 @@ class CPBLDataFetcher:
 
             print(f"  [CPBL SP fallback] PTT search for CPBL {search_md} 先發投手...", flush=True)
             # 搜尋 PTT Baseball 板
+            # 🆕 [2026-09-05] 寬鬆化：PTT wewe0403 的文章標題是「[情報] CPBL M/D 先發投手預告」（4字）
+            # 原用「先發投手」（3字）搜尋永遠 miss，改用「先發投手預告」命中
             import urllib.parse
-            query = urllib.parse.quote(f"CPBL {search_md} 先發投手")
+            query = urllib.parse.quote(f"CPBL {search_md} 先發投手預告")
             search_url = f"https://www.ptt.cc/bbs/Baseball/search?q={query}"
             search_resp = self.session.get(search_url, timeout=10)
             if search_resp.status_code != 200:
@@ -673,8 +675,10 @@ class CPBLDataFetcher:
                 return None
 
             # 提取第一個搜尋結果的文章連結
+            # 🆕 [2026-09-05] 寬鬆化：PTT 文章標題常見 [情報] CPBL 9/6 先發投手預告（4字）與 [情報] CPBL 9/6 先發投手（3字）
+            # 為避免跨年 2025 文章污染，搜尋網址會因日期字串不同而只列同年同月文章，但安全起見仍做年份驗證
             link_m = re.search(
-                r'<a href="(/bbs/Baseball/M\.\d+\.A\.\w+\.html)">\[情報\]\s*CPBL\s*\d+/\d+\s*先發投手',
+                r'<a href="(/bbs/Baseball/M\.\d+\.A\.\w+\.html)">\[情報\]\s*CPBL\s*\d+/\d+\s*先發投手(?:預告)?',
                 search_resp.text
             )
             if not link_m:
