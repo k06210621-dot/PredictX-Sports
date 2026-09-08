@@ -3195,7 +3195,9 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
         }
         for attempt in range(3):
             try:
-                response = requests.post(url, json=payload, headers=headers, timeout=120)
+                # 2026-09-08: 120→180s — glm-5.3-flash reasoning chain 常超過120s被掐斷，
+                # 導致 3 次重試全燒 timeout（重跑實測單場 233-300s）。180s 讓首次呼叫多數能完成。
+                response = requests.post(url, json=payload, headers=headers, timeout=180)
                 if response.status_code == 429:
                     import time as t; t.sleep(10 * (2 ** attempt))
                     continue
