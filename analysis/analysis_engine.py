@@ -166,17 +166,29 @@ def _extract_rate(text, side="home"):
             r"客隊(?:勝率|勝出機率|獲勝機率|勝算)[^\d]{0,40}?(\d+(?:\.\d+)?)\s*%",
             r"客隊[^\d]{0,40}?機率[^\d]{0,40}?(\d+(?:\.\d+)?)\s*%",
         ]
+    # 🆕 [2026-09-08 P0 修復] 個別匹配補「歷史/環境短語過濾」+ 取最後匹配。
+    #   根因（9/8 CPBL 20a62dd7 台鋼@樂天 實例）：summary 夾帶聯盟環境數據
+    #   「中職環境客隊略有利（近30天主隊勝率約41%）」，個別匹配抓到 41%（歷史值），
+    #   而結論句「模型推演主隊取勝機率約59%」在更後面；原邏輯取第一個匹配 → 0.41，
+    #   再經單邊補全（away=1-0.41=0.59）+ 方向檢測「信任 summary」→ 主客勝率整組反轉。
+    #   修法：① 匹配位置前 14 字元視窗含歷史/環境關鍵字 → 丟棄該匹配
+    #         ② 存活匹配按文字位置排序取最後一個（結論句必在文末；原取第一個會抓中段歷史數據）
+    history_kw = re.compile(r"近\d+天|近\d+場|主場|客場|戰績|勝場|敗場|環境")
     text_lower = text.lower()
-    all_matches = []
+    positioned = []
     for pat in specific_patterns:
-        found = re.findall(pat, text_lower)
-        if found:
-            print(f"  [pattern: {pat[:40]}...] matched: {found}")
-            all_matches.extend(found)
-    if all_matches:
+        for m in re.finditer(pat, text_lower):
+            window = text_lower[max(0, m.start() - 14):m.start()]
+            if history_kw.search(window):
+                print(f"  [歷史數據過濾] 丟棄 {m.group(1)}%（前文含歷史/環境短語「…{window}」）")
+                continue
+            print(f"  [pattern: {pat[:40]}...] matched: {m.group(1)} @pos {m.start()}")
+            positioned.append((m.start(), m.group(1)))
+    if positioned:
+        positioned.sort(key=lambda t: t[0])
         try:
-            val = float(all_matches[0]) / 100.0
-            print(f"  [FALLBACK MATCH] returning {val}")
+            val = float(positioned[-1][1]) / 100.0
+            print(f"  [FALLBACK MATCH] returning {val}（取最後匹配 / 共 {len(positioned)} 個）")
             return val
         except (ValueError, TypeError):
             pass
