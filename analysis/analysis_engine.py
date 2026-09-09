@@ -226,12 +226,34 @@ def _extract_score(text):
     if matches:
         try:
             # 🆕 [2026-08-17] 取**最後**一個（比分通常在 summary 末尾）
-            h, a = matches[-1]
-            # 但若該值是「戰績」格式（如 1-4、3-2），可能是誤抓
-            # 用啟發式：若 score 數字小於 15（合理棒球比分），則接受
-            h_int, a_int = int(h), int(a)
-            if 0 <= h_int <= 20 and 0 <= a_int <= 20:
-                return f"{h_int}-{a_int}"
+            # 🆕 [2026-09-09] 歷史語境過濾：從最後往前找，若 X-Y 前後文含歷史語境
+            # 關鍵字（大勝/交手/近一次/上次/橫掃/完封/吞敗/以...勝），判定為歷史比分
+            # 而非預測比分，跳過繼續往前找。實證：NPB 軟銀vs火腿 summary 含
+            # 「最近一次交手軟銀以 14-1 大勝」，LLM 推演 4-2 被覆寫成 14-1，
+            # 與 summary 自己說的「低比分投手戰」矛盾。
+            history_kw = re.compile(
+                r"(大勝|完封|橫掃|吞敗|交手|對戰|上次|近一次|前一次|去年|上季|熱身賽|以\s*\d+\s*[-－–]\s*\d+\s*(大勝|擊敗|險勝|不敵))"
+            )
+            accepted = None
+            for h, a in reversed(matches):
+                h_int, a_int = int(h), int(a)
+                if not (0 <= h_int <= 20 and 0 <= a_int <= 20):
+                    continue
+                # 找該匹配在原文的位置，檢查前後 24 字元語境
+                m_obj = None
+                for m_obj in re.finditer(rf"({h})\s*[-－–]\s*({a})", text):
+                    if m_obj.group(1) == h and m_obj.group(2) == a:
+                        break
+                ctx = ""
+                if m_obj:
+                    start = max(0, m_obj.start() - 24)
+                    end = min(len(text), m_obj.end() + 24)
+                    ctx = text[start:end]
+                if history_kw.search(ctx):
+                    continue  # 歷史比分，跳過
+                accepted = f"{h_int}-{a_int}"
+                break
+            return accepted
         except (ValueError, TypeError):
             pass
     return None
