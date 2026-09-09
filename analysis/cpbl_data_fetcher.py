@@ -662,30 +662,34 @@ class CPBLDataFetcher:
             else:
                 return None
 
-            print(f"  [CPBL SP fallback] PTT search for CPBL {search_md} 先發投手...", flush=True)
+            print(f"  [CPBL SP fallback] PTT search for CPBL {search_md}...", flush=True)
             # 搜尋 PTT Baseball 板
-            # 🆕 [2026-09-05] 寬鬆化：PTT wewe0403 的文章標題是「[情報] CPBL M/D 先發投手預告」（4字）
-            # 原用「先發投手」（3字）搜尋永遠 miss，改用「先發投手預告」命中
+            # 🆕 [2026-09-09 根因修復] e907277 用完整片語「CPBL M/D 先發投手預告」搜尋，
+            # PTT 全文搜尋只會命中「內文含該連續詞」的文章——結果只回 2025 跨年舊文 [分享]，
+            # 而 2026 的 [情報] 文章反而完全搜不到 → regex 只認 [情報] → return None。
+            # 修法：改回廣泛詞「CPBL M/D」，2026 [情報] 先發投手預告 排序第 1，regex 直接命中。
+            # （regex 已相容「先發投手」與「先發投手預告」兩種標題，見下方 link_m）
             import urllib.parse
-            query = urllib.parse.quote(f"CPBL {search_md} 先發投手預告")
+            query = urllib.parse.quote(f"CPBL {search_md}")
             search_url = f"https://www.ptt.cc/bbs/Baseball/search?q={query}"
             search_resp = self.session.get(search_url, timeout=10)
             if search_resp.status_code != 200:
                 print(f"  [CPBL SP fallback] PTT search HTTP {search_resp.status_code}", flush=True)
                 return None
 
-            # 提取第一個搜尋結果的文章連結
-            # 🆕 [2026-09-05] 寬鬆化：PTT 文章標題常見 [情報] CPBL 9/6 先發投手預告（4字）與 [情報] CPBL 9/6 先發投手（3字）
-            # 為避免跨年 2025 文章污染，搜尋網址會因日期字串不同而只列同年同月文章，但安全起見仍做年份驗證
-            link_m = re.search(
+            # 提取搜尋結果中所有候選文章（[情報] CPBL M/D 先發投手(預告)?）
+            # 🆕 [2026-09-09] 改為迭代候選：年份驗證失敗（跨年舊文）時繼續找下一篇，
+            # 而非直接 return None（修 Bug B：年份過濾後不迭代）。
+            candidates = re.findall(
                 r'<a href="(/bbs/Baseball/M\.\d+\.A\.\w+\.html)">\[情報\]\s*CPBL\s*\d+/\d+\s*先發投手(?:預告)?',
                 search_resp.text
             )
+            link_m = candidates[0] if candidates else None
             if not link_m:
                 print(f"  [CPBL SP fallback] No CPBL starter article found on PTT", flush=True)
                 return None
 
-            article_url = "https://www.ptt.cc" + link_m.group(1)
+            article_url = "https://www.ptt.cc" + link_m
             print(f"  [CPBL SP fallback] Found article: {article_url}", flush=True)
             article_resp = self.session.get(article_url, timeout=10)
             if article_resp.status_code != 200:
@@ -696,20 +700,37 @@ class CPBLDataFetcher:
             # PTT 搜尋結果會列出所有同名文章，若當年文章尚未發布，
             # 第一筆結果可能是去年的，會污染資料。
             # 解析 article meta 的時間戳，確保年份 = 當前年份
+            # 🆕 [2026-09-09] 年份驗證失敗時改為迭代下一個候選（Bug B 修復），
+            # 不再直接 return None。
             from datetime import datetime as _dt
             current_year = _dt.now().year
-            time_m = re.search(
-                r'<span class="article-meta-value">([A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+\d+:\d+:\d+\s+(\d{4}))</span>',
-                article_resp.text
-            )
-            if time_m:
+
+            def _article_year_ok(resp_text):
+                time_m = re.search(
+                    r'<span class="article-meta-value">([A-Za-z]{3}\s+[A-Za-z]{3}\s+\d+\s+\d+:\d+:\d+\s+(\d{4}))</span>',
+                    resp_text
+                )
+                if not time_m:
+                    # 若無法解析年份，保守起見放行（避免因 meta 格式變化而完全失效）
+                    print(f"  [CPBL SP fallback] Could not parse article year, proceeding cautiously", flush=True)
+                    return True
                 article_year = int(time_m.group(2))
                 if article_year != current_year:
-                    print(f"  [CPBL SP fallback] Article year {article_year} != {current_year}, ignoring stale data", flush=True)
+                    print(f"  [CPBL SP fallback] Article year {article_year} != {current_year}, trying next candidate...", flush=True)
+                    return False
+                return True
+
+            if not _article_year_ok(article_resp.text):
+                # 迭代剩餘候選（最多 5 篇），找到當年份文章為止
+                for next_link in candidates[1:6]:
+                    article_url = "https://www.ptt.cc" + next_link
+                    print(f"  [CPBL SP fallback] Trying next candidate: {article_url}", flush=True)
+                    article_resp = self.session.get(article_url, timeout=10)
+                    if article_resp.status_code == 200 and _article_year_ok(article_resp.text):
+                        break
+                else:
+                    print(f"  [CPBL SP fallback] No current-year article among {len(candidates)} candidates", flush=True)
                     return None
-            else:
-                # 若無法解析年份，保守起見放行（避免因 meta 格式變化而完全失效）
-                print(f"  [CPBL SP fallback] Could not parse article year, proceeding cautiously", flush=True)
 
             # 解析文章內文（同 get_today_starting_pitchers 結構）
             m = re.search(
