@@ -35,6 +35,12 @@ class _TokenBucket:
 _LLM_RATE = float(os.environ.get("LLM_RATE_PER_SEC", "0.4"))
 _llm_bucket = _TokenBucket(_LLM_RATE)
 
+# 2026-09-13 P2: 主 LLM 熔斷器——連續失敗達門檻後，冷卻期內直接走 fallback，
+# 避免主 LLM 持續故障時每場仍燒 3×180s（45 場批次最壞多燒 7 小時）
+_cb = {"fails": 0, "open_until": 0.0}
+_CB_FAIL_THRESHOLD = int(os.environ.get("CB_FAIL_THRESHOLD", "2"))
+_CB_COOLDOWN_SEC = int(os.environ.get("CB_COOLDOWN_SEC", "1800"))
+
 # --- 配置區 ---
 DB_CONFIG = {
     "dbname": "sports_db",
@@ -3202,17 +3208,32 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
             return self._call_local_ollama(prompt)
 
     def _call_cloud(self, prompt):
-        """調用雲端 LLM 含 retry，失敗時自動切換到備援 LLM"""
+        """調用雲端 LLM 含 retry，失敗時自動切換到備援 LLM（含熔斷器）"""
+        def _fallback():
+            if FALLBACK_LLM_API_KEY and FALLBACK_LLM_MODEL != CLOUD_LLM_MODEL:
+                print(f"  ⚠ Primary LLM ({CLOUD_LLM_MODEL}) failed, trying fallback ({FALLBACK_LLM_MODEL})...")
+                return self._try_llm(FALLBACK_LLM_URL, FALLBACK_LLM_MODEL, FALLBACK_LLM_API_KEY, prompt)
+            return None
+
+        # 2026-09-13 P2: 熔斷開啟期間直接走 fallback，不碰主 LLM
+        if _cb["open_until"] > time.monotonic():
+            remaining = int(_cb["open_until"] - time.monotonic())
+            print(f"  🔌 熔斷器開啟中（主 LLM 連續失敗 {_cb['fails']} 場，剩餘 {remaining}s），直接走 fallback")
+            return _fallback()
+
         # 先試主要 LLM（受 token bucket 限速，避免免費層並發限制）
         _llm_bucket.acquire()
         result = self._try_llm(CLOUD_LLM_URL, CLOUD_LLM_MODEL, CLOUD_LLM_API_KEY, prompt)
         if result:
+            _cb["fails"] = 0  # 成功即復位
             return result
-        # 主要 LLM 失敗，試備援（不同模型才切，避免同 URL 同 model 重試）
-        if FALLBACK_LLM_API_KEY and FALLBACK_LLM_MODEL != CLOUD_LLM_MODEL:
-            print(f"  ⚠ Primary LLM ({CLOUD_LLM_MODEL}) failed, trying fallback ({FALLBACK_LLM_MODEL})...")
-            return self._try_llm(FALLBACK_LLM_URL, FALLBACK_LLM_MODEL, FALLBACK_LLM_API_KEY, prompt)
-        return None
+        # 主要 LLM 失敗：累計連續失敗次數，達門檻即熔斷
+        _cb["fails"] += 1
+        if _cb["fails"] >= _CB_FAIL_THRESHOLD:
+            _cb["open_until"] = time.monotonic() + _CB_COOLDOWN_SEC
+            print(f"  🔌 熔斷器開啟: 主 LLM 連續失敗 {_cb['fails']} 場，{_CB_COOLDOWN_SEC}s 內直接走 fallback")
+        # 試備援（不同模型才切，避免同 URL 同 model 重試）
+        return _fallback()
 
     def _try_llm(self, url, model, api_key, prompt):
         """嘗試呼叫一個 LLM 端點"""
@@ -3231,14 +3252,21 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
             "Content-Type": "application/json",
         }
         for attempt in range(3):
+            tag = f"[{model}] attempt {attempt+1}/3"
             try:
                 # 2026-09-08: 120→180s — glm-5.3-flash reasoning chain 常超過120s被掐斷，
                 # 導致 3 次重試全燒 timeout（重跑實測單場 233-300s）。180s 讓首次呼叫多數能完成。
                 response = requests.post(url, json=payload, headers=headers, timeout=180)
                 if response.status_code == 429:
+                    print(f"  ⚠ {tag}: HTTP 429 限流，退避 {10 * (2 ** attempt)}s 後重試")
                     import time as t; t.sleep(10 * (2 ** attempt))
                     continue
-                response.raise_for_status()
+                if response.status_code >= 400:
+                    print(f"  ⚠ {tag}: HTTP {response.status_code}: {response.text[:120]}")
+                    if attempt < 2:
+                        import time as t; t.sleep(5 * (2 ** attempt))
+                        continue
+                    return None
                 data = response.json()
                 if "choices" in data:
                     c = data["choices"][0].get("message", {}).get("content", "").strip()
@@ -3247,9 +3275,37 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                 else:
                     c = ""
                 if not c:
+                    # 2026-09-13: 原本直接 return None 不重試——空回應常為暫時性，改為重試
+                    print(f"  ⚠ {tag}: 空回應 (HTTP {response.status_code}, usage={data.get('usage')})")
+                    if attempt < 2:
+                        import time as t; t.sleep(5 * (2 ** attempt))
+                        continue
                     return None
-                return self._parse_json_response(c)
+                result = self._parse_json_response(c)
+                if result is None:
+                    # 2026-09-13 P1: JSON 破損（截斷/fence 變體/thinking 混入）屬暫時性失敗，
+                    # 同 prompt 重試而非直接燒掉 fallback
+                    print(f"  ⚠ {tag}: JSON 解析失敗 (content {len(c)} 字元，head={c[:80]!r})")
+                    if attempt < 2:
+                        import time as t; t.sleep(5 * (2 ** attempt))
+                        continue
+                    return None
+                return result
+            except requests.exceptions.Timeout:
+                # 2026-09-13 P0: 原本 except 靜默吞錯，fallback 無法歸因（9/11 04:04 UTC 事件教訓）
+                print(f"  ⚠ {tag}: ReadTimeout 180s（reasoning 未在時限內完成）")
+                if attempt < 2:
+                    import time as t; t.sleep(5 * (2 ** attempt))
+                    continue
+                return None
+            except requests.exceptions.RequestException as e:
+                print(f"  ⚠ {tag}: {type(e).__name__}: {str(e)[:120]}")
+                if attempt < 2:
+                    import time as t; t.sleep(5 * (2 ** attempt))
+                    continue
+                return None
             except Exception as e:
+                print(f"  ⚠ {tag}: {type(e).__name__}: {str(e)[:120]}")
                 if attempt < 2:
                     import time as t; t.sleep(5 * (2 ** attempt))
                     continue
