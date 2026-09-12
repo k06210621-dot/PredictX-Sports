@@ -331,6 +331,7 @@ class CPBLDataFetcher:
                   AND pr.source = 'CPBL_PR_2026_rebas_batter'
                   AND t.english_name = %s
                   AND pr.woba IS NOT NULL
+                  AND pr.pa >= 50
                 ORDER BY pr.woba DESC NULLS LAST
                 LIMIT %s
             """, (team_en, top_n))
