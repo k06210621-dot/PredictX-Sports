@@ -1709,6 +1709,11 @@ class AnalysisEngine:
 
                     # 寫回 games 表，讓 API 端點 /api/games 回傳先發投手名稱
                     # 只有當 fetcher 真正拿到非 placeholder 時才更新，避免覆蓋手動維護的正確資料
+                    # 🆕 [2026-09-12 P1 防護] 只覆蓋「佔位值」——若 games 已有真實投手名
+                    #（手動匯入/ingest 補入），LLM 側抓到的名單不覆蓋既有值。
+                    # 實證 2026-08-09：新洋將不在 proxy rotation 名單 → h_name='TBD' 後
+                    # UPDATE 覆蓋手動值；placeholder 過濾已擋 TBD，此處再加「原值必須是
+                    # 佔位/空值才寫入」的 SQL 級防護，雙保險。
                     if real_h_name or real_a_name:
                         set_clauses = []
                         set_vals = []
@@ -1718,10 +1723,20 @@ class AnalysisEngine:
                         if real_a_name:
                             set_clauses.append('away_pitcher_name = %s')
                             set_vals.append(real_a_name)
+                        # 原值為佔位字串或空值時才允許覆寫（SQL 級防護）
+                        placeholder_guard = []
+                        if real_h_name:
+                            placeholder_guard.append(
+                                "(home_pitcher_name IS NULL OR home_pitcher_name IN ('', 'TBD', 'tbd', '尚未公布', '未定', '-', '--', '---'))"
+                            )
+                        if real_a_name:
+                            placeholder_guard.append(
+                                "(away_pitcher_name IS NULL OR away_pitcher_name IN ('', 'TBD', 'tbd', '尚未公布', '未定', '-', '--', '---'))"
+                            )
                         set_vals.append(game_id)
                         try:
                             self.cur.execute(
-                                f"UPDATE predictx.games SET {', '.join(set_clauses)} WHERE game_id = %s",
+                                f"UPDATE predictx.games SET {', '.join(set_clauses)} WHERE game_id = %s AND ({' OR '.join(placeholder_guard)})",
                                 tuple(set_vals)
                             )
                             self.conn.commit()
