@@ -664,29 +664,38 @@ class CPBLDataFetcher:
 
             print(f"  [CPBL SP fallback] PTT search for CPBL {search_md}...", flush=True)
             # 搜尋 PTT Baseball 板
-            # 🆕 [2026-09-09 根因修復] e907277 用完整片語「CPBL M/D 先發投手預告」搜尋，
-            # PTT 全文搜尋只會命中「內文含該連續詞」的文章——結果只回 2025 跨年舊文 [分享]，
-            # 而 2026 的 [情報] 文章反而完全搜不到 → regex 只認 [情報] → return None。
-            # 修法：改回廣泛詞「CPBL M/D」，2026 [情報] 先發投手預告 排序第 1，regex 直接命中。
-            # （regex 已相容「先發投手」與「先發投手預告」兩種標題，見下方 link_m）
+            # 🆕 [2026-09-12 根因修復 v2] PTT 搜尋排序不穩定，單一 query 無法涵蓋兩種情況：
+            #   9/9 實證：q="CPBL 9/9"（廣泛）→ 2026 [情報] 排第1 命中；
+            #            q="CPBL 9/9 先發投手預告"（長詞）→ 只回 2025 跨年舊文
+            #   9/12 實證：q="CPBL 9/12"（廣泛）→ 2026 [情報] 完全缺席（只回球員異動）；
+            #            q="CPBL 9/12 先發投手預告"（長詞）→ 2026 [情報] 排第1 命中
+            # 修法：多 query 依序嘗試（長詞優先），每個 query 取全部候選做年份驗證迭代，
+            #   第一個當年份文章勝出。年份無法解析時保守放行。
             import urllib.parse
-            query = urllib.parse.quote(f"CPBL {search_md}")
-            search_url = f"https://www.ptt.cc/bbs/Baseball/search?q={query}"
-            search_resp = self.session.get(search_url, timeout=10)
-            if search_resp.status_code != 200:
-                print(f"  [CPBL SP fallback] PTT search HTTP {search_resp.status_code}", flush=True)
-                return None
-
-            # 提取搜尋結果中所有候選文章（[情報] CPBL M/D 先發投手(預告)?）
-            # 🆕 [2026-09-09] 改為迭代候選：年份驗證失敗（跨年舊文）時繼續找下一篇，
-            # 而非直接 return None（修 Bug B：年份過濾後不迭代）。
-            candidates = re.findall(
-                r'<a href="(/bbs/Baseball/M\.\d+\.A\.\w+\.html)">\[情報\]\s*CPBL\s*\d+/\d+\s*先發投手(?:預告)?',
-                search_resp.text
-            )
+            query_list = [f"CPBL {search_md} 先發投手", f"CPBL {search_md}"]
+            candidates = []
+            search_resp_text = None
+            for q in query_list:
+                try:
+                    search_url = f"https://www.ptt.cc/bbs/Baseball/search?q={urllib.parse.quote(q)}"
+                    search_resp = self.session.get(search_url, timeout=10)
+                    if search_resp.status_code != 200:
+                        print(f"  [CPBL SP fallback] PTT search HTTP {search_resp.status_code} for q={q!r}", flush=True)
+                        continue
+                    cands = re.findall(
+                        r'<a href="(/bbs/Baseball/M\.\d+\.A\.\w+\.html)">\[情報\]\s*CPBL\s*\d+/\d+\s*先發投手(?:預告)?',
+                        search_resp.text
+                    )
+                    if cands:
+                        candidates = cands
+                        search_resp_text = search_resp.text
+                        print(f"  [CPBL SP fallback] q={q!r} → {len(cands)} candidates", flush=True)
+                        break
+                except Exception as e:
+                    print(f"  [CPBL SP fallback] PTT search error for q={q!r}: {e}", flush=True)
             link_m = candidates[0] if candidates else None
             if not link_m:
-                print(f"  [CPBL SP fallback] No CPBL starter article found on PTT", flush=True)
+                print(f"  [CPBL SP fallback] No CPBL starter article found on PTT (tried {len(query_list)} queries)", flush=True)
                 return None
 
             article_url = "https://www.ptt.cc" + link_m
