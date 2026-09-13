@@ -447,7 +447,7 @@ class AnalysisEngine:
 
         return {'values': values}
 
-    def _reconcile_predicted_score(self, predicted_score, home_prob, away_prob, league="", blowout_bonus=0):
+    def _reconcile_predicted_score(self, predicted_score, home_prob, away_prob, league="", blowout_bonus=0, league_distribution=None):
         """
         校正 predicted_score，確保與勝率一致。
 
@@ -494,60 +494,82 @@ class AnalysisEngine:
             original_score = (mid, mid)
         h_score, a_score = original_score
 
-        # 🆕 [2026-08-31] 聯盟基準分差表（基於 2026-08-20~08-30 實測）
+        # 🆕 [2026-09-13] 聯盟基準分差表（fallback 用，基於 2026-09-12 近30天 56 場實測）
         # 每個聯盟的「常見分差」＝中位數，長尾用抽樣模擬
-        # 資料來源：predictx-score-gap-analysis 統計
+        # 資料來源：近 30 天實際結算比分統計（cpbl_score_distribution_audit）
         league_gap_profile = {
             # league: (median_gap, p25, p75, blowout_prob, blowout_gap_range)
             #   median_gap: 中位數分差
             #   p25/p75: 四分位數
             #   blowout_prob: 4+ 分大比分出現機率
             #   blowout_gap_range: 大比分時的分差範圍 (min, max)
-            "MLB":  (4, 1, 5, 0.37, (4, 7)),
-            "NPB":  (2, 1, 3, 0.15, (4, 5)),
-            "CPBL": (2, 1, 3, 0.16, (4, 6)),
+            "MLB":  (3, 1, 6, 0.36, (4, 8)),
+            "NPB":  (3, 1, 5, 0.23, (4, 6)),
+            "CPBL": (3, 1, 5, 0.36, (4, 8)),
         }
-        profile = league_gap_profile.get(league_upper, (2, 1, 3, 0.15, (4, 5)))
+        profile = league_gap_profile.get(league_upper, (3, 1, 5, 0.23, (4, 6)))
         median_gap, p25, p75, blowout_prob, blowout_range = profile
 
-        # 🆕 [2026-08-31] 目標分差 = 聯盟基準（抽樣），而非勝率驅動
-        # 1. 基礎分差：以中位數為基準（MLB=3, NPB/CPBL=2）
-        # 2. 分差分佈抽樣：以機率決定落在 P25 / 中位數 / P75 / 大比分
-        #    - 模擬「長尾」：blowout_prob 機率爆到 4-6 分
-        #    - 整體分差分佈接近真實（中位數 + 長尾），而非全被壓在低分
-        # 3. ✅ deterministic：用 game_id (或比分) hash 作為 seed，
-        #    讓同一場比賽每次分析都產生相同分差（可重現），但不同場次之間
-        #    自然呈現分布（避免純 random 導致同一場比分每次跳動）。
+        # 🆕 [2026-09-13 P0 v2] 資料驅動分差抽樣（重放驗證後重寫）
+        # v1 教訓（離線重放 56 場實證）：「LLM 分差在 P25~P75 內直接採用」失敗（σ 比 0.29），
+        # 因為 LLM 自身分差分布（54% 1分差）本身偏離實際（27%），尊重它等於保留偏差；
+        # 且 8/31 分布 prompt 上線前後 LLM 行為不變（50%→54%），prompt 校不動，必須 Python 強制。
+        # v2 設計：分差一律由「近 60 天實際結算分布」抽樣（deterministic seed 可重現），
+        #          保留 LLM 比分的「總分水位」作為 anchor，只改變分差。
+        #          無實時分布時用更新後 fallback 表。
+        llm_gap = abs(h_score - a_score)
+        dist = league_distribution or {}
+        has_real_dist = bool(dist) and not dist.get('is_fallback', True) and dist.get('sample_size', 0) >= 20
+
+        # deterministic seed（同一場可重現，不同場自然分布）
         seed_src = str(predicted_score) + str(home_prob) + str(away_prob) + league_upper
         seed = 0
         for ch in seed_src:
             seed = (seed * 31 + ord(ch)) & 0xFFFFFFFF
         rng = random.Random(seed)
         r = rng.random()
-        if r < 0.25:
-            base_gap = p25
-        elif r < 0.50:
-            base_gap = int((p25 + median_gap) / 2)
-        elif r < 0.75:
-            base_gap = median_gap
-        elif r < (0.75 + blowout_prob * 0.5):
-            # 中度大比分（介於中位數和 blowout 之間）
-            base_gap = int((median_gap + blowout_range[0]) / 2)
+
+        if has_real_dist:
+            d1 = dist.get('diff_1_rate', 0.25)
+            d2 = dist.get('diff_2_rate', 0.20)
+            d3 = dist.get('diff_3_rate', 0.10)
+            d4 = max(0.0, dist.get('diff_4plus_rate', 0.30))
+            # 累積分布：1 / 2 / 3 / 4-5 / 6-7 / 8+（4+ 細分 5:3:2 模擬尾端）
+            cum1, cum2, cum3 = d1, d1 + d2, d1 + d2 + d3
+            cum4 = cum3 + d4 * 0.5
+            cum6 = cum4 + d4 * 0.3
+            if r < cum1:
+                target_gap = 1
+            elif r < cum2:
+                target_gap = 2
+            elif r < cum3:
+                target_gap = 3
+            elif r < cum4:
+                target_gap = rng.randint(4, 5)
+            elif r < cum6:
+                target_gap = rng.randint(6, 7)
+            else:
+                target_gap = rng.randint(8, min(hi, 13))
+            src = "實時分布"
         else:
-            # 大比分（blowout）
-            base_gap = rng.randint(blowout_range[0], blowout_range[1])
+            # 無實時分布：fallback 表（2026-09-13 更新為近 30 天實測，切點修正不再 50% 壓 1 分差）
+            if r < 0.20:
+                target_gap = p25
+            elif r < 0.45:
+                target_gap = median_gap
+            elif r < (0.45 + blowout_prob * 0.5):
+                target_gap = int((median_gap + blowout_range[0]) / 2)
+            else:
+                target_gap = rng.randint(blowout_range[0], blowout_range[1])
+            src = "fallback 表"
 
-        # 3. 勝率差只做「微調」（權重降低，不再主導）
-        #    - 極端強弱（prob_diff > 0.3）→ +1
-        #    - 五五波（prob_diff < 0.05）→ 維持基準（不強制拉大，讓棒球的隨機性自然呈現）
-        target_gap = base_gap
+        # 勝率差微調（極端強弱 +1）+ 打爆係數
         if prob_diff > 0.3:
-            target_gap = min(target_gap + 1, blowout_range[1])
-
-        # 4. 打爆係數：投手/打線極端時額外拉大
+            target_gap += 1
         if blowout_bonus > 0:
             target_gap = max(target_gap, 1 + blowout_bonus)
-            target_gap = min(target_gap, blowout_range[1] + 1)
+        target_gap = min(target_gap, hi)
+        print(f"  🎲 分差抽樣 {target_gap}（來源={src}，LLM 原值 {llm_gap}）")
 
         # 修正矛盾（方向必須正確）
         is_tie = (h_score == a_score)
@@ -782,6 +804,30 @@ class AnalysisEngine:
         h = max(0, h + a_adj)
         a = max(0, a + h_adj)
         score = f"{h}-{a}"
+
+        # 🆕 [2026-09-13 P1] 總分護欄：投手調整後總分不得低於聯盟單場總分均值 -1σ
+        # 根因：強投場次（如黃子鵬級）一律 -1/-2，會產生 2-0、1-0 這類脫離現實的比分
+        # （CPBL 實際單場總分均值 7.38、σ 3.49 → 護欄下限 3.88）
+        dist = features.get('league_distribution') or {}
+        total_mean = dist.get('total_score_mean')
+        total_std = dist.get('total_score_std')
+        if total_mean and total_std:
+            floor = max(2.0, total_mean - total_std)  # 至少 2 分
+            if (h + a) < floor:
+                deficit = floor - (h + a)
+                # 補到 favorite（勝率高的隊伍），保持方向
+                if home_prob >= away_prob:
+                    h = min(h + deficit, 12)
+                else:
+                    a = min(a + deficit, 12)
+                # 防呆：若補分造成平手，favorite 再 +1
+                if h == a:
+                    if home_prob >= away_prob:
+                        h += 1
+                    else:
+                        a += 1
+                score = f"{h}-{a}"
+                print(f"  ⚖ 總分護欄: 投手調整後總分 {int(m.group(1)) + int(m.group(2))} < {floor:.1f}（聯盟均值-1σ），補 favorite 至 {score}")
 
         # 🆕 [2026-08-27] 棒球無平手：若投手調整後變平手，強制 favorite 勝 1 分
         if h == a and predicted_score != score:
@@ -4178,7 +4224,8 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                     home_prob=home_prob,
                     away_prob=away_prob,
                     league=features.get('league', ''),
-                    blowout_bonus=_bonus
+                    blowout_bonus=_bonus,
+                    league_distribution=features.get('league_distribution')
                 )
 
                 # 🆕 [2026-08-22] 投手 stats ±1 微調（ERA/K/BB vs 聯盟基準）
@@ -4190,7 +4237,12 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                 # summary 是 AI 最終結論，無論中間 reconcile/pitcher 怎麼調整，
                 # 最終 predicted_score 必須與 summary 抽取的比分一致，
                 # 確保 iOS App 顯示的「深度分析摘要比分」與「模型推演比分」相同。
-                # 若 summary 有明確比分但目前結果不一致，調整為 summary 的版本。
+                # 🆕 [2026-09-13 P0 v2] 反轉優先級：reconcile（分布校準）是權威，summary 跟隨。
+                # 根因（重放驗證實證）：LLM summary 比分 54% 為 1 分差（實際 27%），
+                # 若 summary 可覆寫 reconcile 結果，分布校準永遠被拉回保守值
+                # （log 實證「模型 6-2 → summary 3-2」正是此機制）。
+                # 新規則：summary 比分與 reconcile 結果不同時，**改寫 summary 文字中的比分**
+                # 使兩者一致（保留方向防護：summary 比分方向與勝率矛盾時仍丟棄 summary 值）。
                 if summary_predicted_score:
                     import re as _re
                     cur_m = _re.search(r'(\d+)\s*[-]\s*(\d+)', str(result.get("predicted_score") or ""))
@@ -4199,16 +4251,24 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                         cur_h, cur_a = int(cur_m.group(1)), int(cur_m.group(2))
                         sum_h, sum_a = int(sum_m.group(1)), int(sum_m.group(2))
                         if (cur_h, cur_a) != (sum_h, sum_a):
-                            # 🆕 [2026-08-25] 方向防護：summary 抽出的比分方向必須與勝率一致才覆寫。
-                            # 否則 summary 內含「主場3勝0敗」等戰績字樣被 _extract_score 誤抓成比分時，
-                            # 會把 reconcile 後方向正確的比分（如 2-4）覆寫成反向比分（如 3-0）。
+                            # 方向防護：summary 比分方向與勝率矛盾時，不採用也不改寫（避免誤抓戰績字樣）
                             home_fav = home_prob > away_prob
                             sum_direction_ok = (home_fav and sum_h > sum_a) or ((not home_fav) and sum_a > sum_h)
-                            if sum_direction_ok:
-                                print(f"  🔄 summary 一致性: 模型 {cur_h}-{cur_a} → summary {sum_h}-{sum_a}")
-                                result["predicted_score"] = summary_predicted_score
-                            else:
+                            if not sum_direction_ok:
                                 print(f"  ⛔ summary 比分方向與勝率矛盾，保留模型比分 {cur_h}-{cur_a}（summary 誤抓 {sum_h}-{sum_a}）")
+                            else:
+                                # summary 比分方向正確但與校準結果不同 → 把 summary 文字中的該比分改寫為校準值
+                                summary_text = result.get("summary") or ""
+                                # 只替換與 summary_predicted_score 相同的「X-Y」出現處（避免誤傷其他數字）
+                                old_pair = f"{sum_h}-{sum_a}"
+                                new_pair = f"{cur_h}-{cur_a}"
+                                if old_pair in summary_text:
+                                    summary_text = summary_text.replace(old_pair, new_pair)
+                                    result["summary"] = summary_text
+                                    print(f"  🔄 summary 比分同步: {old_pair} → {new_pair}（分布校準權威，summary 跟隨）")
+                                else:
+                                    # summary 文字中找不到該精確格式（可能是全形冒號等），僅記錄不動
+                                    print(f"  ℹ️ summary 比分 {old_pair} 與校準 {new_pair} 不同，但 summary 無精確匹配可同步")
 
                 # 🆕 [Recipe 8] radar_chart 補齊邏輯（修雷達圖消失 bug）
                 # 修正: LLM 常回傳空陣列的 radar_chart ({"categories": [], ...})
@@ -4525,7 +4585,7 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
             # 統一用 _reconcile_predicted_score 確保 favorite 勝 1 分以上。
             "predicted_score": self._pitcher_score_adjustment(
                 features,
-                self._reconcile_predicted_score(f"{home_predicted}-{away_predicted}", home_prob, 1 - home_prob, features.get('league', '')),
+                self._reconcile_predicted_score(f"{home_predicted}-{away_predicted}", home_prob, 1 - home_prob, features.get('league', ''), league_distribution=features.get('league_distribution')),
                 home_prob, 1 - home_prob
             ),
             "radar_chart": {
