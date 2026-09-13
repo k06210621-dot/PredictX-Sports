@@ -772,7 +772,7 @@ class AnalysisEngine:
 
         def _fmt_adj(v):
             return ('+' if v > 0 else '') + str(v) if v != 0 else '±0'
-        print(f"  ⚾ [CPBL 投手調整] {h_name}→對手 {a_name} 失分 {_fmt_adj(a_adj)}; {a_name}→對手 {h_name} 失分 {_fmt_adj(h_adj)}")
+        print(f"  ⚾ [{league} 投手調整] {h_name}→對手 {a_name} 失分 {_fmt_adj(a_adj)}; {a_name}→對手 {h_name} 失分 {_fmt_adj(h_adj)}")
 
         m = re.search(r'(\d+)\s*[-－–]\s*(\d+)', str(predicted_score))
         if not m:
