@@ -3195,6 +3195,14 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
 
 請在輸出前最後自我檢查這五條。如果任何一條不符，**修正後再輸出 JSON**。**禁止輸出結構欄位與文字結論矛盾的結果**。
 
+🆕 [2026-09-13 P0] **自我檢查清單（必讀，輸出前逐項勾選）**
+□ home_win_probability > 0.5 ⇔ summary 與 reasoning.step4_probability_calc 結尾含「主隊勝/主隊佔優/主隊小勝/主隊看好/主隊略佔」其中之一
+□ home_win_probability ≤ 0.5 ⇔ summary 與 reasoning.step4_probability_calc 結尾含「客隊勝/客隊佔優/客隊小勝/客隊看好/客隊略佔」其中之一
+□ predicted_score 中的 X-Y，若 X > Y 則 home_win_probability 必須 > 0.5；若 X < Y 則 home_win_probability 必須 ≤ 0.5；若 X = Y 則 home_win_probability 必須 = 0.5
+□ summary 中出現的「主隊/客隊勝率 N%」的 N，必須等於 home_win_probability 或 away_win_probability 四捨五入到整數後的百分比
+□ reasoning.step6_score_rationale 結尾若出現「投手調整 ±1/±2」則必須與 predicted_score 的調整方向一致
+**任何一項不符，必須修正後再輸出 JSON。禁止輸出矛盾結果。**
+
 請只輸出這個 JSON object，不要有任何其他文字。
 '''
         return prompt
@@ -3311,7 +3319,83 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                     continue
                 return None
         return None
-    
+
+    def _enforce_consistency(self, result: dict) -> dict:
+        """強制 home_win_probability、predicted_score、summary 三者方向一致。
+        以 summary/reasoning 為準（prompt 要求先寫文字再寫數字），
+        若 JSON 與文字方向不符，則以文字方向修正 JSON。
+        """
+        if not isinstance(result, dict):
+            return result
+
+        # 取得欄位
+        hw = result.get('home_win_probability')
+        aw = result.get('away_win_probability')
+        pred = result.get('predicted_score', '')
+        summ = result.get('summary', '')
+
+        # 若缺失關鍵欄位，直接返回
+        if hw is None or aw is None:
+            return result
+
+        # 1. 依 summary 中的勝率描述修正 home/away_win_probability
+        # 找出 summary 中是否有「主隊勝率 N%」或「客隊勝率 N%」
+        import re
+        m_home = re.search(r'主隊勝率\s*(\d{1,3})', summ)
+        m_away = re.search(r'客隊勝率\s*(\d{1,3})', summ)
+        if m_home:
+            target = int(m_home.group(1)) / 100.0
+            # 只有當前 home_win_probability 與目標相差 > 0.05 時才修正（避免因四捨五入造成噪音）
+            if abs(hw - target) > 0.05:
+                result['home_win_probability'] = target
+                result['away_win_probability'] = 1.0 - target
+                print(f"  🔧 一致性修正: 依 summary 主隊勝率 {target*100:.0f}% → home_win_probability={target:.3f}")
+        elif m_away:
+            target = int(m_away.group(1)) / 100.0
+            if abs(aw - target) > 0.05:
+                result['away_win_probability'] = target
+                result['home_win_probability'] = 1.0 - target
+                print(f"  🔧 一致性修正: 依 summary 客隊勝率 {target*100:.0f}% → away_win_probability={target:.3f}")
+
+        # 2. 依 predicted_score 的方向修正（若比分明顯勝負分明）
+        # 格式 X-Y 或 X：Y（中文全形冒號）或 X‑Y（敲擊線）
+        m = re.search(r'(\d+)\s*[-－–:]\s*(\d+)', pred)
+        if m:
+            try:
+                h = int(m.group(1))
+                a = int(m.group(2))
+                if h > a:
+                    # 主隊應勝
+                    if hw < 0.5:
+                        # 反過來，設定主隊勝率為 0.55
+                        result['home_win_probability'] = 0.55
+                        result['away_win_probability'] = 0.45
+                        print(f"  🔧 一致性修正: 依 predicted_score {h}-{a} 主隊勝 → home_win_probability=0.55")
+                elif a > h:
+                    # 客隊應勝
+                    if hw > 0.5:
+                        result['home_win_probability'] = 0.45
+                        result['away_win_probability'] = 0.55
+                        print(f"  🔧 一致性修正: 依 predicted_score {h}-{a} 客隊勝 → home_win_probability=0.45")
+                # 平手則不做調整（保持 0.5）
+            except ValueError:
+                pass
+
+        # 3. 確保兩個機率相加為 1（浮點誤差容忍）
+        total = result.get('home_win_probability', 0.0) + result.get('away_win_probability', 0.0)
+        if abs(total - 1.0) > 0.01:
+            # 重新正規化
+            s = result.get('home_win_probability', 0.0) + result.get('away_win_probability', 0.0)
+            if s > 0:
+                result['home_win_probability'] = result.get('home_win_probability', 0.0) / s
+                result['away_win_probability'] = result.get('away_win_probability', 0.0) / s
+            else:
+                result['home_win_probability'] = 0.5
+                result['away_win_probability'] = 0.5
+            print(f"  🔧 一致性修正: 重新正規化機率和 → hw={result['home_win_probability']:.3f}, aw={result['away_win_probability']:.3f}")
+
+        return result
+
     def _parse_json_response(self, text):
         """解析 AI 回傳的 JSON（包含嵌套結構與中文鍵名處理）"""
         # 🆕 2026-08-07: 去除 ```json / ``` fence（glm-5.2 偶爾輸出 markdown code block）
@@ -3417,6 +3501,9 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                 result['key_factors'] = [result['summary'][:20]] if result.get('summary') else []
             if 'radar_chart' not in result or not isinstance(result.get('radar_chart'), dict):
                 result['radar_chart'] = {"categories": [], "home_team": [], "away_team": []}
+
+        # 🆕 [2026-09-13 P1] 一致性強制：讓結構欄位與文字摘錄方向一致
+        result = self._enforce_consistency(result)
 
         return result
 
