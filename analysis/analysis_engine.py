@@ -3266,7 +3266,8 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
         def _fallback():
             if FALLBACK_LLM_API_KEY and FALLBACK_LLM_MODEL != CLOUD_LLM_MODEL:
                 print(f"  ⚠ Primary LLM ({CLOUD_LLM_MODEL}) failed, trying fallback ({FALLBACK_LLM_MODEL})...")
-                return self._try_llm(FALLBACK_LLM_URL, FALLBACK_LLM_MODEL, FALLBACK_LLM_API_KEY, prompt)
+                # fallback 用較短 timeout：備援寧可快失敗走 computed fallback，也不白燒 3×240s
+                return self._try_llm(FALLBACK_LLM_URL, FALLBACK_LLM_MODEL, FALLBACK_LLM_API_KEY, prompt, timeout=150)
             return None
 
         # 2026-09-13 P2: 熔斷開啟期間直接走 fallback，不碰主 LLM
@@ -3289,12 +3290,12 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
         # 試備援（不同模型才切，避免同 URL 同 model 重試）
         return _fallback()
 
-    def _try_llm(self, url, model, api_key, prompt):
+    def _try_llm(self, url, model, api_key, prompt, timeout=240):
         """嘗試呼叫一個 LLM 端點"""
         payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": "你是一位頂尖的運動賽事分析師，擁有 20 年球評經驗，為 ESPN/NHK/Sportify 等知名媒體擔任過賽事評論員。你的風格是深入淺出、引用具體數據、語氣專業且有熱情，分析如同電視轉播的賽前分析節目。請同時用繁體中文和英文撰寫分析摘要與關鍵因子，兩種語言的內容應涵蓋相同重點但各自獨立完整。請根據提供的數據進行深度分析，並嚴格按照要求的 JSON 格式輸出。只輸出 JSON，不要有任何其他文字。"},
+                {"role": "system", "content": "你是一位頂尖的運動賽事分析師，擁有 20 年球評經驗，為 ESPN/NHK/Sportify 等知名媒體擔任過賽事評論員。你的風格是深入淺出、引用具體數據、語氣專業且有熱情，分析如同電視轉播的賽前分析節目。請同時用繁體中文和英文撰寫分析摘要與關鍵因子，兩種語言的內容應涵蓋相同重點但各自獨立完整。請根據提供的數據進行深度分析，並嚴格按照要求的 JSON 格式輸出。只輸出 JSON，不要有任何其他文字。\n\n【重要】請保持思考簡潔、直接，不要輸出冗長的逐步推理；你的最終回答必須是完整、可解析的 JSON 物件，務必一次寫完所有欄位（reasoning、home_win_probability、away_win_probability、confidence、key_factors、summary、predicted_score、radar_chart），不得中途截斷。"},
                 {"role": "user", "content": prompt}
             ],
             "temperature": 0.5,
@@ -3308,9 +3309,8 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
         for attempt in range(3):
             tag = f"[{model}] attempt {attempt+1}/3"
             try:
-                # 2026-09-08: 120→180s — glm-5.3-flash reasoning chain 常超過120s被掐斷，
-                # 導致 3 次重試全燒 timeout（重跑實測單場 233-300s）。180s 讓首次呼叫多數能完成。
-                response = requests.post(url, json=payload, headers=headers, timeout=180)
+                # 2026-09-14: timeout 改為可配置（主 LLM 240s 容納 reasoning；fallback 用較短避免白燒）
+                response = requests.post(url, json=payload, headers=headers, timeout=timeout)
                 if response.status_code == 429:
                     print(f"  ⚠ {tag}: HTTP 429 限流，退避 {10 * (2 ** attempt)}s 後重試")
                     import time as t; t.sleep(10 * (2 ** attempt))
@@ -3347,7 +3347,7 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                 return result
             except requests.exceptions.Timeout:
                 # 2026-09-13 P0: 原本 except 靜默吞錯，fallback 無法歸因（9/11 04:04 UTC 事件教訓）
-                print(f"  ⚠ {tag}: ReadTimeout 180s（reasoning 未在時限內完成）")
+                print(f"  ⚠ {tag}: ReadTimeout {timeout}s（reasoning 未在時限內完成）")
                 if attempt < 2:
                     import time as t; t.sleep(5 * (2 ** attempt))
                     continue
