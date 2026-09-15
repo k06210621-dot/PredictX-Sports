@@ -4096,6 +4096,13 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                 # 避免 min() 永遠向下拉，改用加權平均
                 # LLM 經驗權重 0.3 + 統計校準權重 0.7
                 final_conf = max(3.0, round(normalized_conf * 0.3 + calibrated_conf * 0.7, 1))
+
+                # 🆕 [2026-09-15] prob_diff ≥ 0.30 懸殊場信心加減分
+                # 實測：≥30% 勝率差場次命中率 74.4%（vs 整體 ~58%），預測力明確。
+                # 不更動推播門檻，僅在信心層反映 prob_diff 的預測力，讓高信心場更突出。
+                if prob_diff >= 0.30:
+                    final_conf = min(10.0, final_conf + 0.5)
+
                 result["confidence"] = round(final_conf, 1)
 
                 if abs(normalized_conf - calibrated_conf) > 0.5:
