@@ -670,10 +670,19 @@ class CPBLDataFetcher:
             #            q="CPBL 9/9 先發投手預告"（長詞）→ 只回 2025 跨年舊文
             #   9/12 實證：q="CPBL 9/12"（廣泛）→ 2026 [情報] 完全缺席（只回球員異動）；
             #            q="CPBL 9/12 先發投手預告"（長詞）→ 2026 [情報] 排第1 命中
-            # 修法：多 query 依序嘗試（長詞優先），每個 query 取全部候選做年份驗證迭代，
-            #   第一個當年份文章勝出。年份無法解析時保守放行。
+            # 🆕 [2026-09-15 根因修復 v3] 「CPBL 英文前綴」不穩定：
+            #   9/15 實證：q="CPBL 9/15 先發投手" → 0 篇（PTT 對含英文 token 的 query 處理不穩）
+            #            q="9/15 先發投手"（無 CPBL 前綴）→ 3 篇命中目標
+            #            q="9/15 先發投手預告" → 1 篇精準命中
+            # 修法：query 依序嘗試，加入「無 CPBL 前綴」變體；regex 已要求 [情報] CPBL
+            #       M/D 先發投手，故無前綴 query 返回的 NPB 文章會被過濾掉（安全）。
             import urllib.parse
-            query_list = [f"CPBL {search_md} 先發投手", f"CPBL {search_md}"]
+            query_list = [
+                f"CPBL {search_md} 先發投手",   # 原第一順位（部分日期有效）
+                f"{search_md} 先發投手預告",     # 🆕 精準詞（無前綴）
+                f"{search_md} 先發投手",         # 🆕 無前綴（9/15 實測命中）
+                f"CPBL {search_md}",             # 原第二順位（廣泛）
+            ]
             candidates = []
             search_resp_text = None
             for q in query_list:
