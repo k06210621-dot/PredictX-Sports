@@ -4066,18 +4066,25 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                 # 理論：prob_diff 越大，理應給越高信心；但 LLM 系統性偏高，需強制校準
                 prob_diff = abs(home_prob - away_prob)
 
-                CALIBRATED_CONFIDENCE_MAP = {
-                    # prob_diff (四捨五入到 0.05) -> calibrated confidence
-                    # 🆕 [2026-08-23] 放寬映射：對齊 prompt 標準
-                    # prob_diff 0.10-0.15 (常見區間) -> 6-7 (對應 prompt「6: 推薦範圍」)
-                    0.00: 3, 0.05: 4, 0.10: 6, 0.15: 7,
-                    0.20: 7, 0.25: 8, 0.30: 8, 0.35: 9,
-                    0.40: 9, 0.45: 9, 0.50: 10,
+                # 🆕 [2026-09-15 根因修復] 原 CALIBRATED_CONFIDENCE_MAP 用 float key 有匹配 bug：
+                # round(prob_diff/0.05)*0.05 產生浮點誤差，如 round(0.32/0.05)*0.05
+                # = 0.30000000000000004 ≠ 0.30（dict key），導致 0.30/0.35 等 bucket
+                # 全部 miss，回傳 default 5 —— 信心校準大規模失效的根因。
+                # 實證：prob_diff=0.32 應查 0.30→8，卻回 5；0.614 只回 6.1。
+                # 修法：改用整數 bucket 索引（int(round(prob_diff/0.05))），
+                #       key 是 0.05 的整數倍，徹底消除浮點誤差。
+                bucket = int(round(prob_diff / 0.05))
+                # bucket 對應的 prob_diff = bucket * 0.05
+                # 映射（對齊原 CALIBRATED_CONFIDENCE_MAP 的語意）：
+                #   bucket 0(0.00)→3, 1(0.05)→4, 2(0.10)→6, 3(0.15)→7,
+                #   4(0.20)→7, 5(0.25)→8, 6(0.30)→8, 7(0.35)→9,
+                #   8(0.40)→9, 9(0.45)→9, 10+(0.50+)→10
+                bucket_conf_map = {
+                    0: 3, 1: 4, 2: 6, 3: 7,
+                    4: 7, 5: 8, 6: 8, 7: 9,
+                    8: 9, 9: 9, 10: 10,
                 }
-
-                # 取得校準後信心（以 prob_diff 查表）
-                prob_diff_rounded = round(prob_diff / 0.05) * 0.05
-                calibrated_conf = CALIBRATED_CONFIDENCE_MAP.get(prob_diff_rounded, 5)
+                calibrated_conf = bucket_conf_map.get(bucket, 5 if bucket < 0 else 10)
 
                 # 🆕 [2026-08-23] 聯盟專屬微調
                 lg = (features.get('league') or '').upper()
