@@ -685,6 +685,7 @@ class CPBLDataFetcher:
             ]
             candidates = []
             search_resp_text = None
+            seen_links = set()
             for q in query_list:
                 try:
                     search_url = f"https://www.ptt.cc/bbs/Baseball/search?q={urllib.parse.quote(q)}"
@@ -696,11 +697,19 @@ class CPBLDataFetcher:
                         r'<a href="(/bbs/Baseball/M\.\d+\.A\.\w+\.html)">\[情報\]\s*CPBL\s*\d+/\d+\s*先發投手(?:預告)?',
                         search_resp.text
                     )
+                    # 🆕 [2026-09-16 根因修復] 累積所有 query 的候選並去重，不再「第一個命中就 break」。
+                    # 根因：9/16 第一個 query「CPBL 9/16 先發投手」命中 2025 舊文後 break，
+                    #       年份驗證失敗直接 return None，根本沒試第二個 query「9/16 先發投手預告」
+                    #       （2026 正確文章只在此 query 出現）。
+                    # 修法：收集全部 query 的候選（去重、保持 query 順序），再統一做年份驗證迭代。
+                    for link in cands:
+                        if link not in seen_links:
+                            seen_links.add(link)
+                            candidates.append(link)
                     if cands:
-                        candidates = cands
-                        search_resp_text = search_resp.text
-                        print(f"  [CPBL SP fallback] q={q!r} → {len(cands)} candidates", flush=True)
-                        break
+                        if search_resp_text is None:
+                            search_resp_text = search_resp.text
+                        print(f"  [CPBL SP fallback] q={q!r} → {len(cands)} candidates（累計 {len(candidates)}）", flush=True)
                 except Exception as e:
                     print(f"  [CPBL SP fallback] PTT search error for q={q!r}: {e}", flush=True)
             link_m = candidates[0] if candidates else None
@@ -740,8 +749,8 @@ class CPBLDataFetcher:
                 return True
 
             if not _article_year_ok(article_resp.text):
-                # 迭代剩餘候選（最多 5 篇），找到當年份文章為止
-                for next_link in candidates[1:6]:
+                # 迭代剩餘候選（全部），找到當年份文章為止
+                for next_link in candidates[1:]:
                     article_url = "https://www.ptt.cc" + next_link
                     print(f"  [CPBL SP fallback] Trying next candidate: {article_url}", flush=True)
                     article_resp = self.session.get(article_url, timeout=10)
