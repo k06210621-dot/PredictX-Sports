@@ -534,7 +534,17 @@ class AnalysisEngine:
             d2 = dist.get('diff_2_rate', 0.20)
             d3 = dist.get('diff_3_rate', 0.10)
             d4 = max(0.0, dist.get('diff_4plus_rate', 0.30))
-            # 累積分布：1 / 2 / 3 / 4-5 / 6-7 / 8+（4+ 細分 5:3:2 模擬尾端）
+            # 🆕 [2026-09-16 根因修復] 累積分布殘差 bug：
+            # diff_1/2/3/4plus_rate 之和可能 < 1（含 0 分差或資料舍入），
+            # 舊邏輯把殘差全丟進最後的「8+ 分差」else 分支，導致 8+ 被
+            # 分配到 ~16%（實際僅 ~12%），且 rng.randint(8,13) 在 CPBL(hi=12)
+            # 會抽到 12 這種近 30 天僅 1 場的極端比分（實證：0-12 異常）。
+            # 修法：① d4 吸收殘差（= 1 - d1 - d2 - d3），確保累積和 = 1
+            #       ② 8+ 分差範圍收斂到 8-10（11+ 近 30 天僅 3/56 場，不值得分配）
+            d4 = 1.0 - (d1 + d2 + d3)
+            if d4 < 0.0:
+                d4 = 0.0
+            # 累積分布：1 / 2 / 3 / 4-5 / 6-7 / 8-10（4+ 細分 5:3:2 模擬尾端）
             cum1, cum2, cum3 = d1, d1 + d2, d1 + d2 + d3
             cum4 = cum3 + d4 * 0.5
             cum6 = cum4 + d4 * 0.3
@@ -549,7 +559,7 @@ class AnalysisEngine:
             elif r < cum6:
                 target_gap = rng.randint(6, 7)
             else:
-                target_gap = rng.randint(8, min(hi, 13))
+                target_gap = rng.randint(8, 10)
             src = "實時分布"
         else:
             # 無實時分布：fallback 表（2026-09-13 更新為近 30 天實測，切點修正不再 50% 壓 1 分差）
