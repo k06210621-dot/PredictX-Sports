@@ -2805,8 +2805,14 @@ Park Factor: {pf:.2f} ({park_interp})
                 # 🆕 [2026-09-04] 過濾極小樣本投手（games < 5），避免 ERA 離群值誤導 LLM
                 # 實證：rebas 來源 games<5 的 18 位投手 ERA 離群（1.5~9.0，avg 4.82 vs 正常 3.69），
                 # 且「有投手數據」場次方向正確率 32.1% 反而低於「無投手數據」47.6%
-                h_ps = [p for p in h_ps if (p.get('games') or 0) >= 5]
-                a_ps = [p for p in a_ps if (p.get('games') or 0) >= 5]
+                # 🆕 [2026-09-16 根因修復] 先發投手豁免：games<5 一刀切誤傷正常新洋將。
+                # 實證：瑪帝斯（季中轉隊新洋將）games=4、ERA=3.176（有效數據），
+                #       被過濾後 summary 寫「瑪帝斯本季無數據，對位不明」，
+                #       導致先發對位這個最關鍵因子失效。
+                # 修法：當日先發投手即使 games<5 也保留（先發對位數據優先於樣本量過濾）。
+                sp_names = {game.get('home_pitcher_name'), game.get('away_pitcher_name')}
+                h_ps = [p for p in h_ps if (p.get('games') or 0) >= 5 or p.get('name') in sp_names]
+                a_ps = [p for p in a_ps if (p.get('games') or 0) >= 5 or p.get('name') in sp_names]
 
                 def _fmt_pitcher_line(i, p):
                     era = p.get('era', 0) or 0
@@ -3790,7 +3796,7 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                     home_advantage_map = {
                         'NBA': 0.58,   # NBA 主場勝率約 60%
                         'WNBA': 0.58,  # WNBA 主場勝率與 NBA 接近
-                        'CPBL': 0.45,  # 2026-09-03 下調至 0.47 → 2026-09-15 再下調 0.45（實際主場勝率 43.4%，客隊優勢更明確）
+                        'CPBL': 0.42,  # 2026-09-17 下調至 0.42（實際主場勝率 41.8%，客隊優勢明確）
                         'MLB': 0.52,   # MLB 主場勝率約 53-54%（[2026-08-09] 校準下調至 0.52，預期命中率 +3pp）
                         'NPB': 0.54,   # NPB 主場勝率約 53%
                     }
@@ -4101,7 +4107,9 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                 if lg == 'CPBL':
                     # CPBL 數據完整度高（先發、打擊、牛棚、歷史對戰皆有）
                     # prob_diff 通常較小 (0.05-0.15) 但數據品質高，補償 +1
-                    calibrated_conf = min(10, calibrated_conf + 1)
+                    # 🆕 [2026-09-17] 膠著場 prob_diff < 0.10 不給加成，避免虛假高信心
+                    if prob_diff >= 0.10:
+                        calibrated_conf = min(10, calibrated_conf + 1)
                 elif lg == 'MLB' and prob_diff < 0.10:
                     # MLB 弱差距比賽：數據完整但差距小，保底 5
                     calibrated_conf = max(calibrated_conf, 5)
@@ -4119,6 +4127,11 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                 # 不更動推播門檻，僅在信心層反映 prob_diff 的預測力，讓高信心場更突出。
                 if prob_diff >= 0.30:
                     final_conf = min(10.0, final_conf + 0.5)
+
+                # 🆕 [2026-09-17] P0: 膠著場 prob_diff < 0.10 信心上限壓 5
+                # 實測：CPBL 膠著場佔 90% 失誤，給高信心只會誤導用戶
+                if prob_diff < 0.10:
+                    final_conf = min(final_conf, 5.0)
 
                 result["confidence"] = round(final_conf, 1)
 
