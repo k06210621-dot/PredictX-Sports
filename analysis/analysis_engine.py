@@ -3803,11 +3803,14 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                     home_prob = home_advantage_map.get(lg, 0.53)  # 預設 53% (一般主場優勢)
                     away_prob = 1.0 - home_prob
                 elif (features.get('league') or '').upper() == 'CPBL' and 0.42 <= home_prob <= 0.60:
-                    # 🆕 [2026-09-03] CPBL 主場優勢系統性校正（數據驅動）
-                    # 近 30 天主隊勝率僅 41.8%（客隊優勢），原 0.55 主隊略佔優方向相反
-                    # 觸發範圍 0.42~0.60，強制校正為客隊略佔優勢
-                    home_prob = 0.42
-                    away_prob = 0.58
+                    # 🆕 [2026-09-18] CPBL 主場優勢「軟性 blend」取代硬 clamp（數據驅動）
+                    # 根因：原硬 clamp（home_prob = 0.42）把 [0.42, 0.60] 區間所有場次
+                    #   硬釘成客隊優勢，摧毀 LLM 在膠著場的判別力。
+                    #   實證（近30天）：11/54 場被釘、命中率僅 27.3%（低於整體 42.6%）。
+                    # 修法：往基準值 0.42 拉回 30%，保留 LLM 70% 判斷力。
+                    #   0.60→0.546、0.50→0.476、0.45→0.441、0.42→0.42
+                    home_prob = 0.7 * home_prob + 0.3 * 0.42
+                    away_prob = 1.0 - home_prob
                 
                 result["home_win_probability"] = round(home_prob, 4)
                 result["away_win_probability"] = round(away_prob, 4)
