@@ -681,6 +681,9 @@ class CPBLDataFetcher:
                 f"CPBL {search_md} 先發投手",   # 原第一順位（部分日期有效）
                 f"{search_md} 先發投手預告",     # 🆕 精準詞（無前綴）
                 f"{search_md} 先發投手",         # 🆕 無前綴（9/15 實測命中）
+                f"{search_md} 先發",             # 🆕 [2026-09-18] 短詞變體（9/18 實證：4 個精準詞全 miss
+                                                 #     只回 2025 舊文，短詞「9/19 先發」才命中 2026 文；
+                                                 #     regex 要求 [情報] CPBL 前綴，NPB/MLB 文會被過濾，安全）
                 f"CPBL {search_md}",             # 原第二順位（廣泛）
             ]
             candidates = []
