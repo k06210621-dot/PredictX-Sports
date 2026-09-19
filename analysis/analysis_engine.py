@@ -727,16 +727,19 @@ class AnalysisEngine:
             and not raw_cpbl_pitchers.get('away_pitcher')
             and (cpbl_starters or gi_home_sp or gi_away_sp)
         ):
-            # cpbl_pitchers keys 是英文隊名；cpbl_starting_pitchers keys 是中文隊名
-            # 用 TEAM_MAP 反查：英文隊名 -> 中文隊名
-            from cpbl_data_fetcher import TEAM_MAP as _CPBL_TEAM_MAP
-            en_to_cn = {v: k for k, v in _CPBL_TEAM_MAP.items()}
-            home_team_raw = features.get('home_team_en') or features.get('home_team')
-            away_team_raw = features.get('away_team_en') or features.get('away_team')
-            home_cn = en_to_cn.get(home_team_raw, home_team_raw)
-            away_cn = en_to_cn.get(away_team_raw, away_team_raw)
-            home_sp = cpbl_starters.get(home_cn) or {}
-            away_sp = cpbl_starters.get(away_cn) or {}
+            # 🆕 [2026-09-19 P0-1 根因修復] 舊碼兩層 bug 導致 CPBL 投手 ±1 調整 100% silent no-op：
+            #   1. features「頂層」沒有 home_team_en/away_team_en（在 game_info 子層），
+            #      舊碼取 None 當 team key → cpbl_pitchers 名單匹配必失敗
+            #   2. cpbl_starting_pitchers keys 實測是「英文隊名」（與 cpbl_pitchers 同空間），
+            #      舊 en→cn 反查反而把英文 key 轉中文 → 必 miss
+            # 修法：team key 直接從 game_info 取英文隊名，不做中英反查
+            game_info_full = features.get('game_info') or {}
+            home_team_raw = (game_info_full.get('home_team_en')
+                             or features.get('home_team_en') or features.get('home_team'))
+            away_team_raw = (game_info_full.get('away_team_en')
+                             or features.get('away_team_en') or features.get('away_team'))
+            home_sp = cpbl_starters.get(home_team_raw) or {}
+            away_sp = cpbl_starters.get(away_team_raw) or {}
             # 🆕 [2026-09-03] fallback：cpbl_starters 抓不到時，用 game_info 的手動補投手名
             if not home_sp.get('name') and gi_home_sp:
                 home_sp = {'name': gi_home_sp}
@@ -751,6 +754,13 @@ class AnalysisEngine:
                 candidates = raw_cpbl_pitchers.get(team_en_key) or []
                 for c in candidates:
                     if c.get('name') == name:
+                        # 🆕 [2026-09-19 P0-3] games<5 極小樣本投手跳過
+                        # （recipe_100 實證：games<5 的 ERA 離群 1.5~9.0，屬髒數據）
+                        try:
+                            if int(c.get('games') or 0) < 5:
+                                continue
+                        except (TypeError, ValueError):
+                            pass
                         # cpbl_pitchers 內 stats 用 k_pct/bb_pct。函式預期 k_per_9 / bb_per_9。
                         # 為了讓聯盟基準（k_rate=15.8 / bb_rate=9.4）對得起來，補回同值別名。
                         stats = dict(c)
