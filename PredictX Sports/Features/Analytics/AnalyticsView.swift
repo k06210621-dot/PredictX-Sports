@@ -38,6 +38,9 @@ struct AnalyticsView: View {
                         AnalyticsSkeletonView()
                     } else {
                         VStack(alignment: .leading, spacing: 25) {
+                            // 🆕 近一週重點觀察賽事驗證卡片（常開狀態：免費/付費皆可見）
+                            WeeklyFocusAccuracyCard(accuracy: store.weeklyFocusAccuracy,
+                                                    settledCount: store.weeklyFocusSettled)
                             OverallAccuracyCard(accuracy: store.overallAccuracy)
                             
                             // Free Trial 與 Basic 方案：遮蔽其餘內容
@@ -145,6 +148,58 @@ struct LockedAnalyticsContent: View {
 }
 
 // MARK: - Subviews
+
+// 🆕 近一週重點觀察賽事驗證卡片（與綜合驗證率卡片同款式，常開狀態）
+struct WeeklyFocusAccuracyCard: View {
+    let accuracy: Double
+    let settledCount: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label("近一週 AI 重點觀察賽事驗證率", systemImage: "flame.fill")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .foregroundColor(.orange)
+                Spacer()
+                Text("信心度 ≥ 8.0 賽事")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            HStack(alignment: .bottom) {
+                if settledCount > 0 {
+                    Text(String(format: "%.1f%%", accuracy * 100))
+                        .font(.system(size: 42, weight: .black, design: .rounded))
+                        .foregroundColor(.primary)
+                    Text("驗證率")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .padding(.bottom, 6)
+                } else {
+                    Text("—")
+                        .font(.system(size: 42, weight: .black, design: .rounded))
+                        .foregroundColor(.secondary)
+                    Text("暫無結算資料")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .padding(.bottom, 6)
+                }
+            }
+
+            Text(settledCount > 0
+                 ? "抓取數據：近一週（7 天）信心度 ≥ 8.0 且已結算的賽事共 \(settledCount) 場"
+                 : "抓取數據：近一週（7 天）暫無信心度 ≥ 8.0 且已結算的賽事")
+                .font(.system(size: 10))
+                .foregroundColor(Color(.tertiaryLabel))
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.cardBackground)
+        .cornerRadius(16)
+        .shadow(color: Color.orange.opacity(0.15), radius: 8, x: 0, y: 4)
+    }
+}
 
 struct OverallAccuracyCard: View {
     let accuracy: Double

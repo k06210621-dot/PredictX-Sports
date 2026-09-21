@@ -11,6 +11,8 @@ class AnalyticsStore: ObservableObject {
     @Published var selectedLeague: String = "MLB"
     @Published var overallAccuracy: Double = 0.0
     @Published var recentSettlements: [RecentSettlement] = []   // 🆕 最近 10 場戰績
+    @Published var weeklyFocusAccuracy: Double = 0.0            // 🆕 近一週重點觀察賽事（conf≥8.0）驗證成功率
+    @Published var weeklyFocusSettled: Int = 0                  // 🆕 近一週 conf≥8.0 已結算場數
     @Published var isLoading: Bool = false
     @Published var errorMessage: String? = nil
 
@@ -49,6 +51,9 @@ class AnalyticsStore: ObservableObject {
 
             // 🆕 載入最近 10 場紀錄（背景跑，不擋趨勢圖）
             await loadRecentSettlements()
+
+            // 🆕 近一週重點觀察賽事（conf≥8.0）驗證成功率（背景跑）
+            await loadWeeklyFocusStats()
 
             self.isLoading = false
         } catch {
@@ -150,6 +155,39 @@ class AnalyticsStore: ObservableObject {
         guard !recentSettlements.isEmpty else { return 0.0 }
         let hits = recentSettlements.filter { $0.isHit }.count
         return Double(hits) / Double(recentSettlements.count)
+    }
+
+    // 🆕 近一週重點觀察賽事（conf≥8.0）驗證成功率
+    // 資料源：五聯盟 /api/games 近 7 天賽事，篩選 aiConfidence >= 8.0 且已結算（aiIsHit 非 nil）
+    private func loadWeeklyFocusStats() async {
+        struct FocusHit: Sendable { let isHit: Bool }
+
+        var allHits: [FocusHit] = []
+        await withTaskGroup(of: [FocusHit].self) { group in
+            for league in LeagueType.activeCases {
+                group.addTask {
+                    do {
+                        let models = try await APIService.shared.fetchGames(for: league.rawValue, days: 7)
+                        return models.compactMap { m -> FocusHit? in
+                            guard let conf = m.aiConfidence, conf >= 8.0,
+                                  let isHit = m.aiIsHit else { return nil }
+                            return FocusHit(isHit: isHit)
+                        }
+                    } catch {
+                        print("⚠️ [WeeklyFocus] \(league.rawValue) 拉取失敗: \(error)")
+                        return []
+                    }
+                }
+            }
+            for await batch in group {
+                allHits.append(contentsOf: batch)
+            }
+        }
+
+        let settled = allHits.count
+        let hits = allHits.filter { $0.isHit }.count
+        self.weeklyFocusSettled = settled
+        self.weeklyFocusAccuracy = settled > 0 ? Double(hits) / Double(settled) : 0.0
     }
 
     /// 解析後端回傳的 ISO 日期字串（"YYYY-MM-DD"）為 Date 型別
