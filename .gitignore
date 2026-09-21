@@ -5,6 +5,10 @@ __pycache__/
 dist/
 .venv/
 venv/
+# 一次性/暫存腳本與備份檔（不上版本控制）
+analysis/_tmp_*.py
+analysis/__tmp_*.py
+backup/
 
 # Environment
 .env

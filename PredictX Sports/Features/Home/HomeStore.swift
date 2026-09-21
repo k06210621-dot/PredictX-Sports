@@ -159,10 +159,10 @@ class HomeStore: ObservableObject {
             a.startTime < b.startTime
         }
         
-        // 焦點賽事：跨聯盟，只顯示昨天/今天/明天 + 數據置信度 > 8
+        // 焦點賽事：跨聯盟，只顯示昨天/今天/明天 + 數據置信度 >= 8
         self.focusMatches = allMatches.filter {
             let dateInRange = $0.startTime >= yesterdayStartUTC && $0.startTime < tomorrowEndUTC
-            let highConfidence = ($0.aiConfidence ?? 0.0) > 8.0
+            let highConfidence = ($0.aiConfidence ?? 0.0) >= 8.0
             return dateInRange && highConfidence
         }.sorted { ($0.aiConfidence ?? 0.0) > ($1.aiConfidence ?? 0.0) }
     }

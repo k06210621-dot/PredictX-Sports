@@ -4,7 +4,7 @@ import SwiftUI
 struct LegalDisclaimerView: View {
     @State private var expandedSection: String? = "section1"
     
-    private let appVersion = "1.0.0"
+    private let appVersion = "1.2.1"
     
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -457,7 +457,6 @@ private var sections: [DisclaimerSection] {
                         ParagraphItem(bullet: "本地偏好設定：隨時可透過解除安裝 App 清除", icon: "trash.fill", color: .blue),
                         ParagraphItem(text: "第三方服務："),
                         ParagraphItem(bullet: "Apple StoreKit：處理訂閱付款", icon: "applelogo", color: .gray),
-                        ParagraphItem(bullet: "Google AdMob：顯示廣告（含 Google User Messaging Platform 處理同意聲明）", icon: "g.circle.fill", color: .gray),
                         ParagraphItem(bullet: "雲端後端 API：提供賽事資料與 AI 推論", icon: "cloud.fill", color: .gray),
                         ParagraphItem(text: "您的權利：您可隨時透過 iOS 設定 → Apple ID → 訂閱管理訂閱，或透過 iOS 設定 → 隱私權 → 追蹤關閉個人化廣告。如需查詢、修改或刪除您的資料，請聯繫客服。"),
                         ParagraphItem(link: "查看完整隱私權政策（外部連結）", url: "https://k06210621-dot.github.io/privacy/"),

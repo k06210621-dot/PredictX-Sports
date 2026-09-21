@@ -19,30 +19,23 @@ class SubscriptionManager: ObservableObject {
     @Published var isProcessing = false
     @Published var showSubscribeView = false
     @Published var showDiamondsInfo = false
-    @Published var lastPurchaseError: String?
+    @Published var lastPurchaseError: String? = nil
     @Published var lastPurchaseSucceeded: Bool = false
 
     // 試用期
-    @Published var trialStartDate: Date?
+    @Published var trialStartDate: Date? = nil
     @Published var trialDaysRemaining: Int = 30
     @Published var trialExpired: Bool = false
 
     // 🆕 [2026-06-29] 已取消訂閱的 transaction ID，避免重複觸發降級
     private var processedExpiredTransactionIDs: Set<UInt64> = []
 
-    // 廣告觀看機制
-    @Published var adsWatchedToday: Int = 0
-    @Published var lastAdWatchDate: Date? = nil
-    let adRewardPoints: Int = 20
-    let adDailyLimit: Int = 3
-
     // 扣點回饋（供 UI 顯示 toast）
     @Published var lastSpendFeedback: (cost: Int, remaining: Int)? = nil
-    @Published var lastAdRewardFeedback: Int? = nil  // 觀看廣告回饋
 
     private let defaults = UserDefaults.standard
-    private var updates: Task<Void, Never>?
-    private var midnightTimer: Timer?
+    private var updates: Task<Void, Never>? = nil
+    private var midnightTimer: Timer? = nil
 
     // MARK: - Product IDs
 
@@ -81,13 +74,10 @@ class SubscriptionManager: ObservableObject {
         checkDailyReset()
         // 監聽 StoreKit 交易
         updates = observeTransactions()
-        // 跨午夜自動重置（監聽系統時間大幅變動）
-        setupMidnightObserver()
     }
 
     deinit {
         updates?.cancel()
-        midnightTimer?.invalidate()
     }
 
     // MARK: - 儲存 / 讀取
@@ -117,10 +107,6 @@ class SubscriptionManager: ObservableObject {
         } else {
             trialDaysRemaining = trialDurationDays
         }
-
-        // 載入廣告觀看紀錄
-        adsWatchedToday = defaults.integer(forKey: "ads_watched_today")
-        lastAdWatchDate = defaults.object(forKey: "last_ad_watch_date") as? Date
     }
 
     private func save() {
@@ -130,10 +116,6 @@ class SubscriptionManager: ObservableObject {
         defaults.set(Array(unlockedAnalysisIds), forKey: "unlocked_analyses")
         if let d = trialStartDate {
             defaults.set(d, forKey: "trial_start")
-        }
-        defaults.set(adsWatchedToday, forKey: "ads_watched_today")
-        if let d = lastAdWatchDate {
-            defaults.set(d, forKey: "last_ad_watch_date")
         }
     }
 
@@ -193,69 +175,7 @@ class SubscriptionManager: ObservableObject {
 
         defaults.set(today, forKey: "last_diamond_reset")
 
-        // 跨日重置：廣告觀看次數歸零
-        if let lastAd = lastAdWatchDate,
-           Calendar.current.startOfDay(for: lastAd) != today {
-            adsWatchedToday = 0
-        }
-
         save()
-    }
-
-    // MARK: - 廣告觀看機制
-
-    /// 檢查今天是否還能看廣告（純讀取，不修改狀態）
-    func canWatchAd() -> Bool {
-        return adsWatchedToday < adDailyLimit
-    }
-
-    /// 跨日重置廣告次數（需在 view body 外呼叫，例如 onAppear）
-    func resetAdCountIfNewDay() {
-        if let lastAd = lastAdWatchDate,
-           Calendar.current.startOfDay(for: lastAd) != Calendar.current.startOfDay(for: Date()) {
-            adsWatchedToday = 0
-            save()
-        }
-    }
-
-    /// 觀看廣告獲得分析點數（成功回傳新點數，失敗回傳 nil）
-    @discardableResult
-    func watchAdForPoints() -> Int? {
-        guard canWatchAd() else { return nil }
-        diamonds += adRewardPoints
-        adsWatchedToday += 1
-        lastAdWatchDate = Date()
-        lastAdRewardFeedback = adRewardPoints
-        save()
-        return adRewardPoints
-    }
-
-    /// 今日剩餘可觀看廣告次數
-    var adsRemainingToday: Int {
-        max(0, adDailyLimit - adsWatchedToday)
-    }
-
-    /// 跨午夜自動重置（監聽系統時間變動 + 定時器）
-    private func setupMidnightObserver() {
-        // 監聽系統時間大幅變動（跨日、時區切換）
-        NotificationCenter.default.addObserver(
-            forName: UIApplication.significantTimeChangeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            guard let self else { return }
-            Task { @MainActor in
-                self.checkDailyReset()
-            }
-        }
-
-        // 定時器：每 60 秒檢查一次是否跨日
-        midnightTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            Task { @MainActor in
-                self.checkDailyReset()
-            }
-        }
     }
 
     // MARK: - 分析點數管理

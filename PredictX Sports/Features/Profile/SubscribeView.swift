@@ -283,9 +283,6 @@ struct SubscribeView: View {
                 FeatureRow(label: NSLocalizedString("feature.favorites", comment: "收藏賽事分析"),
                            free: "—", basic: "✓", standard: "✓", premium: "✓")
                 Divider().background(Color(.separator))
-                FeatureRow(label: NSLocalizedString("feature.watch_ads", comment: "每日觀看廣告上限三則"),
-                           free: "20 點", basic: "20 點", standard: "—", premium: "—")
-                Divider().background(Color(.separator))
                 FeatureRow(label: NSLocalizedString("feature.dashboard", comment: "模型驗證率儀表板"),
                            free: "—", basic: "—", standard: "✓", premium: "✓")
                 Divider().background(Color(.separator))
@@ -303,7 +300,7 @@ struct SubscribeView: View {
     private var additionalInfo: some View {
         VStack(spacing: 12) {
             // 新手贈禮說明
-            Text(NSLocalizedString("gift.info", comment: "新手登入即享 30 天贈禮：每天補充 60 分析點數。30 天後如未訂閱，仍可透過觀看廣告獲得額外點數。"))
+            Text(NSLocalizedString("gift.info", comment: "新手登入即享 30 天贈禮：每天補充 60 分析點數。30 天後如未訂閱，點數將歸零。"))
                 .font(.footnote)
                 .foregroundColor(Color(.tertiaryLabel))
                 .multilineTextAlignment(.center)
@@ -593,7 +590,7 @@ enum ProductTier: CaseIterable {
 
     var tagline: String {
         switch self {
-        case .free: return "前 30 天每日 60 點，期滿後可看廣告獲點"
+        case .free: return "前 30 天每日 60 點，期滿後點數歸零"
         case .basic: return "每日 120 分析點數（可累積・無上限）"
         case .standard: return "無限點數・含驗證率儀表板"
         case .premium: return "無限點數+驗證率儀表板+重點觀察賽事推播通知"
@@ -623,7 +620,7 @@ enum ProductTier: CaseIterable {
         case .free:
             return [
                 "前 30 天每日 60 分析點數",
-                "期滿後可觀看廣告獲得點數",
+                "期滿後點數歸零",
                 "基礎賽事資訊"
             ]
         case .basic:
@@ -636,8 +633,7 @@ enum ProductTier: CaseIterable {
             return [
                 "無限分析點數",
                 "模型驗證率儀表板",
-                "收藏賽事分析",
-                "觀看廣告獲點數"
+                "收藏賽事分析"
             ]
         case .premium:
             return [

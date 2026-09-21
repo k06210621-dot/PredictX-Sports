@@ -17,15 +17,15 @@ struct ATTConsentView: View {
 
             VStack(spacing: 20) {
                 // 標題
-                Text("廣告偏好設定")
+                Text("資料追蹤偏好")
                     .font(.title2.bold())
                     .foregroundColor(.primary)
                     .multilineTextAlignment(.center)
 
                 // 內容
                 Text("""
-                PredictX Sports 與 Google AdMob 合作，透過此識別碼
-                為您提供更相關的運動賽事廣告。
+                PredictX Sports 可能會使用您的資料，
+                以提供較符合您興趣的內容體驗。
                 您可隨時在 iOS 設定 → 隱私權與安全性 → 追蹤中調整。
                 """)
                 .font(.body)
