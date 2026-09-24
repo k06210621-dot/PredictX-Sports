@@ -716,8 +716,47 @@ class CPBLDataFetcher:
                 except Exception as e:
                     print(f"  [CPBL SP fallback] PTT search error for q={q!r}: {e}", flush=True)
             link_m = candidates[0] if candidates else None
+
+            # 🆕 [2026-09-25 根因修復 v4] PTT 搜尋引擎索引延遲 fallback：
+            #   9/25 實證：wewe0403 於 9/24 17:08 發布「[情報] CPBL 9/25 先發投手預告」，
+            #   13 小時後（9/25 06:05 UTC ingest）PTT search?q= 仍查不到該 2026 文章
+            #   （5 個 query 全部只回 2025 舊文 M.1758699751），但文章實際存在於
+            #   index22922.html（比最新頁舊 4 頁）。
+            # 修法：搜尋全部 miss 時，回溯掃描 index 分頁（最新頁起最多 6 頁），
+            #       從列表 title 直接比對「[情報] CPBL M/D 先發投手（預告）」，命中即加入候選。
+            if not candidates:
+                print(f"  [CPBL SP fallback] search 未命中，回溯掃描 index 分頁（最多 6 頁）...", flush=True)
+                # 先取最新頁找「上頁」連結，逐頁回溯
+                page_url = "https://www.ptt.cc/bbs/Baseball/index.html"
+                title_re = re.compile(
+                    r'<a href="(/bbs/Baseball/M\.\d+\.A\.\w+\.html)">(\[情報\]\s*CPBL\s*\d+/\d+\s*先發投手(?:預告)?)</a>'
+                )
+                prev_re = re.compile(r'<a class="btn wide" href="(/bbs/Baseball/index\d+\.html)">&lsaquo; 上頁</a>')
+                scanned = 0
+                while page_url and scanned < 6:
+                    try:
+                        idx_resp = self.session.get(page_url, timeout=10)
+                        if idx_resp.status_code != 200:
+                            print(f"  [CPBL SP fallback] index scan HTTP {idx_resp.status_code} for {page_url}", flush=True)
+                            break
+                        for link, _t in title_re.findall(idx_resp.text):
+                            if link not in seen_links:
+                                seen_links.add(link)
+                                candidates.append(link)
+                        if candidates:
+                            print(f"  [CPBL SP fallback] index scan 命中 {len(candidates)} 篇（掃到 {page_url}）", flush=True)
+                            break
+                        prev_m = prev_re.search(idx_resp.text)
+                        page_url = ("https://www.ptt.cc" + prev_m.group(1)) if prev_m else None
+                        scanned += 1
+                    except Exception as e:
+                        print(f"  [CPBL SP fallback] index scan error: {e}", flush=True)
+                        break
+
+            if not link_m and candidates:
+                link_m = candidates[0]
             if not link_m:
-                print(f"  [CPBL SP fallback] No CPBL starter article found on PTT (tried {len(query_list)} queries)", flush=True)
+                print(f"  [CPBL SP fallback] No CPBL starter article found on PTT (tried {len(query_list)} queries + index scan)", flush=True)
                 return None
 
             article_url = "https://www.ptt.cc" + link_m
@@ -760,8 +799,52 @@ class CPBLDataFetcher:
                     if article_resp.status_code == 200 and _article_year_ok(article_resp.text):
                         break
                 else:
-                    print(f"  [CPBL SP fallback] No current-year article among {len(candidates)} candidates", flush=True)
-                    return None
+                    # 🆕 [2026-09-25 v4b] 年份驗證全失敗 → 最後手段：index 分頁回溯掃描
+                    #   9/25 實證：search?q= 只回 2025 舊文（M.1758699751），2026 新文
+                    #   因 PTT 索引延遲未入 search 索引，但存在於 index22922.html。
+                    #   修法：回溯掃描 index 分頁（最多 6 頁），命中「[情報] CPBL M/D
+                    #   先發投手（預告）」即抓文章重跑年份驗證。
+                    print(f"  [CPBL SP fallback] 年份驗證全失敗（{len(candidates)} 筆皆舊文），啟動 index 分頁回溯掃描...", flush=True)
+                    idx_page_url = "https://www.ptt.cc/bbs/Baseball/index.html"
+                    idx_title_re = re.compile(
+                        r'<a href="(/bbs/Baseball/M\.\d+\.A\.\w+\.html)">(\[情報\]\s*CPBL\s*\d+/\d+\s*先發投手(?:預告)?)</a>'
+                    )
+                    idx_prev_re = re.compile(r'<a class="btn wide" href="(/bbs/Baseball/index\d+\.html)">&lsaquo; 上頁</a>')
+                    scanned = 0
+                    found_in_page = False
+                    while idx_page_url and scanned < 6 and not found_in_page:
+                        try:
+                            idx_resp = self.session.get(idx_page_url, timeout=10)
+                            if idx_resp.status_code != 200:
+                                print(f"  [CPBL SP fallback] index scan HTTP {idx_resp.status_code} for {idx_page_url}", flush=True)
+                                break
+                            for idx_link, idx_title in idx_title_re.findall(idx_resp.text):
+                                # 只接受 title 日期 = 目標日期的候選（避免抓到別天）
+                                title_md = re.search(r'CPBL\s*(\d+)/(\d+)\s*先發投手', idx_title)
+                                if not title_md:
+                                    continue
+                                idx_m, idx_d = title_md.group(1), title_md.group(2)
+                                if f"{int(idx_m)}/{int(idx_d)}" != search_md:
+                                    continue
+                                cand_url = "https://www.ptt.cc" + idx_link
+                                print(f"  [CPBL SP fallback] index scan 候選: {cand_url}（{idx_title.strip()}）", flush=True)
+                                cand_resp = self.session.get(cand_url, timeout=10)
+                                if cand_resp.status_code == 200 and _article_year_ok(cand_resp.text):
+                                    article_url = cand_url
+                                    article_resp = cand_resp
+                                    found_in_page = True
+                                    break
+                            if found_in_page:
+                                break
+                            idx_prev_m = idx_prev_re.search(idx_resp.text)
+                            idx_page_url = ("https://www.ptt.cc" + idx_prev_m.group(1)) if idx_prev_m else None
+                            scanned += 1
+                        except Exception as e:
+                            print(f"  [CPBL SP fallback] index scan error: {e}", flush=True)
+                            break
+                    if not found_in_page:
+                        print(f"  [CPBL SP fallback] index scan 未找到當年份文章（掃描 {scanned} 頁）", flush=True)
+                        return None
 
             # 解析文章內文（同 get_today_starting_pitchers 結構）
             m = re.search(
