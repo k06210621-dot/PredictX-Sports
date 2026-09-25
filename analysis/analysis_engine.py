@@ -3714,6 +3714,46 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
             print(f"Ollama API Error: {e}")
             return None
 
+    # 🆕 [2026-09-25 O-1] CPBL 動態主場基準：滾動 14 天實際主場勝率取代硬編碼 0.42
+    # 根因：9/14 前實際主場勝率 43%（客隊優勢，0.42 正確），但 9/14 後翻轉至 52.2%
+    #       （主隊優勢）。硬編碼 0.42 在翻轉後每場把主隊勝率往下壓 ~8-10%，
+    #       實證 9/14-9/24 方向正確率僅 21.7%（5/23），其中 soft blend 拉回方向
+    #       在 19 場未中場只救回 5 場、更錯 0 場——基準方向錯誤時 blend 只是緩慢地錯。
+    # 修法：每次分析時查 DB 近 14 天 FINAL 場實際主場勝率，做為 blend/five-five 基準。
+    #       樣本 <10 場時回退 0.45（保守中性偏客），避免小樣本噪聲。
+    #       結果以 self._cpbl_home_baseline 短暫快取（同一批次內多場共用一次查詢）。
+    def _get_cpbl_dynamic_home_baseline(self):
+        cache = getattr(self, '_cpbl_home_baseline', None)
+        if cache is not None:
+            return cache
+        baseline = 0.45  # DB 查詢失敗時的保守 fallback
+        try:
+            if not self.cur:
+                raise RuntimeError("DB cursor unavailable")
+            self.cur.execute("""
+                SELECT COUNT(*) AS total,
+                       SUM(CASE WHEN g.home_team_score > g.away_team_score THEN 1 ELSE 0 END) AS home_wins
+                FROM predictx.games g
+                JOIN predictx.teams th ON th.team_id = g.home_team_id
+                WHERE th.league = 'CPBL'
+                  AND g.status = 'FINAL'
+                  AND g.home_team_score IS NOT NULL
+                  AND g.away_team_score IS NOT NULL
+                  AND g.match_date >= CURRENT_DATE - INTERVAL '14 days'
+            """)
+            row = self.cur.fetchone()
+            total = row['total'] or 0 if row else 0
+            home_wins = row['home_wins'] or 0 if row else 0
+            if total >= 10:
+                baseline = round(home_wins / total, 3)
+                print(f"  🏟️ [O-1 動態主場基準] 近14天 CPBL 主場勝率 = {home_wins}/{total} = {baseline:.3f}")
+            else:
+                print(f"  🏟️ [O-1 動態主場基準] 近14天樣本不足（{total} 場 <10），回退保守值 0.45")
+        except Exception as e:
+            print(f"  🏟️ [O-1 動態主場基準] DB 查詢失敗（{e}），回退保守值 0.45")
+        self._cpbl_home_baseline = baseline
+        return baseline
+
     def analyze_game(self, game_id):
         print(f"Analyzing game {game_id}...")
         self.used_sources = []  # Step 5: 重置來源追蹤
@@ -3803,10 +3843,13 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                 if abs(home_prob - 0.5) < 0.01 and abs(away_prob - 0.5) < 0.01:
                     # 用 league 判斷主場優勢強度
                     lg = (features.get('league') or '').upper()
+                    # 🆕 [2026-09-25 O-1] CPBL 五五波基準改動態（滾動 14 天實際主場勝率）
+                    #   9/14 後實際主場勝率翻轉至 52.2%，硬編碼 0.42 已反向。
+                    cpbl_dynamic = self._get_cpbl_dynamic_home_baseline() if lg == 'CPBL' else 0.42
                     home_advantage_map = {
                         'NBA': 0.58,   # NBA 主場勝率約 60%
                         'WNBA': 0.58,  # WNBA 主場勝率與 NBA 接近
-                        'CPBL': 0.42,  # 2026-09-17 下調至 0.42（實際主場勝率 41.8%，客隊優勢明確）
+                        'CPBL': cpbl_dynamic,  # 🆕 O-1 動態基準（原硬編碼 0.42，2026-09-17 校準值已過時）
                         'MLB': 0.52,   # MLB 主場勝率約 53-54%（[2026-08-09] 校準下調至 0.52，預期命中率 +3pp）
                         'NPB': 0.54,   # NPB 主場勝率約 53%
                     }
@@ -3817,9 +3860,12 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                     # 根因：原硬 clamp（home_prob = 0.42）把 [0.42, 0.60] 區間所有場次
                     #   硬釘成客隊優勢，摧毀 LLM 在膠著場的判別力。
                     #   實證（近30天）：11/54 場被釘、命中率僅 27.3%（低於整體 42.6%）。
-                    # 修法：往基準值 0.42 拉回 30%，保留 LLM 70% 判斷力。
-                    #   0.60→0.546、0.50→0.476、0.45→0.441、0.42→0.42
-                    home_prob = 0.7 * home_prob + 0.3 * 0.42
+                    # 修法：往基準值拉回 30%，保留 LLM 70% 判斷力。
+                    # 🆕 [2026-09-25 O-1] 基準值從硬編碼 0.42 改為動態（滾動 14 天實際主場勝率）：
+                    #   9/14 後實際主場勝率 52.2%（主隊優勢），固定 0.42 會反向壓制主隊；
+                    #   動態基準讓 blend 方向隨聯盟現況自動校正，不需人工追蹤翻轉。
+                    cpbl_baseline = self._get_cpbl_dynamic_home_baseline()
+                    home_prob = 0.7 * home_prob + 0.3 * cpbl_baseline
                     away_prob = 1.0 - home_prob
                 
                 result["home_win_probability"] = round(home_prob, 4)
