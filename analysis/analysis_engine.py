@@ -4400,6 +4400,33 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                     }
                     print(f"  📊 Recipe 8 雷達圖補齊: {len(dims)} 維")
 
+                # 🆕 [2026-09-26 P0-1] 信心-機率一致性「最終」校正（治脫鉤）
+                # 根因（實證）：confidence 是用 summary 覆寫「之前」的 prob_diff 決定，
+                #   但儲存的 home/away_win_probability 會在 summary 覆寫後改變（例如
+                #   信心校準用 prob_diff=0.400 → conf 8.6，summary 覆寫後實際儲存差距僅 0.200）。
+                #   結果：App 同時顯示「信心 8.6」與「勝率 60/40」，兩者互相矛盾（脫鉤）。
+                # 修法：以「最終儲存的機率差距」為準，將 confidence 上限壓到該差距能支持的等級
+                #   （由既有 min_prob_diff_map 反推，門檻本身不變）。
+                # 限制：只下修、不上修；不改動任何機率與比分（維持 summary/模型結論不變）。
+                try:
+                    _final_gap = abs(
+                        float(result.get("home_win_probability", 0.0))
+                        - float(result.get("away_win_probability", 0.0))
+                    )
+                    _conf_before = float(result.get("confidence") or 0.0)
+                    _max_conf_by_gap = 1
+                    for _lvl in range(1, 11):
+                        if _final_gap + 0.005 >= float(min_prob_diff_map.get(_lvl, 0.0)):
+                            _max_conf_by_gap = _lvl
+                    # 沿用 2026-09-17 規則：膠著場（最終差距 < 0.10）信心上限 5
+                    if _final_gap < 0.10:
+                        _max_conf_by_gap = min(_max_conf_by_gap, 5)
+                    if _conf_before > float(_max_conf_by_gap):
+                        result["confidence"] = round(float(_max_conf_by_gap), 1)
+                        print(f"  ⚖️ 信心-機率一致性修正: conf {_conf_before:.1f} -> {_max_conf_by_gap} (最終勝率差距={_final_gap:.3f})")
+                except (TypeError, ValueError):
+                    pass
+
                 return result
         
         # Fallback: 若 AI 輸出異常，使用數據計算的替代方案
