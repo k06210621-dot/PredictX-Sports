@@ -1155,21 +1155,42 @@ class AnalysisEngine:
         #   → 回傳 None，由 get_league_standings() 的 games 實算 fallback
         #   產生即時戰績。門檻 10 天 > 每週刷新間隔（7 天），不誤殺正常表。
         #   僅檢查目標列（非整表），避免歷史賽季殘留列造成誤判。
-        select_cols = """rank, games_played, wins, losses, ties,
-                   ROUND(wins::numeric / NULLIF(wins + losses + ties, 0), 3) as win_pct"""
+        # 🆕 [2026-09-28 P0] 排名資訊正確性修復（動態計算 rank/total/win_pct）
+        # 根因 1：total_teams 硬編 0 → prompt 顯示「第 X/0 名」
+        # 根因 2：rank 欄位不可信（NPB 全 0 未寫入；MLB rank 為 division 內排名非全聯盟）
+        # 根因 3：win_pct 公式 wins/(wins+losses+ties) 把和局誤計入分母
+        #   （NPB 有和局：SoftBank 57-23-3 官方勝率 0.713 被算成 0.687）
+        # 修法：以「目標列」的 season（CPBL 再加 half_season）為 scope，
+        #   用 window function 動態算 rank（正確勝率 wins/(wins+losses) 降序）與
+        #   total_teams，不信任表內 rank/pct 欄位。scope 與 games 實算 fallback
+        #   （全 league 混排）語義一致。
+        scope_clause = "season = (SELECT season FROM target)"
+        if has_half_season:
+            scope_clause += " AND half_season = (SELECT half_season FROM target)"
+        select_cols = """team_id, games_played, wins, losses, ties,
+                   ROUND(wins::numeric / NULLIF(wins + losses, 0), 3) as win_pct,
+                   RANK() OVER (ORDER BY ROUND(wins::numeric / NULLIF(wins + losses, 0), 3) DESC, wins DESC) as rank,
+                   COUNT(*) OVER () as total_teams"""
         if has_updated_at:
             # 用 DB 端計算天數（避免 Python naive/aware datetime 相減拋 TypeError；
             # updated_at 為 timestamptz，須以 NOW() 在同一時區基準比較）
             select_cols += ", EXTRACT(EPOCH FROM (NOW() - updated_at)) / 86400 AS age_days"
         query = f"""
-            SELECT {select_cols}
-            FROM predictx.{table_name}
-            WHERE team_id = %s
-            ORDER BY {order_by}
-            LIMIT 1
+            WITH target AS (
+                SELECT * FROM predictx.{table_name}
+                WHERE team_id = %s
+                ORDER BY {order_by}
+                LIMIT 1
+            ),
+            ranked AS (
+                SELECT {select_cols}
+                FROM predictx.{table_name}
+                WHERE {scope_clause}
+            )
+            SELECT * FROM ranked WHERE team_id = %s
         """
         try:
-            self.cur.execute(query, (team_id,))
+            self.cur.execute(query, (team_id, team_id))
             row = self.cur.fetchone()
             if not row:
                 return None
@@ -1181,7 +1202,7 @@ class AnalysisEngine:
                     return None
             return {
                 "rank": row['rank'],
-                "total_teams": 0,
+                "total_teams": row['total_teams'],
                 "wins": row['wins'],
                 "losses": row['losses'],
                 "games_played": row['games_played'],
@@ -1241,7 +1262,7 @@ class AnalysisEngine:
                     GROUP BY t.team_id, t.english_name
                 )
                 SELECT *, 
-                       ROUND(wins::numeric / NULLIF(games_played, 0), 3) as win_pct
+                       ROUND(wins::numeric / NULLIF(wins + losses, 0), 3) as win_pct
                 FROM team_games
                 ORDER BY win_pct DESC
             """
