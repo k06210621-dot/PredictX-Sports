@@ -81,8 +81,12 @@ class MLBIngester(BaseIngester):
                     continue
 
                 _ds_upper = detailed_state.upper()
-                if _ds_upper in ("POSTPONED", "CANCELLED", "CANCELED",
-                                 "SUSPENDED", "DELAYED"):
+                # 只映射「比賽不會進行」的狀態。
+                # ⚠️ 勿加入 Delayed/In Progress 等暫時狀態 —— 比賽稍後仍會進行，
+                #    誤標 POSTPONED 會讓 run_analysis（只撈 scheduled）跳過該場分析。
+                # 實證（2026 全季 MLB API）：abstractGameState=Final 但無比分的
+                #   detailedState 只有 Postponed(15) 與 Cancelled(1) 兩種。
+                if _ds_upper in ("POSTPONED", "CANCELLED", "CANCELED"):
                     status = "POSTPONED"
                 elif status_code == "Final":
                     status = "FINAL"
