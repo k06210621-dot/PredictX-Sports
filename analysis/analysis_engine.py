@@ -1129,17 +1129,40 @@ class AnalysisEngine:
         # [Bug fix 2026-08-17 22:38] mlb_team_standings / npb_team_standings 沒有 half_season 欄位
         # 先檢查表內是否有 half_season 欄位，動態組建 ORDER BY
         self.cur.execute("""
-            SELECT EXISTS (
-                SELECT 1 FROM information_schema.columns
-                WHERE table_schema = 'predictx' AND table_name = %s
-                AND column_name = 'half_season'
-            ) as has_half_season
-        """, (table_name,))
-        has_half_season = self.cur.fetchone()["has_half_season"]
+            SELECT
+                EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'predictx' AND table_name = %s
+                    AND column_name = 'half_season'
+                ) as has_half_season,
+                EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'predictx' AND table_name = %s
+                    AND column_name = 'updated_at'
+                ) as has_updated_at
+        """, (table_name, table_name))
+        _cols = self.cur.fetchone()
+        has_half_season = _cols["has_half_season"]
+        has_updated_at = _cols["has_updated_at"]
         order_by = "season DESC, half_season DESC" if has_half_season else "season DESC"
+        # 🆕 [2026-09-28 P1 修復] 陳舊資料守衛
+        # 根因：cpbl_team_standings 最後更新停在 2026-08-17（其唯一寫入者
+        #   ingest/cpbl_standings.py 未被任何排程呼叫），但每場 CPBL 分析仍
+        #   把它當「即時排名」注入 prompt。實證 9/28 富邦 vs 味全的 summary：
+        #   「味全16勝11敗（0.593）明顯優於富邦11勝15敗（0.423）」——8/17 的舊值，
+        #   而實際兩隊為 36-40(0.493) vs 36-42(0.480)，幾乎相同，嚴重誤導 LLM。
+        # 修法：檢查「實際取用的那一列」的 updated_at，超過 10 天視為不可信
+        #   → 回傳 None，由 get_league_standings() 的 games 實算 fallback
+        #   產生即時戰績。門檻 10 天 > 每週刷新間隔（7 天），不誤殺正常表。
+        #   僅檢查目標列（非整表），避免歷史賽季殘留列造成誤判。
+        select_cols = """rank, games_played, wins, losses, ties,
+                   ROUND(wins::numeric / NULLIF(wins + losses + ties, 0), 3) as win_pct"""
+        if has_updated_at:
+            # 用 DB 端計算天數（避免 Python naive/aware datetime 相減拋 TypeError；
+            # updated_at 為 timestamptz，須以 NOW() 在同一時區基準比較）
+            select_cols += ", EXTRACT(EPOCH FROM (NOW() - updated_at)) / 86400 AS age_days"
         query = f"""
-            SELECT rank, games_played, wins, losses, ties,
-                   ROUND(wins::numeric / NULLIF(wins + losses + ties, 0), 3) as win_pct
+            SELECT {select_cols}
             FROM predictx.{table_name}
             WHERE team_id = %s
             ORDER BY {order_by}
@@ -1150,6 +1173,12 @@ class AnalysisEngine:
             row = self.cur.fetchone()
             if not row:
                 return None
+            # 🆕 [2026-09-28 P1] 陳舊守衛：目標列過期 → 交給 games 實算 fallback
+            if has_updated_at and row.get('age_days') is not None:
+                _age_days = float(row['age_days'])
+                if _age_days > 10:
+                    print(f"  ⚠ [standings] {table_name} 資料陳舊（{_age_days:.0f} 天前），改用 games 實算即時戰績")
+                    return None
             return {
                 "rank": row['rank'],
                 "total_teams": 0,
@@ -1201,7 +1230,7 @@ class AnalysisEngine:
                             THEN 1 ELSE 0 END) as wins,
                         SUM(CASE 
                             WHEN (g.home_team_id = t.team_id AND g.home_team_score < g.away_team_score)
-                                 OR (g.away_team_id = t.team_id AND g.away_team_score > g.home_team_score)
+                                 OR (g.away_team_id = t.team_id AND g.away_team_score < g.home_team_score)
                             THEN 1 ELSE 0 END) as losses,
                         SUM(CASE WHEN g.home_team_id = t.team_id THEN g.home_team_score ELSE g.away_team_score END) as goals_for,
                         SUM(CASE WHEN g.home_team_id = t.team_id THEN g.away_team_score ELSE g.home_team_score END) as goals_against,
@@ -2786,7 +2815,20 @@ Park Factor: {pf:.2f} ({park_interp})
                             opp_name = away_team if side == 'home' else home_team
                             opp_h2h = h2h.get(opp_name) if isinstance(h2h, dict) else None
                             if opp_h2h:
-                                cpbl_spec += f"\n  對戰 {opp_name}：{opp_h2h['wins']}勝-{opp_h2h['ties']}和-{opp_h2h['losses']}敗"
+                                # 🆕 [2026-09-28 P0 修復] h2h 短 key 相容
+                                # 根因：weekly_refresh_standings.py:393 寫入 {"w","t","l"}，
+                                #   但此處讀 opp_h2h['wins'] → KeyError: 'wins'。
+                                #   此 KeyError 被 L2797 的 except 吞掉，連帶丟棄整個
+                                #   CPBL 全年度數據區塊（L2771-2796，含客隊數據與分析指引）。
+                                #   實證：9/25 該腳本首次覆寫 h2h 後，9/27 起每場 CPBL 分析
+                                #   皆吐「⚠ CPBL season stats fetch error (non-fatal): 'wins'」，
+                                #   summary 平均長度 1812 → 1619 字元。
+                                # 修法：同時支援短 key(w/t/l) 與長 key(wins/ties/losses)，
+                                #   避免資料源格式再變動時重演。
+                                _hw = opp_h2h.get('w', opp_h2h.get('wins', 0))
+                                _ht = opp_h2h.get('t', opp_h2h.get('ties', 0))
+                                _hl = opp_h2h.get('l', opp_h2h.get('losses', 0))
+                                cpbl_spec += f"\n  對戰 {opp_name}：{_hw}勝-{_ht}和-{_hl}敗"
                         cpbl_spec += "\n\n💡 全年度數據分析指引："
                         cpbl_spec += "\n- 團隊 ERA/WHIP 反映整體投手戰力，差距 > 0.5 為有意義優勢"
                         cpbl_spec += "\n- 團隊 AVG/OBP/SLG 反映打線深度，OPS 差距 > 0.05 為明顯優勢"
