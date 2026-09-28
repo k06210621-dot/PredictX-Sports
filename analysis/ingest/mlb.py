@@ -52,15 +52,39 @@ class MLBIngester(BaseIngester):
         games: List[Dict[str, Any]] = []
         for date_block in data.get("dates", []):
             for g in date_block.get("games", []):
-                status_code = g.get("status", {}).get("abstractGameState", "Preview")
-                teams = g.get("teams", {})
+                # 🆕 [2026-09-28 修復] 延賽/取消判讀改用 detailedState
+                # 根因：MLB Stats API 對 Postponed / Cancelled 的賽事，
+                #   abstractGameState 仍回傳 "Final"（且無比分）。
+                #   舊碼只讀 abstractGameState → 被當成 FINAL 寫入 DB，
+                #   產生「status=FINAL 但比分 NULL」的錯誤狀態列。
+                #   實證：9/22 Blue Jays @ Orioles（Postponed）、
+                #        9/27 Orioles @ Yankees（Cancelled），
+                #        兩者 abstractGameState 皆為 "Final"。
+                # 影響：狀態標記錯誤 —— App 顯示「已完賽」但沒有比分，
+                #   事實上是延賽/取消，應顯示為延賽。
+                #   （註：延賽/平手導致「無驗證結果」是既有設計的預期行為，
+                #     settlement_engine 有專門路徑標記 is_hit=None 並排除於
+                #     命中率分母之外，此非本修復要處理的問題。）
+                # 修法：先看 detailedState，延賽/取消優先映射為 POSTPONED，
+                #   與 base.py _normalize 及 settlement_engine 的 POSTPONED
+                #   處理路徑對齊，讓狀態如實反映賽事現況。
+                status_obj = g.get("status", {}) or {}
+                detailed_state = (status_obj.get("detailedState") or "").strip()
+                status_code = status_obj.get("abstractGameState", "Preview")
+
+                teams = g.get("teams", {}) or {}
                 home_team_data = teams.get("home", {}).get("team", {})
                 away_team_data = teams.get("away", {}).get("team", {})
                 home = home_team_data.get("name")
                 away = away_team_data.get("name")
                 if not home or not away:
                     continue
-                if status_code == "Final":
+
+                _ds_upper = detailed_state.upper()
+                if _ds_upper in ("POSTPONED", "CANCELLED", "CANCELED",
+                                 "SUSPENDED", "DELAYED"):
+                    status = "POSTPONED"
+                elif status_code == "Final":
                     status = "FINAL"
                 elif status_code == "Live":
                     status = "LIVE"
@@ -69,6 +93,11 @@ class MLBIngester(BaseIngester):
 
                 home_score = teams.get("home", {}).get("score")
                 away_score = teams.get("away", {}).get("score")
+
+                # 延賽/取消賽事不應帶比分（避免下游誤判為已完賽）
+                if status == "POSTPONED":
+                    home_score = None
+                    away_score = None
 
                 # 🆕 [2026-07-28] 未來日期防護：若 target_date 是未來日期
                 # 一律強制 SCHEDULED 並清空比分，避免 settlement 提早結算
