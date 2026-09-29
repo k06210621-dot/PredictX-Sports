@@ -209,8 +209,19 @@ def _extract_score(text):
     - 原 regex 過於寬鬆，會抓到「1勝4敗」、「3-2」、「0.525 vs 0.483」等非預測比分
     - 改成必須緊鄰「比分/推演比分/預測比分/expected score」等明確關鍵字
     - 多個匹配時，取**第一個**最相關的（最可能在前段）
+
+    🆕 [2026-09-29] 連字號正規化：
+    - LLM 輸出比分的連字號不穩定，會混用 U+2011 (NON-BREAKING HYPHEN)、
+      U+2010 (HYPHEN)、U+2012 (FIGURE DASH)、U+2212 (MINUS SIGN) 等變體，
+      而 regex 只認 [-－–] (U+002D/U+FF0D/U+2013)，導致比分抽取失敗、summary 同步失效。
+    - 修法：抽取前先把所有常見連字號/dash 變體正規化成標準 U+002D，一次涵蓋所有變體。
     """
     import re
+    # 🆕 [2026-09-29] 連字號/dash 變體 → 標準 U+002D（涵蓋 LLM 可能輸出的所有罕見字元）
+    # 僅含「短連字號/減號」類；排除 EM DASH (U+2014) / HORIZONTAL BAR (U+2015)，
+    # 因它們是中文破折號「——」，不應被改寫成連字號。
+    if text:
+        text = re.sub(r'[‐‑‒–−－]', '-', text)
     # 🆕 [2026-08-17] 優先用「明確」比分標記
     specific_patterns = [
         r"預測比分[為是：:]?\s*(\d+)\s*[-－–]\s*(\d+)",
@@ -4440,7 +4451,14 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                                 # 只替換與 summary_predicted_score 相同的「X-Y」出現處（避免誤傷其他數字）
                                 old_pair = f"{sum_h}-{sum_a}"
                                 new_pair = f"{cur_h}-{cur_a}"
-                                if old_pair in summary_text:
+                                # 🆕 [2026-09-29] summary 文字中的連字號可能是 U+2011 等變體，
+                                # 先正規化成標準 U+002D，否則 old_pair 精確匹配不到、同步失效。
+                                summary_text_normalized = _re.sub(r'[‐‑‒–−－]', '-', summary_text)
+                                if old_pair in summary_text_normalized:
+                                    summary_text_normalized = summary_text_normalized.replace(old_pair, new_pair)
+                                    result["summary"] = summary_text_normalized
+                                    print(f"  🔄 summary 比分同步: {old_pair} → {new_pair}（分布校準權威，summary 跟隨）")
+                                elif old_pair in summary_text:
                                     summary_text = summary_text.replace(old_pair, new_pair)
                                     result["summary"] = summary_text
                                     print(f"  🔄 summary 比分同步: {old_pair} → {new_pair}（分布校準權威，summary 跟隨）")
