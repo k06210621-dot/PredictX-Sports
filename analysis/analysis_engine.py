@@ -4445,6 +4445,20 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                             sum_direction_ok = (home_fav and sum_h > sum_a) or ((not home_fav) and sum_a > sum_h)
                             if not sum_direction_ok:
                                 print(f"  ⛔ summary 比分方向與勝率矛盾，保留模型比分 {cur_h}-{cur_a}（summary 誤抓 {sum_h}-{sum_a}）")
+                                # 🆕 [2026-09-29] 方向矛盾時也同步 summary 文字：
+                                # 方向防護保留模型比分是對的，但若不改寫 summary，App 會顯示
+                                # 「深度分析摘要比分」與「模型推演比分」兩個矛盾數字。
+                                # 這裡的 summary_predicted_score 來自明確的「預測比分/projected score」
+                                # 標記（_extract_score 的 specific_patterns 優先），是 LLM 自身輸出方向寫錯，
+                                # 非歷史戰績誤抓，故安全同步成模型比分。
+                                summary_text2 = result.get("summary") or ""
+                                old_pair2 = f"{sum_h}-{sum_a}"
+                                new_pair2 = f"{cur_h}-{cur_a}"
+                                summary_norm2 = _re.sub(r'[‐‑‒–−－]', '-', summary_text2)
+                                if old_pair2 in summary_norm2:
+                                    summary_norm2 = summary_norm2.replace(old_pair2, new_pair2)
+                                    result["summary"] = summary_norm2
+                                    print(f"  🔄 summary 比分同步（方向矛盾）: {old_pair2} → {new_pair2}")
                             else:
                                 # summary 比分方向正確但與校準結果不同 → 把 summary 文字中的該比分改寫為校準值
                                 summary_text = result.get("summary") or ""
