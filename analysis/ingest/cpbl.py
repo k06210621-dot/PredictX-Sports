@@ -172,6 +172,22 @@ class CPBLIngester(BaseIngester):
         # 🆕 補先發投手（從 cpbl.com.tw API）
         self._enrich_pitchers(games, target_date)
 
+        # 🆕 [2026-09-29] 補賽識別：TheSportsDB 對「補賽」保留 strPostponed=yes（殘留標記），
+        # 導致補賽被誤標 POSTPONED、分析跳過（實證 9/30 補賽週 3 場官方照打卻被跳過）。
+        # 區分信號：補賽會公布先發投手（PTT 預告），真延賽（颱風等）不會有先發預告。
+        # 修法：已補到先發投手（非佔位符）的 POSTPONED 場次，改回 SCHEDULED。
+        for g in games:
+            if g.get('status') == 'POSTPONED':
+                hp = g.get('home_pitcher')
+                ap = g.get('away_pitcher')
+                has_sp = bool(hp) or bool(ap)
+                if has_sp:
+                    g['status'] = 'SCHEDULED'
+                    LOGGER.info(
+                        f"CPBL 補賽識別: {g.get('home_team')} vs {g.get('away_team')} "
+                        f"已公布先發投手，改標 SCHEDULED"
+                    )
+
         return games
 
     def _enrich_pitchers(self, games: List[Dict[str, Any]], target_date: str):
