@@ -1746,7 +1746,8 @@ class AnalysisEngine:
                             _cur.execute("""
                                 SELECT t.english_name, p.player_name, p.era, p.k_pct, p.bb_pct,
                                        p.fip, p.whip, p.lob_pct, p.babip, p.h9, p.hr9,
-                                       p.whiff_pct, p.sb_pct, p.era_plus, p.ip, p.games
+                                       p.whiff_pct, p.sb_pct, p.era_plus, p.ip, p.games,
+                                       p.b_avg, p.b_obp, p.b_slg
                                 FROM predictx.cpbl_pitcher_pr p
                                 JOIN predictx.teams t ON p.team_id = t.team_id
                                 WHERE p.season = 2026 AND p.era IS NOT NULL AND p.era > 0
@@ -1759,7 +1760,8 @@ class AnalysisEngine:
                             fb = {}
                             for r in rows:
                                 (team_en, pname, era, k_pct, bb_pct, fip, whip, lob_pct,
-                                 babip, h9, hr9, whiff_pct, sb_pct, era_plus, ip, games) = r
+                                 babip, h9, hr9, whiff_pct, sb_pct, era_plus, ip, games,
+                                 b_avg, b_obp, b_slg) = r
                                 if team_en not in fb:
                                     fb[team_en] = []
                                 fb[team_en].append({
@@ -1780,6 +1782,9 @@ class AnalysisEngine:
                                     'games': int(games) if games else 0,
                                     'wins': 0,
                                     'losses': 0,
+                                    'b_avg': float(b_avg) if b_avg else None,
+                                    'b_obp': float(b_obp) if b_obp else None,
+                                    'b_slg': float(b_slg) if b_slg else None,
                                 })
                             
                             if fb:
@@ -2902,8 +2907,11 @@ Park Factor: {pf:.2f} ({park_interp})
                     hr9 = p.get('hr9')
                     whiff = p.get('whiff_pct')
                     era_plus = p.get('era_plus')
+                    b_avg = p.get('b_avg')
 
                     line = f"\n  #{i} {p['name']}: ERA={era:.2f}, K%={k_pct:.1f}, BB%={bb_pct:.1f}, {wins}W-{losses}L, {ip:.1f}局"
+                    if b_avg is not None:
+                        line += f", 被打擊率={b_avg:.3f}"
                     if whip is not None:
                         line += f", WHIP={whip:.3f}"
                     if fip is not None:
