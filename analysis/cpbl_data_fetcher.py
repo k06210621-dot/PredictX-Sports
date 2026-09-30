@@ -804,13 +804,36 @@ class CPBLDataFetcher:
                     return False
                 return True
 
-            if not _article_year_ok(article_resp.text):
-                # 迭代剩餘候選（全部），找到當年份文章為止
+            # 🆕 [2026-09-30 根因修復] 標題日期驗證：避免「目標日文章未發布 → 退回吃前一日預告文」
+            # 實證（2026-09-30）：_get_ptt_starting_pitchers('2026/10/01') 找不到 10/1 文章時，
+            # 退回到 9/29 發布的「[情報] CPBL 9/30 先發投手預告」，把 9/30 三場投手
+            # （威能帝/伍鐸/林詔恩/威鳳山…）套用到 10/1 的兩場，造成「同一投手連兩天先發」
+            # 的物理不可能資料，且已被分析服務採用產生 summary。
+            # 修法：年份驗證通過後，再驗證文章標題的 M/D 必須等於目標 search_md；
+            # 不符則視為不可用候選（回 False，走既有候選迭代/ index scan 流程）。
+            def _article_date_ok(resp_text):
+                title_m = re.search(r'<title>\[情報\]\s*CPBL\s*(\d+)/(\d+)\s*先發投手', resp_text)
+                if not title_m:
+                    # 標題格式不符（非每日預告文）→ 不可用
+                    print(f"  [CPBL SP fallback] 文章標題非 CPBL M/D 先發投手預告，跳過", flush=True)
+                    return False
+                art_md = f"{int(title_m.group(1))}/{int(title_m.group(2))}"
+                if art_md != search_md:
+                    print(f"  [CPBL SP fallback] 文章日期 {art_md} != 目標 {search_md}，跳過（避免誤用其他日預告）", flush=True)
+                    return False
+                return True
+
+            def _article_usable(resp_text):
+                """年份 + 標題日期雙重驗證。"""
+                return _article_year_ok(resp_text) and _article_date_ok(resp_text)
+
+            if not _article_usable(article_resp.text):
+                # 迭代剩餘候選（全部），找到當年份且標題日期相符的文章為止
                 for next_link in candidates[1:]:
                     article_url = "https://www.ptt.cc" + next_link
                     print(f"  [CPBL SP fallback] Trying next candidate: {article_url}", flush=True)
                     article_resp = self.session.get(article_url, timeout=10)
-                    if article_resp.status_code == 200 and _article_year_ok(article_resp.text):
+                    if article_resp.status_code == 200 and _article_usable(article_resp.text):
                         break
                 else:
                     # 🆕 [2026-09-25 v4b] 年份驗證全失敗 → 最後手段：index 分頁回溯掃描
@@ -820,7 +843,7 @@ class CPBLDataFetcher:
                     #   先發投手（預告）」即抓文章重跑年份驗證。
                     # 🆕 [2026-09-26 v5b] 也升級深度 6 → 12 + idx 內 status 過濾
                     #   9/26 實證 M.1790317929 在 index22928（倒數第 8 頁）
-                    print(f"  [CPBL SP fallback] 年份驗證全失敗（{len(candidates)} 筆皆舊文），啟動 index 分頁回溯掃描（最多 12 頁）...", flush=True)
+                    print(f"  [CPBL SP fallback] 年份/日期驗證全失敗（{len(candidates)} 筆皆不可用），啟動 index 分頁回溯掃描（最多 12 頁）...", flush=True)
                     idx_page_url = "https://www.ptt.cc/bbs/Baseball/index.html"
                     idx_title_re = re.compile(
                         r'<a href="(/bbs/Baseball/M\.\d+\.A\.\w+\.html)">(\[情報\]\s*CPBL\s*\d+/\d+\s*先發投手(?:預告)?)</a>'
@@ -846,7 +869,7 @@ class CPBLDataFetcher:
                                 cand_url = "https://www.ptt.cc" + idx_link
                                 print(f"  [CPBL SP fallback] index scan 候選: {cand_url}（{idx_title.strip()}）", flush=True)
                                 cand_resp = self.session.get(cand_url, timeout=10)
-                                if cand_resp.status_code == 200 and _article_year_ok(cand_resp.text):
+                                if cand_resp.status_code == 200 and _article_usable(cand_resp.text):
                                     article_url = cand_url
                                     article_resp = cand_resp
                                     found_in_page = True
