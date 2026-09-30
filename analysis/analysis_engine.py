@@ -1822,16 +1822,33 @@ class AnalysisEngine:
                 if cpbl_starters:
                     features['cpbl_starting_pitchers'] = cpbl_starters
 
-                    # 【2026-08-06 更新】CPBL starter keys 現在是中文隊名（ex: "味全龍"），
-                    # 而 game dict 給的是英文隊名（ex: "Wei Chuan Dragons"），
-                    # 用 cpbl_data_fetcher.TEAM_MAP 反查做對應
+                    # 【2026-08-06 更新】CPBL starter keys 可能是中文隊名（ex: "味全龍"），
+                    # 而 game dict 給的是英文隊名（ex: "Wei Chuan Dragons"），需做對應。
+                    # 🆕 [2026-09-30 根因修復 P2] 原邏輯「反查中文 key」在 proxy 路徑失效：
+                    #   CPBL-Proxy (_get_today_starting_pitchers_via_proxy) 回傳的是**英文** key
+                    #   （proxy 端的 get_today_starting_pitchers 走 stats.cpbl.com.tw 直連路徑，
+                    #   其 starters dict 以 TEAM_CN_TO_EN 轉出的英文隊名為 key），
+                    #   而本區塊卻用 en_to_cn 反查成中文再查 → 永遠 miss → h_name/a_name 恆為 'TBD'
+                    #   → 整個「寫回 games 表」區塊（含 SQL 級 placeholder 防護）從未執行（休眠）。
+                    #   實證 2026-09-30：proxy 回 6 starters，但 log 顯示
+                    #   「CPBL starting pitchers: TSG Hawks=TBD, Rakuten Monkeys=TBD」。
+                    # 修法：**英文 key 優先，中文 key fallback**，同時兼容
+                    #   proxy（英文）與 cpbl.com.tw 直連（中文）兩種回傳格式。
                     from cpbl_data_fetcher import TEAM_MAP as _CPBL_TEAM_MAP
                     en_to_cn = {v: k for k, v in _CPBL_TEAM_MAP.items()}
-                    home_cn = en_to_cn.get(sp_home_name, sp_home_name)
-                    away_cn = en_to_cn.get(sp_away_name, sp_away_name)
 
-                    h_sp = cpbl_starters.get(home_cn, {})
-                    a_sp = cpbl_starters.get(away_cn, {})
+                    def _lookup_starter(team_name_en):
+                        """先以英文隊名查，miss 再以反查出的中文隊名查（兼容兩種 key 格式）。"""
+                        if not team_name_en:
+                            return {}
+                        hit = cpbl_starters.get(team_name_en)
+                        if hit:
+                            return hit
+                        cn = en_to_cn.get(team_name_en, team_name_en)
+                        return cpbl_starters.get(cn, {}) or {}
+
+                    h_sp = _lookup_starter(sp_home_name)
+                    a_sp = _lookup_starter(sp_away_name)
                     h_name = h_sp.get('name', 'TBD') if h_sp else 'TBD'
                     a_name = a_sp.get('name', 'TBD') if a_sp else 'TBD'
 
