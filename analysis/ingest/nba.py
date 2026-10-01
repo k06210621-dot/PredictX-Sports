@@ -35,6 +35,12 @@ class NBAIngester(BaseIngester):
         data = resp.json()
         games: List[Dict[str, Any]] = []
         for event in data.get("events", []):
+            # 🆕 [2026-10-01] 季前賽過濾：ESPN season.type=1 是 preseason。
+            # 季前賽先發為練兵陣容，預測無意義。type=2=regular-season（含 NBA Cup）、
+            # type=3=post-season 均保留。
+            season_type = (event.get("season") or {}).get("type")
+            if season_type == 1:
+                continue
             competitors = event.get("competitions", [{}])[0].get("competitors", [])
             home = away = None
             for c in competitors:
