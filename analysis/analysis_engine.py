@@ -2277,12 +2277,12 @@ class AnalysisEngine:
         else:
             mlb_advanced_section = ""
         
-        # NBA 即時進階數據（從 stats.nba.com 線上取得）
+        # NBA 即時進階數據（來源：basketball-reference.com，2026-10-01 換源；stats.nba.com 已失效）
         nba_advanced = features.get('nba_advanced', {})
         if nba_advanced:
             h = nba_advanced['team_stats']['home']
             a = nba_advanced['team_stats']['away']
-            nba_advanced_section = f"""===== NBA 即時進階數據（來源：stats.nba.com）=====
+            nba_advanced_section = f"""===== NBA 即時進階數據（來源：basketball-reference.com）=====
 主隊 {home_team}:
   進攻效率(OffRtg): {h['off_rtg']:.1f}, 防守效率(DefRtg): {h['def_rtg']:.1f}, 淨效率(Net): {h['net_rating']:.1f}
    Pace: {h['pace']:.1f}, EFG%: {h['efg_pct']:.3f}, TS%: {h['ts_pct']:.3f}, 勝率: {h['win_pct']:.3f}
