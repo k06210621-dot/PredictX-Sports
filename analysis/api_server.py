@@ -9,6 +9,8 @@ import psycopg2
 from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 import json
+import requests
+from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 import urllib.parse as urlparse
 
@@ -811,6 +813,122 @@ def import_cpbl_rebas():
         import traceback
         logger.error(f"import-cpbl-rebas: {e}\n{traceback.format_exc()}")
         return jsonify({"error": str(e), "type": type(e).__name__}), 500
+
+
+@app.route('/api/prune_stale_scheduled', methods=['POST'])
+def prune_stale_scheduled():
+    """
+    幽靈場清理：把「match_date 已過去、仍 SCHEDULED，且 MLB Stats API
+    已不再回傳該日該對戰」的場次標 POSTPONED + 刪分析/預測歷史。
+
+    安全設計（只清真正的幽靈，不誤傷）：
+    1. 只處理 match_date < 台北今日 的 SCHEDULED 列（未來/今天的賽事不碰）。
+    2. 先向 MLB Stats API 確認「該日期當天有 0 場」或「有場次但無此對戰」
+       → 該日殘留列才是幽靈；API 有場次的日期整日跳過（防 API 短暫抽風誤標）。
+    3. 比分已填、或已非 SCHEDULED 的列不碰。
+    4. 每列只標 POSTPONED（保留列審計），刪 game_analysis 與
+       ai_prediction_history 各一筆（若有）。
+
+    回傳統計：dates_checked / candidates / pruned / api_has_games_kept
+    """
+    data = request.get_json(silent=True) or {}
+    league = (data.get('league') or 'MLB').upper()
+    taipei_today = datetime.now(ZoneInfo("Asia/Taipei")).date()
+
+    conn = get_db()
+    conn.autocommit = True
+    cur = conn.cursor()
+    stats = {"league": league, "dates_checked": 0, "candidates": 0,
+             "pruned": 0, "api_has_games_kept": 0}
+
+    # 1) 找出過去日期仍 SCHEDULED 的列（僅 MLB 實作；API 移除邏輯是 MLB-specific）
+    if league != "MLB":
+        cur.close()
+        return jsonify({"status": "success", "skipped": f"league={league} 未實作", **stats}), 200
+
+    cur.execute(
+        """
+        SELECT g.game_id, g.match_date, ht.english_name AS home_name,
+               at.english_name AS away_name
+        FROM predictx.games g
+        JOIN predictx.teams ht ON g.home_team_id = ht.team_id
+        JOIN predictx.teams at ON g.away_team_id = at.team_id
+        WHERE ht.league = %s
+          AND g.match_date < %s::date
+          AND UPPER(g.status) = 'SCHEDULED'
+        ORDER BY g.match_date
+        """,
+        (league, taipei_today),
+    )
+    rows = cur.fetchall()
+    if not rows:
+        cur.close()
+        return jsonify({"status": "success", **stats}), 200
+
+    # 2) 按日期分組；先查 MLB API 該日是否仍有場次
+    by_date = {}
+    for r in rows:
+        by_date.setdefault(str(r['match_date']), []).append(r)
+
+    for d, day_rows in by_date.items():
+        stats['dates_checked'] += 1
+        try:
+            resp = requests.get(
+                "https://statsapi.mlb.com/api/v1/schedule",
+                params={"sportId": 1, "startDate": d, "endDate": d},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            api_games = []
+            for db_ in resp.json().get('dates', []):
+                api_games.extend(db_.get('games', []))
+        except Exception as e:
+            logger.warning(
+                f"[prune_stale_scheduled] MLB API {d} 查詢失敗({e})，跳過該日（保守）"
+            )
+            continue
+
+        if api_games:
+            # 該日 API 仍有場次：只清「對戰組合已不存在」的列
+            api_pairs = set()
+            for g in api_games:
+                h = (g.get('teams', {}).get('home', {}) or {}).get('team', {}) or {}
+                a = (g.get('teams', {}).get('away', {}) or {}).get('team', {}) or {}
+                api_pairs.add((h.get('name'), a.get('name')))
+            kept = 0
+            for r in day_rows:
+                pair = (r['home_name'], r['away_name'])
+                if pair in api_pairs:
+                    kept += 1  # API 仍有此對戰 → 保留（可能待補抓）
+                else:
+                    stats['candidates'] += 1
+                    _prune_game(cur, r['game_id'])
+                    stats['pruned'] += 1
+            stats['api_has_games_kept'] += kept
+        else:
+            # 該日 API 已完全沒有場次 → 該日所有殘留 SCHEDULED 列都是幽靈
+            stats['candidates'] += len(day_rows)
+            for r in day_rows:
+                _prune_game(cur, r['game_id'])
+                stats['pruned'] += 1
+
+    cur.close()
+    logger.info(f"[prune_stale_scheduled] {league}: {stats}")
+    return jsonify({"status": "success", **stats}), 200
+
+
+def _prune_game(cur, game_id) -> None:
+    """標 POSTPONED + 刪分析與預測歷史（單一幽靈列處理）"""
+    cur.execute(
+        "UPDATE predictx.games SET status = 'POSTPONED', "
+        "home_team_score = NULL, away_team_score = NULL, updated_at = NOW() "
+        "WHERE game_id = %s AND UPPER(status) = 'SCHEDULED'",
+        (game_id,),
+    )
+    cur.execute("DELETE FROM predictx.game_analysis WHERE game_id = %s", (game_id,))
+    cur.execute(
+        "DELETE FROM predictx.ai_prediction_history WHERE game_id = %s", (game_id,)
+    )
 
 
 @app.route('/api/insert_games', methods=['POST'])
