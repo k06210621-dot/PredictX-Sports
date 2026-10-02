@@ -221,3 +221,42 @@ class BaseIngester(ABC):
             return True
 
         return self.upload(games)
+
+    def prune_stale_scheduled(self, dry_run: bool = False) -> bool:
+        """
+        清理「幽靈場」：DB 中 match_date 已過去、仍 SCHEDULED，但來源 API
+        已不再回傳該日該對戰的場次（如 MLB 季後賽系列提前結束、G3 不會打）。
+
+        背景：ingest 的 run() 只抓今天起未來 N 天，backfill 只抓美東昨日
+        （兩日）。若一場「排程中」的賽事被 API 靜默移除（季後賽 short
+        series、取消），DB 該列永遠停在 SCHEDULED + 分析永懸 → 幽靈列。
+
+        修法：呼叫雲端 /api/prune_stale_scheduled（api_server 實作 DB 更新：
+        status→POSTPONED、刪 analysis、刪 prediction_history）。只對
+        match_date < 今日（台北）的 SCHEDULED 列生效；API 仍有場次的日期
+        會被跳過，避免誤標 API 短暫抽風。
+        """
+        LOGGER.info(f"[{self.league_code}] ===== 幽靈場清理（prune）=====")
+        endpoint = f"{self.cloud_url}/api/prune_stale_scheduled"
+        try:
+            resp = self.session.post(
+                endpoint,
+                json={"league": self.league_code},
+                timeout=60,
+            )
+            if resp.status_code != 200:
+                LOGGER.error(
+                    f"[{self.league_code}] ❌ prune HTTP {resp.status_code}: "
+                    f"{resp.text[:200]}"
+                )
+                return False
+            r = resp.json()
+            LOGGER.info(
+                f"[{self.league_code}] prune → dates_checked={r.get('dates_checked')}, "
+                f"candidates={r.get('candidates')}, pruned={r.get('pruned')}, "
+                f"api_has_games_kept={r.get('api_has_games_kept')}"
+            )
+            return True
+        except Exception as e:
+            LOGGER.error(f"[{self.league_code}] ❌ prune 失敗: {e}")
+            return False
