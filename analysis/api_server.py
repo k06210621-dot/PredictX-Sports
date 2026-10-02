@@ -833,6 +833,7 @@ def prune_stale_scheduled():
     """
     data = request.get_json(silent=True) or {}
     league = (data.get('league') or 'MLB').upper()
+    dry_run = bool(data.get('dry_run'))
     taipei_today = datetime.now(ZoneInfo("Asia/Taipei")).date()
 
     conn = get_db()
@@ -902,18 +903,21 @@ def prune_stale_scheduled():
                     kept += 1  # API 仍有此對戰 → 保留（可能待補抓）
                 else:
                     stats['candidates'] += 1
-                    _prune_game(cur, r['game_id'])
+                    if not dry_run:
+                        _prune_game(cur, r['game_id'])
                     stats['pruned'] += 1
             stats['api_has_games_kept'] += kept
         else:
             # 該日 API 已完全沒有場次 → 該日所有殘留 SCHEDULED 列都是幽靈
             stats['candidates'] += len(day_rows)
-            for r in day_rows:
-                _prune_game(cur, r['game_id'])
-                stats['pruned'] += 1
+            if not dry_run:
+                for r in day_rows:
+                    _prune_game(cur, r['game_id'])
+            stats['pruned'] += len(day_rows)
 
     cur.close()
-    logger.info(f"[prune_stale_scheduled] {league}: {stats}")
+    logger.info(f"[prune_stale_scheduled] {league} (dry_run={dry_run}): {stats}")
+    stats['dry_run'] = dry_run
     return jsonify({"status": "success", **stats}), 200
 
 

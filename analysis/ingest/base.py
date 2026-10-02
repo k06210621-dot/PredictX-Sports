@@ -241,7 +241,7 @@ class BaseIngester(ABC):
         try:
             resp = self.session.post(
                 endpoint,
-                json={"league": self.league_code},
+                json={"league": self.league_code, "dry_run": dry_run},
                 timeout=60,
             )
             if resp.status_code != 200:
