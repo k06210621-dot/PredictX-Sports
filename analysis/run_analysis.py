@@ -103,6 +103,7 @@ def save_analysis(conn, game_id, analysis_result):
             pred_score = analysis_result.get('predicted_score', '')
 
             # 取得 league + team names（從 result 中不一定有，用 game_id 從 games 表抓）
+            g_row = None  # 🆕 [2026-10-03] 防 SELECT 失敗時 NameError（g_row 未定義）
             cur.execute(
                 """
                 SELECT t_home.league,
@@ -174,7 +175,17 @@ def save_analysis(conn, game_id, analysis_result):
         # 用 threading 在背景觸發推播，不阻塞 commit 與 main 流程
         try:
             confidence = analysis_result.get('confidence')
-            if confidence is not None and float(confidence) >= 8:
+            # 🆕 [2026-10-03] 日期守衛：只推「match_date >= 台北今天-1」的賽事。
+            # 根因：歷史場次 force 重跑時 conf>=8 照樣推播（2026-10-03 實證：
+            #   6/30 NYY@BOS conf 9.0、9/26 NYY@BAL conf 8.3 推播給 2 台 iOS），
+            #   用戶收到「已結束比賽」的提醒是誤導。
+            # 基準線用「台北今天-1」：美東聯盟（MLB/NBA/WNBA）match_date 存美東
+            #   日期，正常 cron 分析場最多偏台北 -1 天，此線不誤傷；歷史重跑場
+            #   全落在線外。不改變 conf>=8 門檻，純防呆。
+            _taipei_today = datetime.now(ZoneInfo("Asia/Taipei")).date()
+            _min_push_date = (_taipei_today - timedelta(days=1)).isoformat()
+            _match_date = str(g_row.get('match_date')) if g_row else ''
+            if confidence is not None and float(confidence) >= 8 and _match_date >= _min_push_date:
                 match_info = {
                     'game_id': game_id,
                     'home_team': home_name or '主隊',
