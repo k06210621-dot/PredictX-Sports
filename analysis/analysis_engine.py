@@ -1208,7 +1208,10 @@ class AnalysisEngine:
             # 🆕 [2026-09-28 P1] 陳舊守衛：目標列過期 → 交給 games 實算 fallback
             if has_updated_at and row.get('age_days') is not None:
                 _age_days = float(row['age_days'])
-                if _age_days > 10:
+                # 🆕 [2026-10-03] 門檻 10→35 天：cpbl_standings 已掛排程（30 天/次），
+                # 10 天門檻會讓排程後 20 天的資料被判陳舊、排程形同虛設。
+                # 35 = 30 天排程 + 5 天緩衝（來源 HiNetCDN cookie-challenge 偶發延遲）。
+                if _age_days > 35:
                     print(f"  ⚠ [standings] {table_name} 資料陳舊（{_age_days:.0f} 天前），改用 games 實算即時戰績")
                     return None
             return {
