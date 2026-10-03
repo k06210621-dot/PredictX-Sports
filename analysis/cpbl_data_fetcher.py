@@ -535,7 +535,10 @@ class CPBLDataFetcher:
 
     def fetch_and_store_game_data(self, game_id, home_team_name, away_team_name):
         players = self.get_players_from_rankings()
-        hitters = self.get_hitting_leaderboard()
+        # 🆕 [2026-10-03] 移除死路：get_hitting_leaderboard() 打 cpbl.com.tw/stats/recordall
+        #   已長期 403（HiNetCDN），hitting_leaders 永遠空。打者資料走 DB 兩條路
+        #   （get_top_batters / get_player_pr_data，rebas 源），此鍵保留空列表相容。
+        hitters = []
         team_data = self.get_team_standings()
 
         home_ps = (players or {}).get(home_team_name, [])
@@ -589,7 +592,7 @@ class CPBLDataFetcher:
             return []
         try:
             self.cur.execute("""
-                SELECT player_name, ranking, wrc_plus,
+                SELECT player_name, ranking, ops_plus,
                        woba, avg, obp, slg, iso,
                        exit_velo_avg_kmh, exit_velo_max_kmh,
                        hard_hit_pct, k_pct, bb_pct, whiff_pct, chase_pct,

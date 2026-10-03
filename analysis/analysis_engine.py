@@ -1736,7 +1736,16 @@ class AnalysisEngine:
                 cpbl_data = fetcher.fetch_and_store_game_data(game_id, home_name, away_name)
                 if cpbl_data:
                     features['cpbl_advanced'] = cpbl_data
-                    print(f"  🏆 CPBL player data: {len(cpbl_data.get('players', {}).get('home', []))} home + {len(cpbl_data.get('players', {}).get('away', []))} away players, {len(cpbl_data.get('hitting_leaders', {}).get('home', []))} hitters")
+                    # 🆕 [2026-10-03] 原 log 印 hitting_leaders（cpbl.com.tw 爬蟲，403 死路，
+                    #   永遠 0），誤導成「打者資料缺失」。改印真實來源：
+                    #   top_batters（rebas wOBA 排序）+ player_pr（rebas 進階）。
+                    _tb = cpbl_data.get('top_batters') or {}
+                    _pr = cpbl_data.get('player_pr') or {}
+                    print(
+                        f"  🏆 CPBL player data: {len(cpbl_data.get('players', {}).get('home', []))} home + {len(cpbl_data.get('players', {}).get('away', []))} away players, "
+                        f"top_batters {len(_tb.get('home', []))}+{len(_tb.get('away', []))} (rebas wOBA), "
+                        f"player_pr {len(_pr.get('home', []))}+{len(_pr.get('away', []))} (rebas PR)"
+                    )
                 
                 # CPBL 投手個人資料（從 sportify.tw）
                 try:
@@ -2710,7 +2719,7 @@ Park Factor: {pf:.2f} ({park_interp})
                 a_tb_list = tb.get('away') or []
                 if h_tb_list or a_tb_list:
                     cpbl_spec += "\n\n===== CPBL 主力打者 Statcast 數據（依 wOBA 排序 Top 5）====="
-                    cpbl_spec += "\n指標：wOBA（加權上壘率，最強單一指標）、ISO（純長打）、擊球初速 Avg/Max（爆發力）、Hard%（強擊球率）、K%（被三振率）、Whiff%（揮空率）、Chase%（追打率）、wRC+（標準化攻擊指數）"
+                    cpbl_spec += "\n指標：wOBA（加權上壘率，最強單一指標）、ISO（純長打）、擊球初速 Avg/Max（爆發力）、Hard%（強擊球率）、K%（被三振率）、Whiff%（揮空率）、Chase%（追打率）、OPS+（標準化攻擊指數）"
                     for side, label in [('home', '主隊'), ('away', '客隊')]:
                         tb_list = h_tb_list if side == 'home' else a_tb_list
                         team_label = f"{label} {home_team if side == 'home' else away_team}"
@@ -2742,7 +2751,7 @@ Park Factor: {pf:.2f} ({park_interp})
                 a_pr_list = pr.get('away') or []
                 if h_pr_list or a_pr_list:
                     cpbl_spec += "\n\n===== CPBL 球員 PR 進階打擊數據（來源：用戶官方驗證資料）====="
-                    cpbl_spec += "\nPR 為百分位排名（99=聯盟頂尖、50=中位、0=落後），包含 wRC+、打擊率、長打率、上壘率、ISO、擊球初速、強擊球%、出色擊球(Barrel)、三振/保送/揮空/追打率"
+                    cpbl_spec += "\nPR 為百分位排名（99=聯盟頂尖、50=中位、0=落後），包含 OPS+、打擊率、長打率、上壘率、ISO、擊球初速、強擊球%、出色擊球(Barrel)、三振/保送/揮空/追打率"
                     for side, label in [('home', '主隊'), ('away', '客隊')]:
                         pr_list = h_pr_list if side == 'home' else a_pr_list
                         team_label = f"{label} {home_team if side == 'home' else away_team}"
@@ -2753,7 +2762,7 @@ Park Factor: {pf:.2f} ({park_interp})
                         for i, p in enumerate(pr_list[:8], 1):
                             name = p.get('player_name', '?')
                             rank = p.get('ranking', '?')
-                            wrc = p.get('wrc_plus', '?')
+                            wrc = p.get('ops_plus', '?')  # 🆕 [2026-10-03] rebas 有 OPS+ 無 wRC+，改用 OPS+
                             avg = p.get('avg', '?')
                             slg = p.get('slg', '?')
                             obp = p.get('obp', '?')
@@ -2765,7 +2774,7 @@ Park Factor: {pf:.2f} ({park_interp})
                             bb_pct = p.get('bb_pct', '?')
                             cpbl_spec += (
                                 f"\n  #{i} {name} (PR排名#{rank}): "
-                                f"wRC+={wrc}, AVG={avg}, SLG={slg}, OBP={obp}, ISO={iso}, "
+                                f"OPS+={wrc}, AVG={avg}, SLG={slg}, OBP={obp}, ISO={iso}, "
                                 f"EVmax={ev}, Hard%={hard}, Barrel%={barrel}, K%={k_pct}, BB%={bb_pct}"
                             )
                         # 計算團隊平均
@@ -2773,10 +2782,10 @@ Park Factor: {pf:.2f} ({park_interp})
                             def _num(v):
                                 try: return float(v)
                                 except: return 0
-                            avg_wrc = sum(_num(p.get('wrc_plus')) for p in pr_list) / max(len([p for p in pr_list if p.get('wrc_plus') is not None]), 1)
+                            avg_wrc = sum(_num(p.get('ops_plus')) for p in pr_list) / max(len([p for p in pr_list if p.get('ops_plus') is not None]), 1)
                             avg_obp = sum(_num(p.get('obp')) for p in pr_list) / max(len([p for p in pr_list if p.get('obp') is not None]), 1)
                             avg_ev = sum(_num(p.get('exit_velo_max_kmh')) for p in pr_list) / max(len([p for p in pr_list if p.get('exit_velo_max_kmh') is not None]), 1)
-                            cpbl_spec += f"\n  → 球隊主力平均: wRC+={avg_wrc:.1f}, OBP={avg_obp:.1f}, EVmax={avg_ev:.1f}"
+                            cpbl_spec += f"\n  → 球隊主力平均: OPS+={avg_wrc:.1f}, OBP={avg_obp:.1f}, EVmax={avg_ev:.1f}"
 
                 # 🆕 [2026-07-25] 投手被打進階數據（Pitcher Batting Against PR，越低越好）
                 pa_pr = cpbl_data.get('pitcher_against_pr') or {}
@@ -2896,15 +2905,11 @@ Park Factor: {pf:.2f} ({park_interp})
                 except Exception as e:
                     print(f"  ⚠ CPBL season stats fetch error (non-fatal): {e}")
 
-                hitters = cpbl_data.get('hitting_leaders', {})
-                if hitters and hitters.get('home'):
-                    top_h = hitters['home'][0]
-                    top_a = hitters['away'][0] if hitters.get('away') else None
-                    cpbl_spec += f"\n打擊榜 — {home_team} 最佳: {top_h['name']} ({top_h['avg']}, {top_h['hr']}HR)"
-                    if top_a:
-                        cpbl_spec += f" | {away_team} 最佳: {top_a['name']} ({top_a['avg']}, {top_a['hr']}HR)"
+                # 🆕 [2026-10-03] 移除打擊榜死路區塊：hitting_leaders 來源 cpbl.com.tw
+                #   爬蟲已死（見 cpbl_data_fetcher.fetch_and_store_game_data），永遠空。
+                #   打者資料由上方 top_batters（rebas wOBA Top 5）與 player_pr
+                #   （rebas 進階 PR Top 8）兩段注入，資訊更完整。
 
-                        # CPBL 投手個人資料（從 sportify.tw）
             cpbl_pitchers = features.get('cpbl_pitchers', {})
             if cpbl_pitchers:
                 cpbl_spec += "\n\n===== CPBL 投手數據（來源：sportify.tw / cpbl_pitcher_pr）====="
@@ -4475,8 +4480,19 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                                 old_pair2 = f"{sum_h}-{sum_a}"
                                 new_pair2 = f"{cur_h}-{cur_a}"
                                 summary_norm2 = _re.sub(r'[‐‑‒–−－]', '-', summary_text2)
+                                _synced2 = False
                                 if old_pair2 in summary_norm2:
                                     summary_norm2 = summary_norm2.replace(old_pair2, new_pair2)
+                                    _synced2 = True
+                                # 🆕 [2026-10-03] 中英雙段同步：中文段比分用「X比Y」格式
+                                # （英文段是 dash），舊邏輯只 replace dash 只動英文段。
+                                # 實證 10/1 味全場：中文「預期比分4比3」英文「Projected
+                                # score 5-2」，同步後中文仍留舊比分 → 中英矛盾。
+                                old_cn2 = f"{sum_h}比{sum_a}"
+                                if old_cn2 in summary_norm2:
+                                    summary_norm2 = summary_norm2.replace(old_cn2, f"{cur_h}比{cur_a}")
+                                    _synced2 = True
+                                if _synced2:
                                     result["summary"] = summary_norm2
                                     print(f"  🔄 summary 比分同步（方向矛盾）: {old_pair2} → {new_pair2}")
                             else:
@@ -4488,8 +4504,17 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                                 # 🆕 [2026-09-29] summary 文字中的連字號可能是 U+2011 等變體，
                                 # 先正規化成標準 U+002D，否則 old_pair 精確匹配不到、同步失效。
                                 summary_text_normalized = _re.sub(r'[‐‑‒–−－]', '-', summary_text)
+                                _synced = False
                                 if old_pair in summary_text_normalized:
                                     summary_text_normalized = summary_text_normalized.replace(old_pair, new_pair)
+                                    _synced = True
+                                # 🆕 [2026-10-03] 中英雙段同步：中文段「X比Y」格式也要換，
+                                # 否則中文比分與英文比分不一致（見方向矛盾路徑同註解）。
+                                old_cn = f"{sum_h}比{sum_a}"
+                                if old_cn in summary_text_normalized:
+                                    summary_text_normalized = summary_text_normalized.replace(old_cn, f"{cur_h}比{cur_a}")
+                                    _synced = True
+                                if _synced:
                                     result["summary"] = summary_text_normalized
                                     print(f"  🔄 summary 比分同步: {old_pair} → {new_pair}（分布校準權威，summary 跟隨）")
                                 elif old_pair in summary_text:
