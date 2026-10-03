@@ -189,32 +189,6 @@ def main():
         LOGGER.info(f"  {code} 補抓: {status}")
     LOGGER.info("=" * 60)
 
-    # ===== 第三階段：幽靈場清理（prune）=====
-    # 過去日期仍 SCHEDULED 且 API 已移除的場次（季後賽 short series 等）
-    # → 標 POSTPONED + 刪分析，防預測永懸。
-    # 放在補抓之後：補抓會先把美東昨日翻 FINAL，剩下仍 SCHEDULED 的
-    # 才是真正的幽靈候選。
-    LOGGER.info("\n" + "=" * 60)
-    LOGGER.info("=== 幽靈場清理階段 START ===")
-    LOGGER.info("=" * 60)
-    for code in selected:
-        try:
-            cls, _desc = LEAGUE_REGISTRY[code]
-            ingester = cls()
-            try:
-                ok = ingester.prune_stale_scheduled(dry_run=args.dry_run)
-                LOGGER.info(f"  ↳ {code} prune: {'OK' if ok else 'FAIL'}")
-            finally:
-                try:
-                    if hasattr(ingester, "close"):
-                        ingester.close()
-                except Exception:
-                    pass
-        except Exception as e:
-            LOGGER.error(f"[{code}] prune 失敗: {e}", exc_info=True)
-    LOGGER.info("=== 幽靈場清理階段 END ===")
-    LOGGER.info("=" * 60)
-
     # 若全部失敗, exit 1（讓 cron 觸發告警）
     all_failed = all(s == "FAIL" for s in results.values()) and \
                  all(s == "FAIL" for s in backfill_results.values())
