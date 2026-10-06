@@ -29,7 +29,7 @@
     "r": "42",
     "er": "37",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -61,7 +61,7 @@
     "r": "37",
     "er": "33",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -93,7 +93,7 @@
     "r": "39",
     "er": "33",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -125,7 +125,7 @@
     "r": "50",
     "er": "42",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -157,7 +157,7 @@
     "r": "40",
     "er": "39",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -189,7 +189,7 @@
     "r": "50",
     "er": "43",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -221,7 +221,7 @@
     "r": "43",
     "er": "39",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -253,7 +253,7 @@
     "r": "48",
     "er": "43",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -285,7 +285,7 @@
     "r": "55",
     "er": "44",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -317,7 +317,7 @@
     "r": "53",
     "er": "50",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -349,7 +349,7 @@
     "r": "56",
     "er": "52",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -381,7 +381,7 @@
     "r": "10",
     "er": "8",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -413,7 +413,7 @@
     "r": "9",
     "er": "8",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -445,7 +445,7 @@
     "r": "19",
     "er": "16",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -477,7 +477,7 @@
     "r": "18",
     "er": "16",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -509,7 +509,7 @@
     "r": "13",
     "er": "12",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -541,7 +541,7 @@
     "r": "12",
     "er": "11",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -573,7 +573,7 @@
     "r": "15",
     "er": "14",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -581,51 +581,51 @@
     "rank": 8,
     "name_en": "Kudo, Taisei",
     "team_code": "T",
-    "era": "1.07",
-    "g": "56",
+    "era": "1.05",
+    "g": "57",
     "w": "3",
     "l": "1",
-    "sv": "11",
+    "sv": "12",
     "hld": "13",
     "hp": "16",
     "cg": "0",
     "sho": "0",
     "nwg": "0",
     "pct": ".750",
-    "bf": "235",
-    "ip": "59",
+    "bf": "238",
+    "ip": "60",
     "h": "45",
     "hr": "0",
     "bb": "15",
     "ibb": "1",
     "hb": "1",
-    "so": "77",
+    "so": "80",
     "wp": "0",
     "bk": "0",
     "r": "9",
     "er": "7",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
     "league": "central",
-    "rank": 8,
+    "rank": 9,
     "name_en": "Iwazaki, Suguru",
     "team_code": "T",
-    "era": "2.66",
-    "g": "47",
+    "era": "2.62",
+    "g": "48",
     "w": "3",
     "l": "3",
     "sv": "11",
-    "hld": "17",
-    "hp": "20",
+    "hld": "18",
+    "hp": "21",
     "cg": "0",
     "sho": "0",
     "nwg": "0",
     "pct": ".500",
-    "bf": "179",
-    "ip": "44",
+    "bf": "181",
+    "ip": "44.2",
     "h": "39",
     "hr": "2",
     "bb": "15",
@@ -637,7 +637,7 @@
     "r": "13",
     "er": "13",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -669,7 +669,7 @@
     "r": "9",
     "er": "9",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -701,7 +701,7 @@
     "r": "11",
     "er": "9",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -733,7 +733,7 @@
     "r": "12",
     "er": "11",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -765,7 +765,7 @@
     "r": "15",
     "er": "14",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -797,7 +797,7 @@
     "r": "8",
     "er": "6",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -829,7 +829,7 @@
     "r": "13",
     "er": "13",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -861,7 +861,7 @@
     "r": "14",
     "er": "13",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -893,7 +893,7 @@
     "r": "15",
     "er": "15",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -925,7 +925,7 @@
     "r": "11",
     "er": "11",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -957,7 +957,7 @@
     "r": "16",
     "er": "16",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -965,8 +965,8 @@
     "rank": 10,
     "name_en": "Taka, Taichi",
     "team_code": "C",
-    "era": "1.98",
-    "g": "54",
+    "era": "1.94",
+    "g": "55",
     "w": "3",
     "l": "2",
     "sv": "0",
@@ -976,20 +976,20 @@
     "sho": "0",
     "nwg": "0",
     "pct": ".600",
-    "bf": "204",
-    "ip": "50",
+    "bf": "207",
+    "ip": "51",
     "h": "39",
     "hr": "2",
     "bb": "16",
     "ibb": "1",
     "hb": "3",
-    "so": "52",
+    "so": "53",
     "wp": "0",
     "bk": "0",
     "r": "13",
     "er": "11",
     "source": "npb_official",
-    "fetched_at": 1791241828
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1021,7 +1021,7 @@
     "r": "25",
     "er": "22",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1053,7 +1053,7 @@
     "r": "51",
     "er": "42",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1085,7 +1085,7 @@
     "r": "51",
     "er": "42",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1117,7 +1117,7 @@
     "r": "49",
     "er": "43",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1149,7 +1149,7 @@
     "r": "46",
     "er": "45",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1181,7 +1181,7 @@
     "r": "52",
     "er": "50",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1213,7 +1213,7 @@
     "r": "66",
     "er": "61",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1245,12 +1245,44 @@
     "r": "67",
     "er": "58",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
     "league": "pacific",
     "rank": 9,
+    "name_en": "Takeuchi, Natsuki",
+    "team_code": "L",
+    "era": "3.27",
+    "g": "23",
+    "w": "11",
+    "l": "8",
+    "sv": "0",
+    "hld": "0",
+    "hp": "0",
+    "cg": "2",
+    "sho": "0",
+    "nwg": "1",
+    "pct": ".579",
+    "bf": "566",
+    "ip": "143",
+    "h": "131",
+    "hr": "12",
+    "bb": "27",
+    "ibb": "0",
+    "hb": "2",
+    "so": "108",
+    "wp": "2",
+    "bk": "0",
+    "r": "56",
+    "er": "52",
+    "source": "npb_official",
+    "fetched_at": 1791327933
+  },
+  {
+    "kind": "pitcher",
+    "league": "pacific",
+    "rank": 10,
     "name_en": "Shoji, Kosei",
     "team_code": "E",
     "era": "3.45",
@@ -1277,12 +1309,12 @@
     "r": "63",
     "er": "61",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
     "league": "pacific",
-    "rank": 10,
+    "rank": 11,
     "name_en": "Jackson, Andre",
     "team_code": "M",
     "era": "3.46",
@@ -1309,7 +1341,7 @@
     "r": "62",
     "er": "58",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1341,7 +1373,7 @@
     "r": "7",
     "er": "7",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1373,7 +1405,7 @@
     "r": "20",
     "er": "17",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1405,7 +1437,7 @@
     "r": "20",
     "er": "19",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1437,7 +1469,7 @@
     "r": "10",
     "er": "9",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1469,7 +1501,7 @@
     "r": "10",
     "er": "10",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1501,7 +1533,7 @@
     "r": "11",
     "er": "11",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1533,7 +1565,7 @@
     "r": "13",
     "er": "12",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1565,7 +1597,7 @@
     "r": "14",
     "er": "14",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1573,31 +1605,31 @@
     "rank": 9,
     "name_en": "Mameda, Taishi",
     "team_code": "L",
-    "era": "1.55",
-    "g": "31",
-    "w": "2",
+    "era": "1.51",
+    "g": "32",
+    "w": "3",
     "l": "0",
     "sv": "2",
     "hld": "4",
-    "hp": "6",
+    "hp": "7",
     "cg": "0",
     "sho": "0",
     "nwg": "0",
     "pct": "1.000",
-    "bf": "163",
-    "ip": "40.2",
+    "bf": "166",
+    "ip": "41.2",
     "h": "30",
     "hr": "1",
     "bb": "15",
     "ibb": "0",
     "hb": "0",
-    "so": "39",
+    "so": "40",
     "wp": "1",
     "bk": "0",
     "r": "9",
     "er": "7",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1629,7 +1661,7 @@
     "r": "14",
     "er": "11",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1661,7 +1693,7 @@
     "r": "44",
     "er": "41",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1693,7 +1725,7 @@
     "r": "15",
     "er": "15",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1725,7 +1757,7 @@
     "r": "14",
     "er": "14",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1757,7 +1789,7 @@
     "r": "14",
     "er": "14",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1789,7 +1821,7 @@
     "r": "11",
     "er": "10",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1821,7 +1853,7 @@
     "r": "15",
     "er": "11",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1853,7 +1885,7 @@
     "r": "17",
     "er": "13",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1885,7 +1917,7 @@
     "r": "11",
     "er": "11",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1917,7 +1949,7 @@
     "r": "14",
     "er": "13",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1949,7 +1981,7 @@
     "r": "4",
     "er": "4",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -1981,7 +2013,7 @@
     "r": "14",
     "er": "11",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "pitcher",
@@ -2013,7 +2045,7 @@
     "r": "10",
     "er": "10",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327933
   },
   {
     "kind": "batter",
@@ -2022,16 +2054,16 @@
     "name_en": "Sato, Teruaki",
     "team_code": "T",
     "avg": ".311",
-    "g": "140",
-    "pa": "602",
-    "ab": "527",
+    "g": "141",
+    "pa": "606",
+    "ab": "531",
     "r": "100",
-    "h": "164",
+    "h": "165",
     "2b": "40",
     "3b": "3",
     "hr": "39",
-    "tb": "327",
-    "rbi": "105",
+    "tb": "328",
+    "rbi": "106",
     "sb": "8",
     "cs": "3",
     "sh": "0",
@@ -2039,12 +2071,12 @@
     "bb": "68",
     "ibb": "8",
     "hp": "2",
-    "so": "160",
-    "dp": "6",
-    "slg": ".620",
-    "obp": ".389",
+    "so": "161",
+    "dp": "7",
+    "slg": ".618",
+    "obp": ".388",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2052,10 +2084,10 @@
     "rank": 2,
     "name_en": "Morishita, Shota",
     "team_code": "T",
-    "avg": ".294",
-    "g": "140",
-    "pa": "607",
-    "ab": "517",
+    "avg": ".293",
+    "g": "141",
+    "pa": "610",
+    "ab": "518",
     "r": "94",
     "h": "152",
     "2b": "31",
@@ -2067,15 +2099,15 @@
     "cs": "0",
     "sh": "0",
     "sf": "4",
-    "bb": "66",
+    "bb": "68",
     "ibb": "2",
     "hp": "20",
     "so": "94",
     "dp": "23",
-    "slg": ".561",
-    "obp": ".392",
+    "slg": ".560",
+    "obp": ".393",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2106,7 +2138,7 @@
     "slg": ".392",
     "obp": ".348",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2114,10 +2146,10 @@
     "rank": 4,
     "name_en": "Nakano, Takumu",
     "team_code": "T",
-    "avg": ".290",
-    "g": "140",
-    "pa": "576",
-    "ab": "503",
+    "avg": ".289",
+    "g": "141",
+    "pa": "579",
+    "ab": "506",
     "r": "62",
     "h": "146",
     "2b": "15",
@@ -2132,12 +2164,12 @@
     "bb": "39",
     "ibb": "0",
     "hp": "3",
-    "so": "81",
+    "so": "83",
     "dp": "6",
-    "slg": ".324",
-    "obp": ".342",
+    "slg": ".322",
+    "obp": ".341",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2168,7 +2200,7 @@
     "slg": ".564",
     "obp": ".363",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2176,16 +2208,16 @@
     "rank": 6,
     "name_en": "Ohyama, Yusuke",
     "team_code": "T",
-    "avg": ".280",
-    "g": "138",
-    "pa": "581",
-    "ab": "503",
+    "avg": ".282",
+    "g": "139",
+    "pa": "585",
+    "ab": "507",
     "r": "44",
-    "h": "141",
+    "h": "143",
     "2b": "24",
     "3b": "1",
     "hr": "20",
-    "tb": "227",
+    "tb": "229",
     "rbi": "85",
     "sb": "0",
     "cs": "0",
@@ -2194,12 +2226,12 @@
     "bb": "60",
     "ibb": "4",
     "hp": "8",
-    "so": "86",
+    "so": "87",
     "dp": "20",
-    "slg": ".451",
-    "obp": ".360",
+    "slg": ".452",
+    "obp": ".361",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2230,7 +2262,7 @@
     "slg": ".337",
     "obp": ".324",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2261,7 +2293,7 @@
     "slg": ".380",
     "obp": ".334",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2292,7 +2324,7 @@
     "slg": ".310",
     "obp": ".332",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2323,7 +2355,7 @@
     "slg": ".383",
     "obp": ".345",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2354,7 +2386,7 @@
     "slg": ".382",
     "obp": ".337",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2385,7 +2417,7 @@
     "slg": ".359",
     "obp": ".351",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2416,7 +2448,7 @@
     "slg": ".292",
     "obp": ".300",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2447,12 +2479,43 @@
     "slg": ".457",
     "obp": ".315",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
     "league": "central",
     "rank": 15,
+    "name_en": "Sakakura, Shogo",
+    "team_code": "C",
+    "avg": ".251",
+    "g": "139",
+    "pa": "572",
+    "ab": "501",
+    "r": "51",
+    "h": "126",
+    "2b": "23",
+    "3b": "1",
+    "hr": "15",
+    "tb": "196",
+    "rbi": "74",
+    "sb": "3",
+    "cs": "3",
+    "sh": "0",
+    "sf": "5",
+    "bb": "62",
+    "ibb": "6",
+    "hp": "4",
+    "so": "114",
+    "dp": "6",
+    "slg": ".391",
+    "obp": ".336",
+    "source": "npb_official",
+    "fetched_at": 1791327934
+  },
+  {
+    "kind": "batter",
+    "league": "central",
+    "rank": 16,
     "name_en": "Santana, Domingo",
     "team_code": "S",
     "avg": ".251",
@@ -2478,38 +2541,7 @@
     "slg": ".455",
     "obp": ".360",
     "source": "npb_official",
-    "fetched_at": 1791241829
-  },
-  {
-    "kind": "batter",
-    "league": "central",
-    "rank": 16,
-    "name_en": "Sakakura, Shogo",
-    "team_code": "C",
-    "avg": ".249",
-    "g": "138",
-    "pa": "568",
-    "ab": "497",
-    "r": "51",
-    "h": "124",
-    "2b": "23",
-    "3b": "1",
-    "hr": "15",
-    "tb": "194",
-    "rbi": "73",
-    "sb": "3",
-    "cs": "3",
-    "sh": "0",
-    "sf": "5",
-    "bb": "62",
-    "ibb": "6",
-    "hp": "4",
-    "so": "113",
-    "dp": "6",
-    "slg": ".390",
-    "obp": ".335",
-    "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2540,7 +2572,7 @@
     "slg": ".352",
     "obp": ".317",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2548,10 +2580,10 @@
     "rank": 18,
     "name_en": "Kikuchi, Ryosuke",
     "team_code": "C",
-    "avg": ".236",
-    "g": "131",
-    "pa": "534",
-    "ab": "461",
+    "avg": ".235",
+    "g": "132",
+    "pa": "537",
+    "ab": "463",
     "r": "44",
     "h": "109",
     "2b": "24",
@@ -2563,15 +2595,15 @@
     "cs": "3",
     "sh": "20",
     "sf": "5",
-    "bb": "47",
+    "bb": "48",
     "ibb": "0",
     "hp": "1",
     "so": "101",
     "dp": "6",
-    "slg": ".334",
-    "obp": ".305",
+    "slg": ".333",
+    "obp": ".306",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2602,7 +2634,7 @@
     "slg": ".417",
     "obp": ".354",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2633,7 +2665,7 @@
     "slg": ".571",
     "obp": ".375",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2664,7 +2696,7 @@
     "slg": ".569",
     "obp": ".431",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2695,7 +2727,7 @@
     "slg": ".480",
     "obp": ".347",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2726,7 +2758,7 @@
     "slg": ".385",
     "obp": ".342",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2734,16 +2766,16 @@
     "rank": 5,
     "name_en": "Nishikawa, Misho",
     "team_code": "M",
-    "avg": ".291",
-    "g": "135",
-    "pa": "582",
-    "ab": "530",
+    "avg": ".290",
+    "g": "136",
+    "pa": "586",
+    "ab": "534",
     "r": "61",
-    "h": "154",
+    "h": "155",
     "2b": "28",
     "3b": "1",
     "hr": "8",
-    "tb": "208",
+    "tb": "209",
     "rbi": "53",
     "sb": "2",
     "cs": "2",
@@ -2752,12 +2784,12 @@
     "bb": "41",
     "ibb": "1",
     "hp": "11",
-    "so": "108",
+    "so": "109",
     "dp": "14",
-    "slg": ".392",
-    "obp": ".354",
+    "slg": ".391",
+    "obp": ".353",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2788,7 +2820,7 @@
     "slg": ".444",
     "obp": ".339",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2819,18 +2851,49 @@
     "slg": ".401",
     "obp": ".350",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
     "league": "pacific",
     "rank": 8,
+    "name_en": "Yamaguchi, Koki",
+    "team_code": "M",
+    "avg": ".277",
+    "g": "113",
+    "pa": "447",
+    "ab": "412",
+    "r": "62",
+    "h": "114",
+    "2b": "18",
+    "3b": "1",
+    "hr": "38",
+    "tb": "248",
+    "rbi": "81",
+    "sb": "0",
+    "cs": "1",
+    "sh": "0",
+    "sf": "2",
+    "bb": "27",
+    "ibb": "0",
+    "hp": "6",
+    "so": "107",
+    "dp": "8",
+    "slg": ".602",
+    "obp": ".329",
+    "source": "npb_official",
+    "fetched_at": 1791327934
+  },
+  {
+    "kind": "batter",
+    "league": "pacific",
+    "rank": 9,
     "name_en": "Takizawa, Natsuo",
     "team_code": "L",
-    "avg": ".278",
-    "g": "122",
-    "pa": "467",
-    "ab": "396",
+    "avg": ".276",
+    "g": "123",
+    "pa": "470",
+    "ab": "398",
     "r": "44",
     "h": "110",
     "2b": "5",
@@ -2840,48 +2903,17 @@
     "rbi": "31",
     "sb": "13",
     "cs": "9",
-    "sh": "26",
+    "sh": "27",
     "sf": "0",
     "bb": "41",
     "ibb": "0",
     "hp": "4",
     "so": "55",
-    "dp": "6",
-    "slg": ".313",
-    "obp": ".351",
+    "dp": "7",
+    "slg": ".312",
+    "obp": ".350",
     "source": "npb_official",
-    "fetched_at": 1791241829
-  },
-  {
-    "kind": "batter",
-    "league": "pacific",
-    "rank": 9,
-    "name_en": "Yamaguchi, Koki",
-    "team_code": "M",
-    "avg": ".277",
-    "g": "112",
-    "pa": "443",
-    "ab": "408",
-    "r": "62",
-    "h": "113",
-    "2b": "18",
-    "3b": "1",
-    "hr": "38",
-    "tb": "247",
-    "rbi": "81",
-    "sb": "0",
-    "cs": "1",
-    "sh": "0",
-    "sf": "2",
-    "bb": "27",
-    "ibb": "0",
-    "hp": "6",
-    "so": "105",
-    "dp": "8",
-    "slg": ".605",
-    "obp": ".330",
-    "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2912,7 +2944,7 @@
     "slg": ".362",
     "obp": ".337",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2943,7 +2975,7 @@
     "slg": ".382",
     "obp": ".333",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -2974,7 +3006,7 @@
     "slg": ".516",
     "obp": ".372",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -3005,7 +3037,7 @@
     "slg": ".557",
     "obp": ".365",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -3036,7 +3068,7 @@
     "slg": ".393",
     "obp": ".309",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -3067,7 +3099,7 @@
     "slg": ".402",
     "obp": ".342",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -3098,7 +3130,7 @@
     "slg": ".331",
     "obp": ".320",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -3129,7 +3161,7 @@
     "slg": ".430",
     "obp": ".334",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -3160,7 +3192,7 @@
     "slg": ".454",
     "obp": ".318",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -3169,15 +3201,15 @@
     "name_en": "Ogawa, Ryusei",
     "team_code": "M",
     "avg": ".256",
-    "g": "139",
-    "pa": "505",
-    "ab": "465",
+    "g": "140",
+    "pa": "509",
+    "ab": "469",
     "r": "43",
-    "h": "119",
+    "h": "120",
     "2b": "11",
     "3b": "4",
     "hr": "2",
-    "tb": "144",
+    "tb": "145",
     "rbi": "23",
     "sb": "8",
     "cs": "6",
@@ -3188,10 +3220,10 @@
     "hp": "4",
     "so": "77",
     "dp": "5",
-    "slg": ".310",
+    "slg": ".309",
     "obp": ".293",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -3200,15 +3232,15 @@
     "name_en": "Watanabe, Seiya",
     "team_code": "L",
     "avg": ".255",
-    "g": "128",
-    "pa": "511",
-    "ab": "478",
-    "r": "44",
-    "h": "122",
-    "2b": "21",
+    "g": "129",
+    "pa": "515",
+    "ab": "482",
+    "r": "45",
+    "h": "123",
+    "2b": "22",
     "3b": "1",
     "hr": "12",
-    "tb": "181",
+    "tb": "183",
     "rbi": "48",
     "sb": "3",
     "cs": "0",
@@ -3217,12 +3249,12 @@
     "bb": "23",
     "ibb": "0",
     "hp": "6",
-    "so": "91",
+    "so": "92",
     "dp": "13",
-    "slg": ".379",
+    "slg": ".380",
     "obp": ".296",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -3230,10 +3262,10 @@
     "rank": 21,
     "name_en": "Fujiwara, Kyota",
     "team_code": "M",
-    "avg": ".254",
-    "g": "107",
-    "pa": "466",
-    "ab": "406",
+    "avg": ".253",
+    "g": "108",
+    "pa": "467",
+    "ab": "407",
     "r": "58",
     "h": "103",
     "2b": "13",
@@ -3250,10 +3282,10 @@
     "hp": "13",
     "so": "91",
     "dp": "8",
-    "slg": ".355",
-    "obp": ".348",
+    "slg": ".354",
+    "obp": ".347",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -3261,10 +3293,10 @@
     "rank": 22,
     "name_en": "Canario, Alexander",
     "team_code": "L",
-    "avg": ".248",
-    "g": "132",
-    "pa": "526",
-    "ab": "484",
+    "avg": ".247",
+    "g": "133",
+    "pa": "529",
+    "ab": "486",
     "r": "57",
     "h": "120",
     "2b": "23",
@@ -3273,18 +3305,18 @@
     "tb": "195",
     "rbi": "54",
     "sb": "13",
-    "cs": "6",
+    "cs": "7",
     "sh": "0",
     "sf": "2",
-    "bb": "37",
+    "bb": "38",
     "ibb": "2",
     "hp": "3",
-    "so": "136",
+    "so": "137",
     "dp": "9",
-    "slg": ".403",
+    "slg": ".401",
     "obp": ".304",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -3315,7 +3347,7 @@
     "slg": ".314",
     "obp": ".316",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -3346,7 +3378,7 @@
     "slg": ".387",
     "obp": ".337",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -3377,7 +3409,7 @@
     "slg": ".430",
     "obp": ".328",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   },
   {
     "kind": "batter",
@@ -3385,10 +3417,10 @@
     "rank": 26,
     "name_en": "Satoh, Toshiya",
     "team_code": "M",
-    "avg": ".226",
-    "g": "131",
-    "pa": "460",
-    "ab": "403",
+    "avg": ".225",
+    "g": "132",
+    "pa": "462",
+    "ab": "405",
     "r": "42",
     "h": "91",
     "2b": "16",
@@ -3405,9 +3437,9 @@
     "hp": "5",
     "so": "95",
     "dp": "3",
-    "slg": ".400",
-    "obp": ".314",
+    "slg": ".398",
+    "obp": ".312",
     "source": "npb_official",
-    "fetched_at": 1791241829
+    "fetched_at": 1791327934
   }
 ]
