@@ -29,7 +29,7 @@
     "r": "42",
     "er": "37",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -61,7 +61,7 @@
     "r": "37",
     "er": "33",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -93,7 +93,7 @@
     "r": "39",
     "er": "33",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -125,7 +125,7 @@
     "r": "50",
     "er": "42",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -157,7 +157,7 @@
     "r": "40",
     "er": "39",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -189,7 +189,7 @@
     "r": "50",
     "er": "43",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -221,7 +221,7 @@
     "r": "43",
     "er": "39",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -253,7 +253,7 @@
     "r": "48",
     "er": "43",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -285,7 +285,7 @@
     "r": "55",
     "er": "44",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -317,7 +317,7 @@
     "r": "53",
     "er": "50",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -349,7 +349,7 @@
     "r": "56",
     "er": "52",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -381,7 +381,7 @@
     "r": "10",
     "er": "8",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -413,7 +413,7 @@
     "r": "9",
     "er": "8",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -445,7 +445,7 @@
     "r": "19",
     "er": "16",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -477,7 +477,7 @@
     "r": "18",
     "er": "16",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -509,7 +509,7 @@
     "r": "13",
     "er": "12",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -541,7 +541,7 @@
     "r": "12",
     "er": "11",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -573,7 +573,7 @@
     "r": "15",
     "er": "14",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -605,7 +605,7 @@
     "r": "9",
     "er": "7",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -613,8 +613,8 @@
     "rank": 9,
     "name_en": "Iwazaki, Suguru",
     "team_code": "T",
-    "era": "2.56",
-    "g": "49",
+    "era": "2.54",
+    "g": "50",
     "w": "3",
     "l": "3",
     "sv": "11",
@@ -624,8 +624,8 @@
     "sho": "0",
     "nwg": "0",
     "pct": ".500",
-    "bf": "186",
-    "ip": "45.2",
+    "bf": "187",
+    "ip": "46",
     "h": "40",
     "hr": "2",
     "bb": "16",
@@ -637,7 +637,7 @@
     "r": "13",
     "er": "13",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -669,7 +669,7 @@
     "r": "9",
     "er": "9",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -701,7 +701,7 @@
     "r": "11",
     "er": "9",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -733,7 +733,7 @@
     "r": "12",
     "er": "11",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -741,8 +741,8 @@
     "rank": 3,
     "name_en": "Hoshi, Tomoya",
     "team_code": "S",
-    "era": "2.68",
-    "g": "50",
+    "era": "2.63",
+    "g": "51",
     "w": "2",
     "l": "4",
     "sv": "1",
@@ -752,20 +752,20 @@
     "sho": "0",
     "nwg": "0",
     "pct": ".333",
-    "bf": "201",
-    "ip": "47",
+    "bf": "204",
+    "ip": "48",
     "h": "45",
     "hr": "3",
     "bb": "19",
     "ibb": "4",
     "hb": "0",
-    "so": "30",
+    "so": "33",
     "wp": "1",
     "bk": "0",
     "r": "15",
     "er": "14",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -797,7 +797,7 @@
     "r": "8",
     "er": "6",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -829,7 +829,7 @@
     "r": "15",
     "er": "15",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -861,7 +861,7 @@
     "r": "13",
     "er": "13",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -893,7 +893,7 @@
     "r": "14",
     "er": "13",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -925,7 +925,7 @@
     "r": "13",
     "er": "11",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -957,7 +957,7 @@
     "r": "11",
     "er": "11",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -989,7 +989,7 @@
     "r": "16",
     "er": "16",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1021,7 +1021,7 @@
     "r": "25",
     "er": "22",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1053,7 +1053,7 @@
     "r": "51",
     "er": "42",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1085,7 +1085,7 @@
     "r": "51",
     "er": "42",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1117,7 +1117,7 @@
     "r": "49",
     "er": "43",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1149,7 +1149,7 @@
     "r": "46",
     "er": "45",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1181,7 +1181,7 @@
     "r": "52",
     "er": "50",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1213,7 +1213,7 @@
     "r": "66",
     "er": "61",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1245,7 +1245,7 @@
     "r": "67",
     "er": "58",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1277,7 +1277,7 @@
     "r": "56",
     "er": "52",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1309,7 +1309,7 @@
     "r": "63",
     "er": "61",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1341,7 +1341,7 @@
     "r": "62",
     "er": "58",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1373,7 +1373,7 @@
     "r": "7",
     "er": "7",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1405,7 +1405,7 @@
     "r": "20",
     "er": "17",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1437,7 +1437,7 @@
     "r": "20",
     "er": "19",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1469,7 +1469,7 @@
     "r": "10",
     "er": "9",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1501,7 +1501,7 @@
     "r": "10",
     "er": "10",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1533,7 +1533,7 @@
     "r": "11",
     "er": "11",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1565,7 +1565,7 @@
     "r": "13",
     "er": "12",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1597,7 +1597,7 @@
     "r": "14",
     "er": "14",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1629,7 +1629,7 @@
     "r": "9",
     "er": "7",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1661,7 +1661,7 @@
     "r": "14",
     "er": "11",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1693,7 +1693,7 @@
     "r": "44",
     "er": "41",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1725,7 +1725,7 @@
     "r": "15",
     "er": "15",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1757,7 +1757,7 @@
     "r": "14",
     "er": "14",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1789,7 +1789,7 @@
     "r": "14",
     "er": "14",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1821,7 +1821,7 @@
     "r": "11",
     "er": "10",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1853,7 +1853,7 @@
     "r": "15",
     "er": "11",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1885,7 +1885,7 @@
     "r": "17",
     "er": "13",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1917,7 +1917,7 @@
     "r": "11",
     "er": "11",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1949,7 +1949,7 @@
     "r": "14",
     "er": "13",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -1981,7 +1981,7 @@
     "r": "4",
     "er": "4",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -2013,7 +2013,7 @@
     "r": "14",
     "er": "11",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "pitcher",
@@ -2045,7 +2045,7 @@
     "r": "10",
     "er": "10",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "batter",
@@ -2053,10 +2053,10 @@
     "rank": 1,
     "name_en": "Sato, Teruaki",
     "team_code": "T",
-    "avg": ".308",
-    "g": "142",
-    "pa": "610",
-    "ab": "535",
+    "avg": ".306",
+    "g": "143",
+    "pa": "614",
+    "ab": "539",
     "r": "100",
     "h": "165",
     "2b": "40",
@@ -2071,12 +2071,12 @@
     "bb": "68",
     "ibb": "8",
     "hp": "2",
-    "so": "162",
+    "so": "164",
     "dp": "7",
-    "slg": ".613",
-    "obp": ".385",
+    "slg": ".609",
+    "obp": ".383",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "batter",
@@ -2107,7 +2107,7 @@
     "slg": ".392",
     "obp": ".348",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "batter",
@@ -2116,9 +2116,9 @@
     "name_en": "Morishita, Shota",
     "team_code": "T",
     "avg": ".292",
-    "g": "142",
-    "pa": "614",
-    "ab": "520",
+    "g": "143",
+    "pa": "616",
+    "ab": "521",
     "r": "94",
     "h": "152",
     "2b": "31",
@@ -2130,15 +2130,15 @@
     "cs": "0",
     "sh": "0",
     "sf": "4",
-    "bb": "70",
+    "bb": "71",
     "ibb": "2",
     "hp": "20",
     "so": "95",
     "dp": "23",
-    "slg": ".558",
+    "slg": ".557",
     "obp": ".394",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "batter",
@@ -2146,10 +2146,10 @@
     "rank": 4,
     "name_en": "Nakano, Takumu",
     "team_code": "T",
-    "avg": ".288",
-    "g": "142",
-    "pa": "580",
-    "ab": "507",
+    "avg": ".287",
+    "g": "143",
+    "pa": "581",
+    "ab": "508",
     "r": "62",
     "h": "146",
     "2b": "15",
@@ -2167,9 +2167,9 @@
     "so": "83",
     "dp": "6",
     "slg": ".321",
-    "obp": ".340",
+    "obp": ".339",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "batter",
@@ -2177,30 +2177,30 @@
     "rank": 5,
     "name_en": "Ohyama, Yusuke",
     "team_code": "T",
-    "avg": ".284",
-    "g": "140",
-    "pa": "588",
-    "ab": "510",
+    "avg": ".285",
+    "g": "141",
+    "pa": "591",
+    "ab": "512",
     "r": "44",
-    "h": "145",
+    "h": "146",
     "2b": "25",
     "3b": "1",
     "hr": "20",
-    "tb": "232",
+    "tb": "233",
     "rbi": "85",
     "sb": "0",
     "cs": "0",
     "sh": "0",
     "sf": "10",
-    "bb": "60",
+    "bb": "61",
     "ibb": "4",
     "hp": "8",
     "so": "88",
     "dp": "20",
     "slg": ".455",
-    "obp": ".362",
+    "obp": ".364",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "batter",
@@ -2231,7 +2231,7 @@
     "slg": ".564",
     "obp": ".363",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "batter",
@@ -2262,7 +2262,7 @@
     "slg": ".337",
     "obp": ".324",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "batter",
@@ -2293,7 +2293,7 @@
     "slg": ".380",
     "obp": ".334",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "batter",
@@ -2324,7 +2324,7 @@
     "slg": ".310",
     "obp": ".332",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "batter",
@@ -2355,7 +2355,7 @@
     "slg": ".383",
     "obp": ".345",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "batter",
@@ -2386,7 +2386,7 @@
     "slg": ".382",
     "obp": ".337",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "batter",
@@ -2417,7 +2417,7 @@
     "slg": ".359",
     "obp": ".351",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "batter",
@@ -2426,29 +2426,29 @@
     "name_en": "Iwata, Yukihiro",
     "team_code": "S",
     "avg": ".256",
-    "g": "126",
-    "pa": "452",
-    "ab": "418",
+    "g": "127",
+    "pa": "456",
+    "ab": "422",
     "r": "49",
-    "h": "107",
+    "h": "108",
     "2b": "10",
     "3b": "1",
     "hr": "1",
-    "tb": "122",
-    "rbi": "24",
-    "sb": "38",
-    "cs": "7",
+    "tb": "123",
+    "rbi": "26",
+    "sb": "39",
+    "cs": "8",
     "sh": "6",
     "sf": "1",
     "bb": "23",
     "ibb": "1",
     "hp": "4",
-    "so": "80",
+    "so": "81",
     "dp": "3",
-    "slg": ".292",
+    "slg": ".291",
     "obp": ".300",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "batter",
@@ -2479,7 +2479,7 @@
     "slg": ".457",
     "obp": ".315",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "batter",
@@ -2510,7 +2510,7 @@
     "slg": ".390",
     "obp": ".335",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "batter",
@@ -2541,7 +2541,7 @@
     "slg": ".455",
     "obp": ".360",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "batter",
@@ -2549,10 +2549,10 @@
     "rank": 17,
     "name_en": "Nagaoka, Hideki",
     "team_code": "S",
-    "avg": ".249",
-    "g": "125",
-    "pa": "530",
-    "ab": "477",
+    "avg": ".248",
+    "g": "126",
+    "pa": "533",
+    "ab": "480",
     "r": "54",
     "h": "119",
     "2b": "23",
@@ -2569,10 +2569,10 @@
     "hp": "5",
     "so": "72",
     "dp": "7",
-    "slg": ".352",
-    "obp": ".317",
+    "slg": ".350",
+    "obp": ".315",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "batter",
@@ -2603,7 +2603,7 @@
     "slg": ".330",
     "obp": ".304",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "batter",
@@ -2634,7 +2634,7 @@
     "slg": ".417",
     "obp": ".354",
     "source": "npb_official",
-    "fetched_at": 1791414385
+    "fetched_at": 1791503569
   },
   {
     "kind": "batter",
@@ -2665,7 +2665,7 @@
     "slg": ".571",
     "obp": ".375",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -2696,7 +2696,7 @@
     "slg": ".569",
     "obp": ".431",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -2727,7 +2727,7 @@
     "slg": ".480",
     "obp": ".347",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -2758,7 +2758,7 @@
     "slg": ".385",
     "obp": ".342",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -2789,7 +2789,7 @@
     "slg": ".391",
     "obp": ".353",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -2820,7 +2820,7 @@
     "slg": ".444",
     "obp": ".339",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -2851,7 +2851,7 @@
     "slg": ".401",
     "obp": ".350",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -2882,7 +2882,7 @@
     "slg": ".602",
     "obp": ".329",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -2913,7 +2913,7 @@
     "slg": ".312",
     "obp": ".350",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -2944,7 +2944,7 @@
     "slg": ".362",
     "obp": ".337",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -2975,7 +2975,7 @@
     "slg": ".382",
     "obp": ".333",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -3006,7 +3006,7 @@
     "slg": ".516",
     "obp": ".372",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -3037,7 +3037,7 @@
     "slg": ".557",
     "obp": ".365",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -3068,7 +3068,7 @@
     "slg": ".393",
     "obp": ".309",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -3099,7 +3099,7 @@
     "slg": ".402",
     "obp": ".342",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -3130,7 +3130,7 @@
     "slg": ".331",
     "obp": ".320",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -3161,7 +3161,7 @@
     "slg": ".430",
     "obp": ".334",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -3192,7 +3192,7 @@
     "slg": ".454",
     "obp": ".318",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -3223,7 +3223,7 @@
     "slg": ".309",
     "obp": ".293",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -3254,7 +3254,7 @@
     "slg": ".380",
     "obp": ".296",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -3285,7 +3285,7 @@
     "slg": ".354",
     "obp": ".347",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -3316,7 +3316,7 @@
     "slg": ".401",
     "obp": ".304",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -3347,7 +3347,7 @@
     "slg": ".314",
     "obp": ".316",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -3378,7 +3378,7 @@
     "slg": ".387",
     "obp": ".337",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -3409,7 +3409,7 @@
     "slg": ".430",
     "obp": ".328",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   },
   {
     "kind": "batter",
@@ -3440,6 +3440,6 @@
     "slg": ".398",
     "obp": ".312",
     "source": "npb_official",
-    "fetched_at": 1791414386
+    "fetched_at": 1791503570
   }
 ]
