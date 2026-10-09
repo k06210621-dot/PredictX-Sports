@@ -879,10 +879,17 @@ class AnalysisEngine:
             print(f"  ⚠ 投手調整後出現平手 → 強制修正為 {score}")
         return score
 
-    def get_team_recent_form(self, team_id, league, limit=10):
+    def get_team_recent_form(self, team_id, league, limit=10, before_date=None):
         """
         獲取隊伍最近 N 場比賽的戰績與得失分
         分離主場/客場戰績以利 AI 預測（主場勝率棒球 ~54%、NBA ~60%）
+
+        🆕 [2026-10-09] before_date：防 look-ahead bias（歷史重跑洩漏）。
+        歷史重跑（分析已完賽場次）時，若不設日期上限，「最近 N 場」的第一筆
+        就是該場比賽自己的比分 → 答案直接洩漏給 LLM，準確率虛高。
+        實證：10/8 Celtics@Cavaliers 的 prompt 出現
+              「最近比賽: L vs Boston Celtics(113.0-124.0)」→ 直接洩漏該場結果。
+        賽前分析（match_date 為未來）時行為不變 —— 所有已完賽場次都早於比賽日。
         """
         query = """
             SELECT g.match_date, g.home_team_score, g.away_team_score, g.status,
@@ -899,10 +906,11 @@ class AnalysisEngine:
               AND g.status IN ('final', 'FINAL')
               AND g.home_team_score IS NOT NULL
               AND g.away_team_score IS NOT NULL
+              AND (%s::date IS NULL OR g.match_date::date < %s::date)
             ORDER BY g.match_date DESC
             LIMIT %s
         """
-        self.cur.execute(query, (team_id, team_id, team_id, limit))
+        self.cur.execute(query, (team_id, team_id, team_id, before_date, before_date, limit))
         self.log_source("official_api")
         games = self.cur.fetchall()
 
@@ -1015,11 +1023,17 @@ class AnalysisEngine:
             },
         }
 
-    def get_historical_matchup(self, home_team_id, away_team_id, recent_limit=5):
+    def get_historical_matchup(self, home_team_id, away_team_id, recent_limit=5, before_date=None):
         """
         獲取兩隊對陣歷史 (從已結束的比賽中統計)
         - 總體 H2H 勝率
         - 最近 N 場對戰明細（含日期、比分、勝負）
+
+        🆕 [2026-10-09] before_date：防 look-ahead bias。
+        歷史重跑時若不設日期上限，「最近對戰」第一筆就是該場比賽自己
+        → 比分與贏家直接洩漏（實證：prompt 出現
+          「2026-10-08: Cleveland Cavaliers 113.0 - 124.0 Boston Celtics (贏家: Boston Celtics)」）。
+        賽前分析（match_date 為未來）行為不變。
         """
         query = """
             SELECT
@@ -1033,8 +1047,9 @@ class AnalysisEngine:
                 OR (g.home_team_id = %s AND g.away_team_id = %s))
               AND g.status IN ('final', 'FINAL')
               AND g.home_team_score IS NOT NULL
+              AND (%s::date IS NULL OR g.match_date::date < %s::date)
         """
-        self.cur.execute(query, (home_team_id, away_team_id, home_team_id, away_team_id, away_team_id, home_team_id))
+        self.cur.execute(query, (home_team_id, away_team_id, home_team_id, away_team_id, away_team_id, home_team_id, before_date, before_date))
         row = self.cur.fetchone()
 
         result = None
@@ -1068,10 +1083,11 @@ class AnalysisEngine:
               AND g.status IN ('final', 'FINAL')
               AND g.home_team_score IS NOT NULL
               AND g.away_team_score IS NOT NULL
+              AND (%s::date IS NULL OR g.match_date::date < %s::date)
             ORDER BY g.match_date DESC
             LIMIT %s
         """
-        self.cur.execute(recent_query, (home_team_id, away_team_id, away_team_id, home_team_id, recent_limit))
+        self.cur.execute(recent_query, (home_team_id, away_team_id, away_team_id, home_team_id, before_date, before_date, recent_limit))
         recent_rows = self.cur.fetchall()
 
         recent_list = []
@@ -1237,9 +1253,13 @@ class AnalysisEngine:
                 pass
             return None
 
-    def get_league_standings(self, team_id):
+    def get_league_standings(self, team_id, before_date=None):
         """
         獲取隊伍在聯盟中的排名（優先從 standings 表，fallback 到 games 計算）
+
+        🆕 [2026-10-09] before_date：防 look-ahead bias。
+        fallback 路徑用 games 實算全季戰績，歷史重跑時若含該場自己，
+        會讓「賽前排名」變成「含這場結果的排名」。賽前分析行為不變。
         """
         # [Bug fix 2026-08-17 22:42] 包 try/except + rollback 防止 transaction aborted
         try:
@@ -1273,6 +1293,7 @@ class AnalysisEngine:
                     FROM predictx.teams t
                     JOIN predictx.games g ON (g.home_team_id = t.team_id OR g.away_team_id = t.team_id)
                     WHERE t.league = %s AND g.status IN ('final', 'FINAL')
+                      AND (%s::date IS NULL OR g.match_date::date < %s::date)
                     GROUP BY t.team_id, t.english_name
                 )
                 SELECT *, 
@@ -1280,7 +1301,7 @@ class AnalysisEngine:
                 FROM team_games
                 ORDER BY win_pct DESC
             """
-            self.cur.execute(query, (league,))
+            self.cur.execute(query, (league, before_date, before_date))
             standings = self.cur.fetchall()
             
             for idx, row in enumerate(standings):
@@ -1344,17 +1365,35 @@ class AnalysisEngine:
         
         home_team_id = game['home_team_id']
         away_team_id = game['away_team_id']
-        
+
+        # 🆕 [2026-10-09] 防 look-ahead bias：所有「歷史」查詢都加上 match_date 上限
+        # 歷史重跑（分析已完賽場次）時，若不設上限，「最近 N 場」「對戰歷史」
+        # 「聯盟排名」都會含入該場比賽自己的結果 → 答案洩漏給 LLM、準確率虛高。
+        # 實證：10/8 Celtics@Cavaliers 的 prompt 出現該場比分與贏家。
+        # 賽前分析（match_date 為未來）行為完全不變。
+        # ⚠️ 只在「該場已完賽」時才設上限：若比賽尚未開打（match_date >= 今天），
+        #    歷史上不存在該場的 FINAL 記錄，設不設上限結果相同，但保守起見
+        #    仍以 match_date 為界（< match_date 只取「賽前」的比賽）。
+        _md = game.get('match_date')
+        try:
+            if _md is not None:
+                before_date = _md.isoformat() if hasattr(_md, 'isoformat') else str(_md)[:10]
+            else:
+                before_date = None
+        except Exception:
+            before_date = None
+        features['_before_date'] = before_date
+
         # 2. 兩隊近期戰績 (Recent Form)
-        features['home_recent_form'] = self.get_team_recent_form(home_team_id, league, 5)
-        features['away_recent_form'] = self.get_team_recent_form(away_team_id, league, 5)
+        features['home_recent_form'] = self.get_team_recent_form(home_team_id, league, 5, before_date=before_date)
+        features['away_recent_form'] = self.get_team_recent_form(away_team_id, league, 5, before_date=before_date)
         
         # 3. 對陣歷史
-        features['historical_matchup'] = self.get_historical_matchup(home_team_id, away_team_id)
+        features['historical_matchup'] = self.get_historical_matchup(home_team_id, away_team_id, before_date=before_date)
         
         # 4. 聯盟排名
-        features['home_standings'] = self.get_league_standings(home_team_id)
-        features['away_standings'] = self.get_league_standings(away_team_id)
+        features['home_standings'] = self.get_league_standings(home_team_id, before_date=before_date)
+        features['away_standings'] = self.get_league_standings(away_team_id, before_date=before_date)
 
         # 🆕 [P0-2, 2026-08-24] 該聯盟 60 天比分分布特徵
         # 給 LLM 知道「這個聯盟比分分布多寬」，避免強制套用單一規則
@@ -1362,7 +1401,7 @@ class AnalysisEngine:
         if league:
             try:
                 from league_score_distribution import compute_league_distribution
-                features['league_distribution'] = compute_league_distribution(league)
+                features['league_distribution'] = compute_league_distribution(league, before_date=before_date)
                 d = features['league_distribution']
                 fb_tag = ' [fallback]' if d.get('is_fallback') else ''
                 print(f"  📊 {league} score distribution: σ_run_diff={d.get('run_diff_std')}, blowout={d.get('blowout_rate')}, close={d.get('close_game_rate')}{fb_tag}")

@@ -99,6 +99,7 @@ def compute_league_distribution(
     league: str,
     days: int = DEFAULT_DAYS_BACK,
     sample_threshold: int = LEAGUE_SAMPLE_THRESHOLD,
+    before_date: Optional[str] = None,
 ) -> dict:
     """
     計算指定聯盟最近 N 天（預設 60 天）的 8 個比分分布指標。
@@ -107,6 +108,9 @@ def compute_league_distribution(
         league: 'MLB' / 'NPB' / 'CPBL' / 'NBA' / 'WNBA'
         days: 回看天數（預設 60）
         sample_threshold: 樣本低於此值時用 fallback
+        before_date: 🆕 [2026-10-09] 防 look-ahead bias。歷史重跑時，
+            以該場比賽日為界回看（`match_date < before_date`），避免把
+            該場自己與之後的比賽算進「賽前分布」。None = 以當前日期為界（原行為）。
 
     Returns:
         dict 含 8 個指標 + sample_size + is_fallback
@@ -147,12 +151,13 @@ def compute_league_distribution(
                 FROM predictx.games g
                 JOIN predictx.teams th ON g.home_team_id = th.team_id
                 WHERE UPPER(th.league) = %s
-                  AND g.match_date >= CURRENT_DATE - INTERVAL '%s days'
+                  AND g.match_date < COALESCE(%s::date, CURRENT_DATE)
+                  AND g.match_date >= COALESCE(%s::date, CURRENT_DATE) - INTERVAL '%s days'
                   AND g.status = 'FINAL'
                   AND g.home_team_score IS NOT NULL
                   AND g.away_team_score IS NOT NULL
                 ''',
-                (league_upper, days),
+                (league_upper, before_date, before_date, days),
             )
             rows = cur.fetchall()
             for r in rows:
