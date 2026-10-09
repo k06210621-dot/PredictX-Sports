@@ -78,6 +78,14 @@ class WNBAIngester(BaseIngester):
                 home_score = None
                 away_score = None
 
+            # 🆕 [2026-10-09] 未開打賽事不得帶比分（與 NBA fetcher 同步修正）：
+            # ESPN 對 SCHEDULED 賽事回傳 score="0"（非缺值），若原樣寫入會讓 App
+            # 顯示「0-0」而非「未開打」，與 MLB/NPB 的 NULL 慣例不一致。
+            # 實證：DB 內 WNBA 既有 3 筆 SCHEDULED 帶 0 分即為此因。
+            if mapped == "SCHEDULED":
+                home_score = None
+                away_score = None
+
             games.append({
                 "season": dt.year,
                 "match_date": target_date,
