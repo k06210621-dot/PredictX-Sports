@@ -35,12 +35,12 @@ class NBAIngester(BaseIngester):
         data = resp.json()
         games: List[Dict[str, Any]] = []
         for event in data.get("events", []):
-            # 🆕 [2026-10-01] 季前賽過濾：ESPN season.type=1 是 preseason。
-            # 季前賽先發為練兵陣容，預測無意義。type=2=regular-season（含 NBA Cup）、
-            # type=3=post-season 均保留。
+            # 🆕 [2026-10-09] 季前賽改為一併匯入（原 2026-10-01 的 season.type=1 過濾已移除）
+            # 使用者指示：NBA 季前賽賽程需寫入 DB，並顯示於 App 賽事卡片。
+            # ESPN season.type：1=preseason、2=regular-season（含 NBA Cup）、3=post-season。
+            # 季前賽為練兵陣容，AI 預測參考性較低 —— 交由分析層的信心校準處理，
+            # 不在 ingest 層丟棄資料（2025-26 季前賽 61 場即完整入庫並產生分析）。
             season_type = (event.get("season") or {}).get("type")
-            if season_type == 1:
-                continue
             competitors = event.get("competitions", [{}])[0].get("competitors", [])
             home = away = None
             for c in competitors:
@@ -77,6 +77,14 @@ class NBAIngester(BaseIngester):
             # 🆕 [2026-07-28] 未來日期防護：未來日期一律 SCHEDULED 且清空比分
             if is_future:
                 mapped = "SCHEDULED"
+                home_score = None
+                away_score = None
+
+            # 🆕 [2026-10-09] 未開打賽事不得帶比分：
+            # ESPN 對 SCHEDULED 賽事回傳 score="0"（非缺值），若原樣寫入會讓 App
+            # 顯示「0-0」而非「未開打」，與 MLB/NPB 的 NULL 慣例不一致。
+            # 實證：WNBA 既有 3 筆 SCHEDULED 帶 0 分即為此因。
+            if mapped == "SCHEDULED":
                 home_score = None
                 away_score = None
 
