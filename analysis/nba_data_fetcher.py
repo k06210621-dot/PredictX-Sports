@@ -60,6 +60,16 @@ def _current_season():
     return f"{today.year - 1}-{str(today.year)[2:]}"
 
 
+def _prev_season(season):
+    """'2026-27' → '2025-26'（供球季剛開打、本季數據尚未產生時的 fallback）"""
+    try:
+        start = int(season.split("-")[0])
+    except (ValueError, IndexError, AttributeError):
+        from datetime import date
+        return f"{date.today().year - 1}-{str(date.today().year)[2:]}"
+    return f"{start - 1}-{str(start)[2:]}"
+
+
 class NBADataFetcher:
     def __init__(self, conn=None):
         """conn 參數保留（與 engine 呼叫簽名相容），但 basketball-reference
@@ -98,19 +108,53 @@ class NBADataFetcher:
         return None
 
     def _fetch_advanced_stats(self, season=None):
-        """抓 basketball-reference 全聯盟進階數據 → {隊名: stats_dict}"""
+        """抓 basketball-reference 全聯盟進階數據 → {隊名: stats_dict}
+
+        🆕 [2026-10-09] 賽季 fallback：球季剛開打時，本季 advanced-team 表
+        是「30 列空殼」（W-L 全 0、ORtg/DRtg 全空）。原碼照樣回傳 30 筆全零
+        數據 → 引擎注入 42 個 "0.0" 到 LLM prompt，等於沒有任何鑑別資訊，
+        LLM 只能倒向主場優勢瞎猜（實測：模型預測主場 56.5% vs 實際 43.5%）。
+        修法：本季有效隊伍數 < 10 時，自動退回上一季數據，並以 is_prev_season
+        標記，讓 prompt 能明確標示「此為上季數據」。
+        """
         season = season or _current_season()
+        stats_map = self._parse_season(season)
+
+        # 有效隊伍 = 有實際出賽紀錄（W+L > 0）
+        valid = sum(1 for v in stats_map.values() if v["wins"] + v["losses"] > 0)
+        if valid < 10:
+            prev = _prev_season(season)
+            print(f"  ⚠ NBA BR：{season} 僅 {valid} 隊有數據（球季剛開打），改用 {prev}")
+            prev_map = self._parse_season(prev)
+            prev_valid = sum(1 for v in prev_map.values() if v["wins"] + v["losses"] > 0)
+            if prev_valid >= 10:
+                for v in prev_map.values():
+                    v["is_prev_season"] = True
+                    v["data_season"] = prev
+                self.fetched_sources.append("basketball-reference.com")
+                return prev_map
+            print(f"  ⚠ NBA BR：上季 {prev} 也僅 {prev_valid} 隊有數據，放棄")
+            return {}
+
+        for v in stats_map.values():
+            v["is_prev_season"] = False
+            v["data_season"] = season
+        self.fetched_sources.append("basketball-reference.com")
+        return stats_map
+
+    def _parse_season(self, season):
+        """解析單一賽季的 advanced-team 表 → {隊名: stats_dict}（無資料時回傳 {}）"""
         url = _br_url(season)
         try:
             resp = self.session.get(url, timeout=25)
             resp.raise_for_status()
         except Exception as e:
-            print(f"  ⚠ NBA basketball-reference error: {e}")
+            print(f"  ⚠ NBA basketball-reference error ({season}): {e}")
             return {}
         soup = BeautifulSoup(resp.text, "lxml")
         table = soup.find("table", id="advanced-team")
         if not table:
-            print(f"  ⚠ NBA basketball-reference: advanced-team 表不存在（{season} 尚未開打或頁面結構變更）")
+            print(f"  ⚠ NBA basketball-reference: advanced-team 表不存在（{season}）")
             return {}
         stats_map = {}
         for tr in table.find("tbody").find_all("tr"):
@@ -136,8 +180,6 @@ class NBADataFetcher:
                 "wins": int(wins),
                 "losses": int(losses),
             }
-        if stats_map:
-            self.fetched_sources.append("basketball-reference.com")
         return stats_map
 
     def get_top_players(self, team_name, top_n=5):
@@ -169,7 +211,10 @@ class NBADataFetcher:
             "away_team_name": away_team_name,
             "team_stats": {"home": all_stats[home_key], "away": all_stats[away_key]},
             "top_players": {"home": [], "away": []},
-            "sources": list(set(self.fetched_sources))
+            "sources": list(set(self.fetched_sources)),
+            # 🆕 [2026-10-09] 賽季標記（供 prompt 標示是否為上季數據）
+            "is_prev_season": bool(all_stats[home_key].get("is_prev_season")),
+            "data_season": all_stats[home_key].get("data_season"),
         }
 
     def close(self):

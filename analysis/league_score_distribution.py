@@ -65,9 +65,39 @@ FALLBACK_DISTRIBUTION = {
         'run_diff_std': 2.84,
         'blowout_rate': 0.216,
         'close_game_rate': 0.495,
-        # 🆕 [2026-08-31] 分差分位數與具體分差頻率
+        # 🆕 [2026-08-31] 分差分位數與頻率
         'run_diff_p25': 1, 'run_diff_p50': 3, 'run_diff_p75': 5,
         'diff_1_rate': 0.421, 'diff_2_rate': 0.211, 'diff_3_rate': 0.105, 'diff_4plus_rate': 0.263,
+    },
+    # 🆕 [2026-10-09] NBA/WNBA（籃球）fallback — 以 2025-26 球季 1377 場實測校準
+    #   原碼缺這兩項 → NBA 永遠走 NPB 棒球 fallback，分差被低估 4.7 分。
+    'NBA': {
+        'sample_size': 0,
+        'is_fallback': True,
+        'team_score_mean': 114.4,
+        'team_score_std': 13.5,
+        'total_score_mean': 228.7,
+        'total_score_std': 20.5,
+        'run_diff_mean': 11.4,
+        'run_diff_std': 9.6,
+        'blowout_rate': 0.55,      # ≥10 分差
+        'close_game_rate': 0.28,   # ≤5 分差
+        'run_diff_p25': 4, 'run_diff_p50': 9, 'run_diff_p75': 19,
+        'diff_1_rate': 0.03, 'diff_2_rate': 0.04, 'diff_3_rate': 0.05, 'diff_4plus_rate': 0.83,
+    },
+    'WNBA': {
+        'sample_size': 0,
+        'is_fallback': True,
+        'team_score_mean': 81.5,
+        'team_score_std': 11.0,
+        'total_score_mean': 163.0,
+        'total_score_std': 17.5,
+        'run_diff_mean': 9.5,
+        'run_diff_std': 8.2,
+        'blowout_rate': 0.48,
+        'close_game_rate': 0.32,
+        'run_diff_p25': 4, 'run_diff_p50': 8, 'run_diff_p75': 16,
+        'diff_1_rate': 0.04, 'diff_2_rate': 0.05, 'diff_3_rate': 0.06, 'diff_4plus_rate': 0.78,
     },
 }
 
@@ -118,7 +148,11 @@ def compute_league_distribution(
     league_upper = league.upper()
 
     # 非棒球聯盟不計算（避免無意義資料）
-    if league_upper not in ('MLB', 'NPB', 'CPBL'):
+    # 🆕 [2026-10-09] 開放 NBA/WNBA：原碼回傳全零 fallback，導致分差抽樣只能
+    #   用棒球參數（中位 3 分），但籃球實際分差中位數 9 分 → 比分嚴重低估。
+    #   籃球的 blowout/close 門檻與棒球不同（籃球 4+ 分差佔 83%），
+    #   因此 _compute_stats 需傳入 league 以套用正確門檻。
+    if league_upper not in ('MLB', 'NPB', 'CPBL', 'NBA', 'WNBA'):
         return {
             'sample_size': 0,
             'is_fallback': True,
@@ -178,14 +212,25 @@ def compute_league_distribution(
 
     n = len(parsed_scores)
     if n < sample_threshold:
+        # 🆕 [2026-10-09] 籃球樣本門檻較低：NBA 每隊每季 82 場但只有 60 天視窗，
+        #   且季前賽期間樣本更少。棒球的 30 場門檻對籃球過嚴（會一直 fallback）。
+        if league_upper in ('NBA', 'WNBA') and n >= 10:
+            return _compute_stats(parsed_scores, n, league_upper)
         print(f'  ⚠ league_distribution: {league_upper} 樣本數 {n} < {sample_threshold}，使用 fallback')
         return _get_fallback(league_upper)
 
-    return _compute_stats(parsed_scores, n)
+    return _compute_stats(parsed_scores, n, league_upper)
 
 
-def _compute_stats(parsed_scores: list, n: int) -> dict:
-    """從已解析的 (home, away) list 計算 8 個分布指標"""
+def _compute_stats(parsed_scores: list, n: int, league: str = 'MLB') -> dict:
+    """從已解析的 (home, away) list 計算 8 個分布指標
+
+    🆕 [2026-10-09] 加入 league 參數：blowout/close 門檻依運動種類而異。
+    棒球：≥6 分差為大比分、≤2 分差為接近賽（原設計）
+    籃球：4+ 分差佔 83%（並非「大比分」），改以 ≥10 分為 blowout、
+          ≤5 分為 close（NBA 常見膠著區間）
+    """
+    is_basketball = league.upper() in ('NBA', 'WNBA')
     team_scores = []  # 所有球隊的單場得分
     total_scores = []  # 單場總得分
     run_diffs = []  # 單場分差（絕對值）
@@ -214,8 +259,13 @@ def _compute_stats(parsed_scores: list, n: int) -> dict:
     diff_mean = _mean(run_diffs)
     diff_std = _std(run_diffs, diff_mean)
 
-    blowout_count = sum(1 for d in run_diffs if d >= 6)
-    close_count = sum(1 for d in run_diffs if d <= 2)
+    # 🆕 [2026-10-09] blowout/close 門檻依運動種類（籃球 4+ 分差佔 83%，不是大比分）
+    if is_basketball:
+        blowout_count = sum(1 for d in run_diffs if d >= 10)   # NBA 10+ 分差視為大勝
+        close_count = sum(1 for d in run_diffs if d <= 5)      # NBA 5 分內視為膠著
+    else:
+        blowout_count = sum(1 for d in run_diffs if d >= 6)
+        close_count = sum(1 for d in run_diffs if d <= 2)
     blowout_rate = blowout_count / n if n else 0.0
     close_rate = close_count / n if n else 0.0
 
@@ -270,10 +320,13 @@ def format_distribution_prompt_section(dist: dict, league: str) -> str:
     """
     將分布 dict 格式化成 prompt 段落。
 
-    只用於棒球聯盟（MLB / NPB / CPBL）；其他聯盟回傳空字串。
+    🆕 [2026-10-09] 開放 NBA/WNBA：原碼只支援棒球聯盟、其他回空字串，
+    導致即使 compute_league_distribution 算出籃球分布，也不會進 prompt。
     """
-    if league.upper() not in ('MLB', 'NPB', 'CPBL'):
+    if league.upper() not in ('MLB', 'NPB', 'CPBL', 'NBA', 'WNBA'):
         return ''
+
+    is_basketball = league.upper() in ('NBA', 'WNBA')
 
     if dist.get('is_fallback'):
         source_note = '（樣本不足，使用預設值）'
@@ -307,6 +360,29 @@ def format_distribution_prompt_section(dist: dict, league: str) -> str:
             '⚠️ 重要：常見分差是 2-3 分，1 分差只佔 {d1_pct}%。\n'
             '比分預測應反映此分布特徵。'
         ),
+        # 🆕 [2026-10-09] 籃球聯盟引導（原碼無 NBA/WNBA 條目 → guidance 為空字串，
+        #   等於只在 prompt 塞數字、沒有解讀指引。且原碼的「≥6 分差=大比分、
+        #   ≤2 分差=接近賽」是棒球門檻，套到籃球會嚴重誤導：實測 NBA 4+ 分差佔 83%、
+        #   中位分差 9 分，籃球的「膠著」約在 5 分內、「大勝」約在 10 分以上。）
+        'NBA': (
+            'NBA（籃球）比分變異度大（σ={run_diff_std}），單場分差中位數約 {p50} 分；\n'
+            '分差分佈: P25={p25}分, P50（中位數）={p50}分, P75={p75}分；\n'
+            '分差頻率: 3 分以內僅 {d1_pct}%+{d2_pct}%+{d3_pct}%，4 分以上 {d4_pct}%。\n'
+            '⚠️ 重要（與棒球截然不同）：籃球 4 分差是**常態**而非大勝；\n'
+            '  - 「膠著比賽」約指 5 分以內（本季約 {close_rate_pct}%）\n'
+            '  - 「大勝」約指 10 分以上（本季約 {blowout_rate_pct}%）\n'
+            '  - 切勿預測 1-3 分差（棒球式低比分思維）——籃球分差幾乎都在 4 分以上。\n'
+            '請以此分布特徵作為比分預測的參考依據。'
+        ),
+        'WNBA': (
+            'WNBA（籃球）比分變異度大（σ={run_diff_std}），單場分差中位數約 {p50} 分；\n'
+            '分差分佈: P25={p25}分, P50（中位數）={p50}分, P75={p75}分；\n'
+            '分差頻率: 4 分以上 {d4_pct}%。\n'
+            '⚠️ 籃球分差普遍大於棒球，勿套用棒球式低比分預測。\n'
+            '  - 「膠著比賽」約指 5 分以內（約 {close_rate_pct}%）\n'
+            '  - 「大勝」約指 10 分以上（約 {blowout_rate_pct}%）\n'
+            '比分預測應反映此分布特徵。'
+        ),
     }
 
     guidance_template = league_guidance.get(league.upper(), '')
@@ -334,14 +410,22 @@ def format_distribution_prompt_section(dist: dict, league: str) -> str:
         f"避免系統性低估總分。"
     )
 
+    # 🆕 [2026-10-09] 標題門檻依運動種類（籃球的大勝/膠著門檻與棒球不同）
+    if is_basketball:
+        blowout_label = "大勝率 (≥10 分差)"
+        close_label = "膠著率 (≤5 分差)"
+    else:
+        blowout_label = "大比分率 (≥6 分差)"
+        close_label = "接近賽率 (≤2 分差)"
+
     section = f"""
 ===== {league.upper()} 比分分布特徵（最近 {DEFAULT_DAYS_BACK} 天實際結算）=====
 {source_note}
 - 球隊平均得分: {dist.get('team_score_mean', 0)} ± {dist.get('team_score_std', 0)}
 - 單場總得分: {dist.get('total_score_mean', 0)} ± {dist.get('total_score_std', 0)}
 - 分差分布: 平均 {dist.get('run_diff_mean', 0)} 分，標準差 {dist.get('run_diff_std', 0)}
-- 大比分率 (≥6 分差): {int(dist.get('blowout_rate', 0) * 100)}%
-- 接近賽率 (≤2 分差): {int(dist.get('close_game_rate', 0) * 100)}%
+- {blowout_label}: {int(dist.get('blowout_rate', 0) * 100)}%
+- {close_label}: {int(dist.get('close_game_rate', 0) * 100)}%
 
 💡 分析指引：
 {guidance}
