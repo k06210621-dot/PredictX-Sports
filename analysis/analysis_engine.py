@@ -1493,7 +1493,7 @@ class AnalysisEngine:
                     features['nba_advanced'] = nba_data
                     for _ in nba_data.get('sources', []):
                         self.log_source("official_api")
-                    print(f"  📡 NBA live data: OffRtg diff = {abs(nba_data['team_stats']['home']['off_rtg'] - nba_data['team_stats']['away']['off_rtg']):.1f}")
+                    print(f"  📡 NBA live data: OffRtg diff = {abs(nba_data['team_stats']['home']['off_rtg'] - nba_data['team_stats']['away']['off_rtg']):.1f}（來源 {nba_data.get('source_kind')}）")
                     # 🆕 [2026-10-09] 季前賽/開季初期判定：本季 BR 無數據（用上季 fallback）
                     #   即代表該聯盟本季尚未累積足夠例行賽 → 一律按「季前賽期間」提醒 LLM，
                     #   因為此時 prompt 內的所有「近期戰績/聯盟排名/H2H」都是上季殘留，
@@ -1501,9 +1501,16 @@ class AnalysisEngine:
                     if nba_data.get('is_prev_season'):
                         features['is_preseason_period'] = True
                         print(f"  🗓️ NBA 季前賽期間（本季無進階數據，使用 {nba_data.get('data_season')} 上季數據）")
+                else:
+                    # 🆕 [2026-10-12] 可見化：BR 與 ESPN 兩來源皆失敗時明確標記。
+                    #   實證教訓：10/10–10/15 共 29 場「靜默缺塊」潛伏多日才被發現，
+                    #   期間該組準確率僅 41.2%（有進階數據組 68.0%）。
+                    features['nba_advanced_missing'] = True
+                    print("  🔴 NBA 進階數據缺失（BR 與 ESPN 皆失敗）→ 已標記 features.nba_advanced_missing")
                 fetcher.close()
             except Exception as e:
-                print(f"  ⚠ NBA data fetch error: {e}")
+                features['nba_advanced_missing'] = True
+                print(f"  🔴 NBA data fetch error: {e}")
 
         # 6.5 對 WNBA 賽事：從 basketball-reference.com 抓取進階數據
         if league and league.upper() == 'WNBA':
@@ -1524,8 +1531,11 @@ class AnalysisEngine:
             except Exception as e:
                 print(f"  ⚠ WNBA data fetch error: {e}")
         
-        # 7. 整合天氣資料（MLB 與 NBA，WNBA 室內為主不抓）
-        if league and league.upper() in ('MLB', 'NBA'):
+        # 7. 整合天氣資料
+        # 🆕 [2026-10-12] 改為「僅 MLB」：NBA/WNBA 為室內場館，天氣對比賽結果
+        #    無影響，注入只是稀釋 prompt 注意力（NBA features 實測帶入
+        #    city/溫度/風速/濕度等純雜訊）。
+        if league and league.upper() in ('MLB',):
             try:
                 from weather_fetcher import WeatherFetcher
                 wf = WeatherFetcher()
@@ -2370,7 +2380,7 @@ class AnalysisEngine:
                     )
                 else:
                     season_note = ""
-                nba_advanced_section = f"""===== NBA 進階數據（來源：basketball-reference.com，{data_season or '本季'}）====={season_note}
+                nba_advanced_section = f"""===== NBA 進階數據（來源：{nba_advanced.get('source_kind') or 'basketball-reference.com'}，{data_season or '本季'}）====={season_note}
 主隊 {home_team}:
   進攻效率(OffRtg): {h['off_rtg']:.1f}, 防守效率(DefRtg): {h['def_rtg']:.1f}, 淨效率(Net): {h['net_rating']:.1f}
    Pace: {h['pace']:.1f}, EFG%: {h['efg_pct']:.3f}, TS%: {h['ts_pct']:.3f}, 勝率: {h['win_pct']:.3f}（{h['wins']}勝{h['losses']}敗）
@@ -2379,7 +2389,17 @@ class AnalysisEngine:
   進攻效率(OffRtg): {a['off_rtg']:.1f}, 防守效率(DefRtg): {a['def_rtg']:.1f}, 淨效率(Net): {a['net_rating']:.1f}
    Pace: {a['pace']:.1f}, EFG%: {a['efg_pct']:.3f}, TS%: {a['ts_pct']:.3f}, 勝率: {a['win_pct']:.3f}（{a['wins']}勝{a['losses']}敗）"""
         else:
-            nba_advanced_section = ""
+            # 🆕 [2026-10-12] 缺資料時「明確告知」而非靜默省略：
+            #   靜默缺塊會讓 LLM 以為「沒提到就是沒差」，實證該組準確率僅 41.2%。
+            if features.get('nba_advanced_missing'):
+                nba_advanced_section = (
+                    "===== NBA 進階數據 =====\n"
+                    "⚠️ 本場無法取得球隊進階數據（資料來源暫時不可用）。請僅依其他區塊"
+                    "（戰績、近期狀態、傷兵名單、對戰歷史）判斷，並在信心度上反映此資訊缺口，"
+                    "不要因缺乏進階數據就給出高信心。"
+                )
+            else:
+                nba_advanced_section = ""
 
         # WNBA 進階數據（從 basketball-reference.com 爬取）
         wnba_advanced = features.get('wnba_advanced', {})

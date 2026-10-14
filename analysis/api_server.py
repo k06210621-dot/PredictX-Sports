@@ -175,6 +175,55 @@ def health():
     return jsonify(checks), 200 if overall_healthy else 503
 
 
+# 🆕 [2026-10-12] 資料來源健康診斷（唯讀，不寫 DB、不呼叫 LLM）
+# 用途：在「Railway 容器內」實測外部資料來源可達性 —— 這是唯一能判斷
+#       egress IP 是否被封鎖的方法（本機 railway run 走的是本機 IP，測不準）。
+# 背景：NBA 進階數據自 10/10 起 0/29 全滅，需確認 BR 是否擋 Railway IP。
+@app.route('/api/_diag/nba_source', methods=['GET'])
+def diag_nba_source():
+    """GET /api/_diag/nba_source?secret=<ADMIN_SECRET>&home=..&away=..
+
+    回傳：各來源的 HTTP 狀態、快取統計、實際取回的 team_stats。
+    """
+    if request.args.get('secret') != _ADMIN_SECRET:
+        return jsonify({"error": "unauthorized"}), 403
+    try:
+        from nba_data_fetcher import NBADataFetcher, FETCH_STATS
+        import urllib.request as _u
+        home = request.args.get('home', 'Oklahoma City Thunder')
+        away = request.args.get('away', 'Atlanta Hawks')
+        out = {
+            "service_egress_probe": {},
+            "fetch_stats_before": dict(FETCH_STATS),
+        }
+        # 直接探測 BR 與 ESPN 的 HTTP 狀態（不經 fetcher 快取，最真實）
+        for name, url in (
+            ("basketball-reference", "https://www.basketball-reference.com/leagues/NBA_2026.html"),
+            ("espn-standings", "https://site.web.api.espn.com/apis/v2/sports/basketball/nba/standings?season=2026"),
+            ("espn-teams", "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams"),
+        ):
+            try:
+                req = _u.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with _u.urlopen(req, timeout=25) as resp:
+                    out["service_egress_probe"][name] = resp.status
+            except Exception as e:
+                out["service_egress_probe"][name] = f"{type(e).__name__}: {str(e)[:80]}"
+
+        f = NBADataFetcher()
+        d = f.fetch_and_store_game_data(
+            '00000000-0000-0000-0000-000000000000', home, away)
+        out["ok"] = bool(d)
+        out["source_kind"] = (d or {}).get('source_kind')
+        out["data_season"] = (d or {}).get('data_season')
+        if d:
+            out["team_stats"] = d.get("team_stats")
+        f.close()
+        out["fetch_stats_after"] = dict(FETCH_STATS)
+        return jsonify(out), 200
+    except Exception as e:
+        return jsonify({"error": str(e), "type": type(e).__name__}), 500
+
+
 # 🆕 [2026-06-27] 推播通知相關 endpoint
 @app.route('/api/register_device', methods=['POST'])
 def register_device():
