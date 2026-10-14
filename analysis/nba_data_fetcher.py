@@ -465,38 +465,52 @@ class NBADataFetcher:
             print(f"  ⚠ ESPN 隊名無法匹配: {home_name}(→{hk}) / {away_name}(→{ak})")
             return None
 
-        # 賽季選擇（與 BR 的「本季有效隊伍 < 10 → 退回上季」邏輯一致）：
-        # ESPN 對「尚未開打」的球季仍會回 standings（但只有季前賽的 0-4 場），
-        # 直接拿來算會得到無意義的指標；且 team statistics 端點對未開打球季回 404。
-        # 故：本季累積場次 < 30 → 改用上一季。
-        def _mature(y):
+        # 賽季選擇（🆕 [2026-10-12] 門檻 30 → 10 場）
+        #   原設計要求某隊累積 ≥30 場才切換到本季 → 例行賽 10/20 開打後約需 8.6 週
+        #   （12 月中下旬），整個上半季都用上季數據預測本季比賽。且 BR 已被封鎖，
+        #   ESPN 是實質主來源 → 影響放大。改為 ≥10 場（約 3 週）即視為本季已有參考性，
+        #   並在 data_season 標明樣本場次，讓 prompt 能反映不確定性。
+        #   另：ESPN 對「尚未開打」的球季，team statistics 端點回 404 →
+        #   此時退回上一季的 rate stats，並在標籤註明。
+        MIN_GAMES = 10
+
+        def _max_gp(y):
             st = self._espn_standings(y)
             if not st:
-                return False, None
-            mx = max((v["wins"] + v["losses"]) for v in st.values())
-            return mx >= 30, st
+                return 0, None
+            return max((v["wins"] + v["losses"]) for v in st.values()), st
 
-        year = _espn_win_year(season)
-        ok, std = _mature(year)
-        data_season = season
-        if not ok:
-            prev = _prev_season(season)
-            year = _espn_win_year(prev)
-            ok2, std2 = _mature(year)
-            if ok2:
-                std, data_season = std2, prev
-                print(f"  ℹ️ ESPN：本季樣本不足 → 改用 {prev}（ESPN season={year}）")
-            elif std:
-                data_season = season
-            else:
-                std = std2
-        if not std:
+        cur_year = _espn_win_year(season)
+        prev_s = _prev_season(season)
+        prev_year = _espn_win_year(prev_s)
+
+        cur_gp, cur_std = _max_gp(cur_year)
+        prev_gp, prev_std = _max_gp(prev_year)
+
+        if cur_std and cur_gp >= MIN_GAMES:
+            std, std_year = cur_std, cur_year
+            data_season = f"{season}（本季前 {cur_gp} 場）"
+            is_prev = False
+        elif prev_std:
+            std, std_year = prev_std, prev_year
+            data_season = f"{prev_s}（上季）"
+            is_prev = True
+            if cur_gp:
+                print(f"  ℹ️ ESPN：本季僅 {cur_gp} 場（<{MIN_GAMES}）→ 進階數據改用 {prev_s}")
+        else:
             print("  ⚠ ESPN standings 無資料（本季與上季皆空）")
             return None
 
         out = {}
+        _rate_fallback_used = False
         for local_nm, espn_nm in ((home_name, hk), (away_name, ak)):
-            rates = self._espn_team_rates(ids[espn_nm], year)
+            rates = self._espn_team_rates(ids[espn_nm], std_year)
+            if not rates and std_year != prev_year:
+                # 本季 team statistics 尚未推出（404）→ 退回上季的 rate stats
+                rates = self._espn_team_rates(ids[espn_nm], prev_year)
+                if rates and not _rate_fallback_used:
+                    _rate_fallback_used = True
+                    data_season += "＋上季進階率"
             if not rates:
                 return None
             rec = std.get(espn_nm, {})
@@ -517,7 +531,7 @@ class NBADataFetcher:
                 "wins": rec.get("wins", 0),
                 "losses": rec.get("losses", 0),
             }
-        return out, data_season
+        return out, data_season, is_prev
 
     def fetch_and_store_game_data(self, game_id, home_team_name, away_team_name, season=None):
         """為一場 NBA 比賽取得進階數據（全聯盟表）。
@@ -559,16 +573,18 @@ class NBADataFetcher:
         # ---- 備援：ESPN ----
         espn = self._fetch_from_espn(home_team_name, away_team_name, season)
         if espn:
-            stats, data_season = espn
+            stats, data_season, is_prev = espn
             self.fetched_sources.append("espn.com")
-            print(f"  📡 NBA ESPN 備援成功（{data_season} 資料）")
+            print(f"  📡 NBA ESPN 備援成功（{data_season} 資料，is_prev={is_prev}）")
             return {
                 "home_team_name": home_team_name,
                 "away_team_name": away_team_name,
                 "team_stats": {"home": stats[home_team_name], "away": stats[away_team_name]},
                 "top_players": {"home": [], "away": []},
                 "sources": list(set(self.fetched_sources)),
-                "is_prev_season": True,
+                # 🆕 [2026-10-12] 改為動態：本季已有 ≥10 場時 is_prev=False，
+                #   不再無條件標記為「上季」（否則例行賽中也會一直顯示資料賽季警告）
+                "is_prev_season": is_prev,
                 "data_season": f"{data_season}（ESPN 衍生指標）",
                 "source_kind": "espn_derived",
             }

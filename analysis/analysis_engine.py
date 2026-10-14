@@ -1261,6 +1261,106 @@ class AnalysisEngine:
                 pass
             return None
 
+    # 🆕 [2026-10-12] 各聯盟「例行賽」起始（月, 日）——用於 games 實算 standings 的賽季界線
+    #   ⚠️ 刻意設在「季前賽之後」：DB 的 games 表無賽事類型欄位（ingest 讀了 ESPN
+    #   season.type 但未儲存），無法區分熱身賽與例行賽，故以日期近似排除。
+    #   實證：NBA 季前賽在 10/3–10/18，例行賽開幕在 10/20–10/24；
+    #   若界線設 10/1，OKC（季前賽 0-3）會被顯示成「本季 0 勝 3 敗、第 29 名」。
+    _LEAGUE_SEASON_START = {
+        'MLB': (3, 20), 'NPB': (3, 20), 'CPBL': (3, 20),
+        'NBA': (10, 20), 'WNBA': (5, 15),
+    }
+
+    def _season_start_for(self, league, ref_date=None):
+        """回傳該聯盟「當前例行賽季」的起始日（date）；無法判定時回 None。
+
+        用途：games 實算 standings 時限定只取本季例行賽，避免兩種失真：
+          ① 跨季累加（上季＋季後賽＋本季）：實證 NBA 全聯盟實算場次中位數 93 場（應為 82）；
+          ② 把季前賽算進例行賽戰績。
+        ⚠️ 不套用到 standings 表路徑（該路徑已有 season 欄位做 scope）。
+        """
+        import datetime as _d
+        key = (league or '').upper()
+        md = self._LEAGUE_SEASON_START.get(key)
+        if not md:
+            return None
+        m, day = md
+        d = None
+        if ref_date is None:
+            d = _d.date.today()
+        elif isinstance(ref_date, _d.datetime):
+            d = ref_date.date()
+        elif isinstance(ref_date, _d.date):
+            d = ref_date
+        else:
+            try:
+                d = _d.datetime.fromisoformat(str(ref_date)[:10]).date()
+            except (ValueError, TypeError):
+                d = _d.date.today()
+        # 未達本季起始日 → 屬上一季
+        y = d.year if (d.month, d.day) >= (m, day) else d.year - 1
+        try:
+            return _d.date(y, m, day)
+        except ValueError:
+            return None
+
+    def _standings_window(self, league, team_id, start, end, with_rank=True):
+        """以 [start, end) 為窗口實算該聯盟所有隊伍戰績。
+
+        start=None → 不限下界；end=None → 不限上界（僅排除 NULL 比分）。
+        with_rank=True 時回傳「含隊名與排名的完整清單」，否則回傳單隊 dict。
+        """
+        query = """
+            WITH team_games AS (
+                SELECT
+                    t.team_id, t.english_name,
+                    SUM(CASE
+                        WHEN (g.home_team_id = t.team_id AND g.home_team_score > g.away_team_score)
+                             OR (g.away_team_id = t.team_id AND g.away_team_score > g.home_team_score)
+                        THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE
+                        WHEN (g.home_team_id = t.team_id AND g.home_team_score < g.away_team_score)
+                             OR (g.away_team_id = t.team_id AND g.away_team_score < g.home_team_score)
+                        THEN 1 ELSE 0 END) as losses,
+                    SUM(CASE WHEN g.home_team_id = t.team_id THEN g.home_team_score ELSE g.away_team_score END) as goals_for,
+                    SUM(CASE WHEN g.home_team_id = t.team_id THEN g.away_team_score ELSE g.home_team_score END) as goals_against,
+                    COUNT(*) as games_played
+                FROM predictx.teams t
+                JOIN predictx.games g ON (g.home_team_id = t.team_id OR g.away_team_id = t.team_id)
+                WHERE t.league = %s AND g.status IN ('final', 'FINAL')
+                  AND g.home_team_score IS NOT NULL AND g.away_team_score IS NOT NULL
+                  AND (%s::date IS NULL OR g.match_date::date >= %s::date)
+                  AND (%s::date IS NULL OR g.match_date::date < %s::date)
+                GROUP BY t.team_id, t.english_name
+            )
+            SELECT *, ROUND(wins::numeric / NULLIF(wins + losses, 0), 3) as win_pct
+            FROM team_games
+            WHERE games_played > 0
+            ORDER BY win_pct DESC
+        """
+        self.cur.execute(query, (league, start, start, end, end))
+        rows = self.cur.fetchall()
+        if not with_rank:
+            for row in rows:
+                if row['team_id'] == team_id:
+                    return row
+            return None
+        return rows
+
+    def _row_to_standings(self, row, rank=None, total=None, label=None):
+        return {
+            "rank": rank,
+            "total_teams": total,
+            "wins": row['wins'],
+            "losses": row['losses'],
+            "games_played": row['games_played'],
+            "win_pct": float(row['win_pct']) if row['win_pct'] else 0.0,
+            "goals_for": int(row['goals_for'] or 0),
+            "goals_against": int(row['goals_against'] or 0),
+            "goal_diff": int((row['goals_for'] or 0) - (row['goals_against'] or 0)),
+            "season_label": label,
+        }
+
     def get_league_standings(self, team_id, before_date=None):
         """
         獲取隊伍在聯盟中的排名（優先從 standings 表，fallback 到 games 計算）
@@ -1268,6 +1368,14 @@ class AnalysisEngine:
         🆕 [2026-10-09] before_date：防 look-ahead bias。
         fallback 路徑用 games 實算全季戰績，歷史重跑時若含該場自己，
         會讓「賽前排名」變成「含這場結果的排名」。賽前分析行為不變。
+
+        🆕 [2026-10-12] 雙視窗：fallback 原本只做 `match_date < before_date`，
+        把「上季 + 上季季後賽 + 本季（含季前賽）」全部累加。實證 NBA：
+        OKC 實算 79-26（105 場）vs 真實上季 64-18（82 場）；全聯盟實算場次
+        中位數 93 場（應為 82），19/30 隊 >90 場。後果：開季後一支本季 3-8
+        的球隊仍顯示 ~72% 勝率（上季權重約 7:1），嚴重誤導 LLM。
+        修法：① 本季只取「例行賽起始日之後」（排除季前賽）；
+              ② 同時回傳上季完整戰績，讓 LLM 早期賽季兩者都能參考。
         """
         # [Bug fix 2026-08-17 22:42] 包 try/except + rollback 防止 transaction aborted
         try:
@@ -1280,53 +1388,50 @@ class AnalysisEngine:
             team = self.cur.fetchone()
             if not team:
                 return None
-            
+
             league = team['league']
-            
-            query = """
-                WITH team_games AS (
-                    SELECT 
-                        t.team_id, t.english_name,
-                        SUM(CASE 
-                            WHEN (g.home_team_id = t.team_id AND g.home_team_score > g.away_team_score)
-                                 OR (g.away_team_id = t.team_id AND g.away_team_score > g.home_team_score)
-                            THEN 1 ELSE 0 END) as wins,
-                        SUM(CASE 
-                            WHEN (g.home_team_id = t.team_id AND g.home_team_score < g.away_team_score)
-                                 OR (g.away_team_id = t.team_id AND g.away_team_score < g.home_team_score)
-                            THEN 1 ELSE 0 END) as losses,
-                        SUM(CASE WHEN g.home_team_id = t.team_id THEN g.home_team_score ELSE g.away_team_score END) as goals_for,
-                        SUM(CASE WHEN g.home_team_id = t.team_id THEN g.away_team_score ELSE g.home_team_score END) as goals_against,
-                        COUNT(*) as games_played
-                    FROM predictx.teams t
-                    JOIN predictx.games g ON (g.home_team_id = t.team_id OR g.away_team_id = t.team_id)
-                    WHERE t.league = %s AND g.status IN ('final', 'FINAL')
-                      AND (%s::date IS NULL OR g.match_date::date < %s::date)
-                    GROUP BY t.team_id, t.english_name
-                )
-                SELECT *, 
-                       ROUND(wins::numeric / NULLIF(wins + losses, 0), 3) as win_pct
-                FROM team_games
-                ORDER BY win_pct DESC
-            """
-            self.cur.execute(query, (league, before_date, before_date))
-            standings = self.cur.fetchall()
-            
-            for idx, row in enumerate(standings):
+            _cur_start = self._season_start_for(league, before_date)
+
+            # ---- ① 本季（例行賽）----
+            cur_rows = self._standings_window(league, team_id, _cur_start, before_date)
+            result = None
+            for idx, row in enumerate(cur_rows):
                 if row['team_id'] == team_id:
-                    return {
-                        "rank": idx + 1,
-                        "total_teams": len(standings),
-                        "wins": row['wins'],
-                        "losses": row['losses'],
-                        "games_played": row['games_played'],
-                        "win_pct": float(row['win_pct']) if row['win_pct'] else 0.0,
-                        "goals_for": int(row['goals_for'] or 0),
-                        "goals_against": int(row['goals_against'] or 0),
-                        "goal_diff": int((row['goals_for'] or 0) - (row['goals_against'] or 0))
-                    }
-            
-            return None
+                    _lbl = (f"本季例行賽（自 {_cur_start.isoformat()} 起）"
+                            if _cur_start else "本季（未設賽季界線）")
+                    result = self._row_to_standings(row, rank=idx + 1,
+                                                    total=len(cur_rows), label=_lbl)
+                    break
+
+            # ---- ② 上季（完整球季；僅在「上季」與「本季」不同賽季時查）----
+            if _cur_start:
+                _prev_start = _cur_start.replace(year=_cur_start.year - 1)
+                prow = self._standings_window(league, team_id, _prev_start,
+                                              _cur_start, with_rank=False)
+                if prow and result is not None:
+                    # 🆕 僅在「上季樣本足夠」時才顯示：DB 對更早賽季只有零星場次
+                    #   （實證 2024-25 僅 6 場），顯示出來只是雜訊。
+                    if (prow['wins'] + prow['losses']) >= 20:
+                        result["prev_season"] = {
+                            "wins": prow['wins'], "losses": prow['losses'],
+                            "games_played": prow['games_played'],
+                            "win_pct": float(prow['win_pct']) if prow['win_pct'] else 0.0,
+                            "label": f"{_prev_start.year}-{str(_prev_start.year + 1)[2:]} 例行賽",
+                        }
+                elif prow and result is None:
+                    # 本季尚無比賽（如開幕日）→ 至少給上季基準
+                    result = self._row_to_standings(
+                        prow, rank=None, total=None,
+                        label=f"{_prev_start.year}-{str(_prev_start.year + 1)[2:]} 例行賽（本季尚無比賽）")
+
+            if result is None:
+                # 兩窗皆空 → 退回「未設界線」的舊行為（保底，避免完全沒有排名資料）
+                rows = self._standings_window(league, team_id, None, before_date)
+                for idx, row in enumerate(rows):
+                    if row['team_id'] == team_id:
+                        return self._row_to_standings(row, rank=idx + 1, total=len(rows),
+                                                      label="games 實算（未設賽季界線）")
+            return result
         except Exception:
             # [Bug fix 2026-08-17 22:42] 任何錯誤都 rollback 清乾淨
             try:
@@ -2754,7 +2859,25 @@ Park Factor: {pf:.2f} ({park_interp})
         def format_standings(s):
             if not s:
                 return "無排名數據"
-            return f"第 {s['rank']}/{s['total_teams']} 名, {s['wins']}勝{s['losses']}敗, 勝率 {s['win_pct']:.3f}, 得分 {s.get('goals_for', 0)}, 失分 {s.get('goals_against', 0)}, 淨勝分 {s.get('goal_diff', 0):+d}"
+            # 🆕 [2026-10-12] 顯示場次、賽季來源與「上季對照」：
+            #   原本只印「第 X/Y 名, N勝M敗, 勝率…」，看不出是跨季累加還是本季。
+            #   實證 NBA games 實算曾把「上季＋季後賽＋本季」累加成 105 場，
+            #   讓一支本季 3-8 的球隊顯示 ~72%。現改為：本季例行賽 + 上季並列，
+            #   讓 LLM 在開季初期同時看得到「當前戰績」與「上季基準」。
+            _gp = s.get('games_played')
+            _gp_txt = f"（{_gp} 場）" if _gp else ""
+            _rk, _tt = s.get('rank'), s.get('total_teams')
+            _rank_txt = f"第 {_rk}/{_tt} 名, " if _rk else ""
+            out = (f"{_rank_txt}{s['wins']}勝{s['losses']}敗{_gp_txt}, "
+                   f"勝率 {s['win_pct']:.3f}, 得分 {s.get('goals_for', 0)}, "
+                   f"失分 {s.get('goals_against', 0)}, 淨勝分 {s.get('goal_diff', 0):+d}")
+            _pv = s.get('prev_season')
+            if _pv:
+                out += (f"  ｜ 上季（{_pv['label']}）: {_pv['wins']}勝{_pv['losses']}敗"
+                        f"（{_pv['games_played']} 場）, 勝率 {_pv['win_pct']:.3f}")
+            if s.get('season_label'):
+                out += f" ⓘ{s['season_label']}"
+            return out
 
         home_standings = format_standings(features['home_standings'])
         away_standings = format_standings(features['away_standings'])
