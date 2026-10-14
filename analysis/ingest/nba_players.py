@@ -178,9 +178,42 @@ def run(dry_run: bool = False) -> dict:
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
     import psycopg2, psycopg2.extras
+    from psycopg2.extras import execute_values
     conn = psycopg2.connect(db_url, cursor_factory=psycopg2.extras.RealDictCursor)
     cur = conn.cursor()
 
+    # ==================================================================
+    # 🆕 [2026-10-12] 改為「批量寫入」——修效能瓶頸
+    #
+    # 舊版逐筆 upsert（每球員 2 次往返 + 每隊 2 次停用查詢）：
+    #   615 人 × 2 ≈ 1230 次 DB 往返，經 Railway public proxy 實測 >7 分鐘，
+    #   在 cron（agent 工具逾時上限 600s）下有逾時失敗風險。
+    # 新版：全部改為 execute_values 批量 → 常數次往返（實測 <10 秒）。
+    # ==================================================================
+
+    # ① 隊名 → team_id（1 次查詢，取代原本每隊各查一次）
+    cur.execute("SELECT team_id::text AS tid, english_name FROM predictx.teams WHERE league = %s",
+                (LEAGUE_CODE,))
+    trows = cur.fetchall()
+
+    def _map_team(espn_name):
+        espn_l = (espn_name or "").lower()
+        for r in trows:
+            if espn_l == (r["english_name"] or "").lower():
+                return r["tid"]
+        if espn_l == "la clippers":  # ESPN 用 LA 縮寫
+            for r in trows:
+                if (r["english_name"] or "").lower() == "los angeles clippers":
+                    return r["tid"]
+        for r in trows:
+            for kw in (r["english_name"] or "").lower().split():
+                if kw and kw in espn_l:
+                    return r["tid"]
+        return None
+
+    # ② 攤平所有要寫入的球員（同時套用「單隊 roster >= 8 人」安全閘）
+    staged = []              # (external_id, name, position, jersey, team_id)
+    team_roster_ids = {}     # team_id -> set(external_id)
     for t in teams:
         name = t["name"]
         if result["roster_sizes"].get(name, -1) < 8:
@@ -189,40 +222,120 @@ def run(dry_run: bool = False) -> dict:
         roster = rosters.get(name)
         if not roster:
             continue
-        try:
-            team_id = map_team_id(name, cur)
-            if not team_id:
-                result["errors"].append(f"找不到球隊 {name}")
+        tid = _map_team(name)
+        if not tid:
+            result["errors"].append(f"找不到球隊 {name}")
+            continue
+        ids = set()
+        for a in roster:
+            espn_id = a.get("id")
+            full_name = a.get("fullName") or a.get("displayName")
+            pos_obj = a.get("position", {})
+            position = pos_obj.get("abbreviation", "") if isinstance(pos_obj, dict) else str(pos_obj)
+            jersey = a.get("jersey", "")
+            try:
+                jersey_int = int(jersey) if jersey else None
+            except (ValueError, TypeError):
+                jersey_int = None
+            if not espn_id or not full_name:
                 continue
-            roster_ids = set()
-            inserted = 0
-            for a in roster:
-                espn_id = a.get("id")
-                full_name = a.get("fullName") or a.get("displayName")
-                pos_obj = a.get("position", {})
-                position = pos_obj.get("abbreviation", "") if isinstance(pos_obj, dict) else str(pos_obj)
-                jersey = a.get("jersey", "")
-                try:
-                    jersey_int = int(jersey) if jersey else None
-                except (ValueError, TypeError):
-                    jersey_int = None
-                if not espn_id or not full_name:
-                    continue
-                roster_ids.add(str(espn_id))
-                pid = upsert_player(cur, str(espn_id), full_name, position, jersey_int)
-                if upsert_player_team(cur, pid, team_id):
-                    inserted += 1
-            deactivated = deactivate_missing(cur, team_id, roster_ids)
-            conn.commit()
-            result["teams_processed"] += 1
-            result["players_inserted"] += inserted
-            result["deactivated"] += deactivated
-            logger.info(f"  ✓ {name:30s}  active={len(roster)}  new={inserted}  deactivated={deactivated}")
-        except Exception as e:
-            result["errors"].append(f"{name}: {e}")
-            conn.rollback()
-    cur.close()
-    conn.close()
+            ids.add(str(espn_id))
+            staged.append((str(espn_id), full_name, position, jersey_int, tid))
+        team_roster_ids[tid] = ids
+
+    # external_id 去重（同一人理論上不會出現在兩隊，但保險）
+    seen_ext = set()
+    staged_u = []
+    for row in staged:
+        if row[0] in seen_ext:
+            continue
+        seen_ext.add(row[0])
+        staged_u.append(row)
+
+    try:
+        # ③ players 批量 upsert（1 次往返）
+        if staged_u:
+            execute_values(cur, """
+                INSERT INTO predictx.players
+                    (external_id, player_name, position, jersey_number, created_at, updated_at)
+                VALUES %s
+                ON CONFLICT (external_id) DO UPDATE
+                  SET player_name = EXCLUDED.player_name,
+                      position = EXCLUDED.position,
+                      jersey_number = EXCLUDED.jersey_number,
+                      updated_at = NOW()
+            """, [(e, n, p, j) for e, n, p, j, _ in staged_u],
+                template="(%s, %s, %s, %s, NOW(), NOW())")
+
+        # ④ 取回 player_id 對照（1 次查詢）
+        cur.execute("SELECT player_id::text AS pid, external_id FROM predictx.players WHERE external_id = ANY(%s)",
+                    (list(seen_ext),))
+        pid_by_ext = {r["external_id"]: r["pid"] for r in cur.fetchall()}
+
+        # ⑤ 既有 player_teams（本聯盟，1 次查詢）
+        cur.execute("""
+            SELECT pt.player_id::text AS pid, pt.team_id::text AS tid, pt.is_active
+            FROM predictx.player_teams pt
+            JOIN predictx.teams tt ON pt.team_id = tt.team_id
+            WHERE tt.league = %s
+        """, (LEAGUE_CODE,))
+        existing = {(r["pid"], r["tid"]): r["is_active"] for r in cur.fetchall()}
+
+        # ⑥ 計算需 INSERT / 需復活 / 需停用
+        to_insert, to_reactivate = [], []
+        for ext, _n, _p, _j, tid in staged_u:
+            pid = pid_by_ext.get(ext)
+            if not pid:
+                continue
+            key = (pid, tid)
+            if key in existing:
+                if not existing[key]:
+                    to_reactivate.append((pid, tid))
+                    existing[key] = True
+            else:
+                to_insert.append((pid, tid))
+                existing[key] = True
+
+        ext_by_pid = {v: k for k, v in pid_by_ext.items()}
+        stale = []
+        for (pid, tid), is_active in existing.items():
+            if not is_active or tid not in team_roster_ids:
+                continue
+            ext = ext_by_pid.get(pid)
+            if ext is not None and ext not in team_roster_ids[tid]:
+                stale.append((pid, tid))
+
+        # ⑦ 批量執行（各 1 次往返）
+        if to_insert:
+            execute_values(cur, """
+                INSERT INTO predictx.player_teams (player_id, team_id, is_active) VALUES %s
+            """, to_insert, template="(%s::uuid, %s::uuid, true)")
+            result["players_inserted"] = len(to_insert)
+        if to_reactivate:
+            execute_values(cur, """
+                UPDATE predictx.player_teams pt SET is_active = true
+                FROM (VALUES %s) AS v(pid, tid)
+                WHERE pt.player_id = v.pid::uuid AND pt.team_id = v.tid::uuid
+            """, to_reactivate, template="(%s, %s)")
+        if stale:
+            execute_values(cur, """
+                UPDATE predictx.player_teams pt SET is_active = false
+                FROM (VALUES %s) AS v(pid, tid)
+                WHERE pt.player_id = v.pid::uuid AND pt.team_id = v.tid::uuid
+            """, stale, template="(%s, %s)")
+            result["deactivated"] = len(stale)
+
+        conn.commit()
+        result["teams_processed"] = len(team_roster_ids)
+        logger.info(f"  ✓ 批量寫入完成：{len(team_roster_ids)} 隊 / {len(staged_u)} 人 "
+                    f"/ new={result['players_inserted']} reactivated={len(to_reactivate)} "
+                    f"/ deactivated={result['deactivated']}")
+    except Exception as e:
+        result["errors"].append(f"批量寫入失敗: {e}")
+        conn.rollback()
+    finally:
+        cur.close()
+        conn.close()
     return result
 
 
