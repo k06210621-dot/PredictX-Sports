@@ -47,7 +47,15 @@ class SettlementEngine:
                 JOIN predictx.game_analysis ga ON g.game_id = ga.game_id
                 JOIN predictx.teams ht ON g.home_team_id = ht.team_id
                 WHERE (LOWER(g.status) = 'final')
-                  AND (ga.analysis_data->'actual_result' IS NULL)
+                  -- 🆕 [2026-10-14 修復回歸] 原本只有 (actual_result IS NULL)，導致
+                  --   「先被誤標 POSTPONED → settlement 寫入 is_hit=null → 之後翻 FINAL
+                  --   且有比分」的場次永遠不會被重結算（App 卡「等待 AI 結算」）。
+                  --   此條件曾於 831763a 修好，卻被後續升版 commit 6d32e85
+                  --   （chore(release): 1.2.1 (29) 完整升版）誤刪，此處回復。
+                  --   安全性：仍要求 status=final + 主客比分皆非 NULL + match_date <= 今天，
+                  --   故「真延賽」場次（無比分／非 FINAL）不會被誤重算。
+                  AND (ga.analysis_data->'actual_result' IS NULL
+                       OR (ga.analysis_data->'actual_result'->>'reason') ILIKE '%postponed%')
                   AND g.home_team_score IS NOT NULL
                   AND g.away_team_score IS NOT NULL
                   AND g.match_date <= (CURRENT_DATE AT TIME ZONE 'Asia/Taipei')::date
