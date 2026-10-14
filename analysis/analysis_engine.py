@@ -3401,11 +3401,20 @@ Park Factor: {pf:.2f} ({park_interp})
                 lines = []
                 if _pstats and league.upper() == 'NBA':
                     # 有數據時：只列「有數據者」並依場均得分排序（主力優先）
+                    # 🆕 [2026-10-12] 再加「出賽 >= 10 場」門檻：季前賽 ESPN 名單
+                    #   含訓練營邀請/未經選秀新秀（實測熱火 24 人全標 Active，無法
+                    #   從 ESPN 端區分），這些人的場均樣本極小（如 4 場 4.2 分），
+                    #   不該出現在「主力」欄位。若合格者不足 3 人則放寬（避免全空）。
                     def _ppg(p):
                         s = _pstats.get(str(p.get('external_id')))
                         return s.get('ppg', 0.0) if s else 0.0
                     pool = [p for p in players if _pstats.get(str(p.get('external_id')))]
-                    shown = sorted(pool, key=_ppg, reverse=True)[:limit]
+                    established = [p for p in pool
+                                   if (_pstats.get(str(p.get('external_id'))) or {}).get('gp', 0) >= 10]
+                    if len(established) >= 3:
+                        shown = sorted(established, key=_ppg, reverse=True)[:limit]
+                    else:
+                        shown = sorted(pool, key=_ppg, reverse=True)[:limit]
                 else:
                     shown = players[:limit]
                 for p in shown:
