@@ -2129,8 +2129,30 @@ class AnalysisEngine:
                 lines.append(f"主場戰績: {hr['wins']}-{hr['losses']}（勝率 {hr['win_rate']*100:.0f}%, 場均 {hr['avg_for']:.1f}/{hr['avg_against']:.1f}）")
             if ar.get('games', 0) > 0:
                 lines.append(f"客場戰績: {ar['wins']}-{ar['losses']}（勝率 {ar['win_rate']*100:.0f}%, 場均 {ar['avg_for']:.1f}/{ar['avg_against']:.1f}）")
-            games_str = ", ".join([f"{g['result']} vs {g['opponent']}({g['score']})" for g in form['recent_games']])
-            lines.append(f"最近比賽: {games_str}")
+            # 🆕 [2026-10-12] 帶日期 + 跨季提示：
+            #   NBA 休賽季（6–9 月）使「近 5 場」橫跨數月（實測 66/66 場含 4–5 月賽事），
+            #   原文只印「W vs 對手(比分)」，LLM 無法察覺資料新舊，會把上季季後賽
+            #   當成「近期狀態」而給錯權重。加上 M/D 並在跨度過大時明確標註。
+            games_str = ", ".join([
+                f"{g.get('date', '')[5:].replace('-', '/')} {g['result']} vs {g['opponent']}({g['score']})"
+                for g in form['recent_games']
+            ])
+            lines.append(f"最近比賽（M/D，由新到舊）: {games_str}")
+            try:
+                _ds = [g.get('date') for g in form['recent_games'] if g.get('date')]
+                if len(_ds) >= 2:
+                    from datetime import date as _date
+                    _nd = _date.fromisoformat(max(_ds))
+                    _od = _date.fromisoformat(min(_ds))
+                    _span = (_nd - _od).days
+                    if _span > 45:
+                        lines.append(
+                            f"⚠️ 上述 5 場橫跨 {_span} 天（含休賽季空窗），"
+                            f"{min(_ds)[5:].replace('-', '/')} 之前的場次參考性低，"
+                            f"請以最近 1–2 場為主要依據，勿將上季數據當作當前狀態"
+                        )
+            except (ValueError, TypeError):
+                pass
             return "\n    ".join(lines)
         
         home_form = format_form(features['home_recent_form'])
