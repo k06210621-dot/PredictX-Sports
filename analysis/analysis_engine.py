@@ -1877,7 +1877,7 @@ class AnalysisEngine:
                 away_team_id = game['away_team_id']
 
                 self.cur.execute("""
-                    SELECT p.player_id, p.player_name, p.position, p.jersey_number, pt.team_id
+                    SELECT p.player_id, p.player_name, p.position, p.jersey_number, pt.team_id, p.external_id
                     FROM predictx.players p
                     JOIN predictx.player_teams pt ON p.player_id = pt.player_id
                     WHERE (pt.team_id = %s OR pt.team_id = %s) AND pt.is_active = true
@@ -1892,6 +1892,25 @@ class AnalysisEngine:
                         'away': away_players,
                     }
                     print(f"  👥 {league} roster: home={len(home_players)}, away={len(away_players)}")
+
+                    # 🆕 [2026-10-12] P1-2：NBA 球員個人數據（ESPN Core API）
+                    #   補上「只有名字、沒有產能」的缺口，讓 LLM 能判斷誰在場上有多少貢獻。
+                    #   失敗不影響主流程；external_id 即 ESPN id。
+                    if league.upper() == 'NBA':
+                        try:
+                            from nba_data_fetcher import NBADataFetcher
+                            _pf = NBADataFetcher()
+                            _exts = [r.get('external_id') for r in rows if r.get('external_id')]
+                            _stats, _yr = _pf.fetch_player_stats(_exts)
+                            _pf.close()
+                            if _stats:
+                                features['nba_player_stats'] = _stats
+                                features['nba_player_stats_season'] = _yr
+                                print(f"  🏀 NBA 球員數據: {len(_stats)}/{len(_exts)} 人（{_yr} 例行賽）")
+                            else:
+                                print("  ⚠ NBA 球員數據: 全部取不到（ESPN Core API）")
+                        except Exception as e:
+                            print(f"  ⚠ NBA player stats error: {e}")
             except Exception as e:
                 print(f"  ⚠ {league} roster fetch error: {e}")
         
@@ -3375,13 +3394,32 @@ Park Factor: {pf:.2f} ({park_interp})
             h_players = roster.get('home', [])
             a_players = roster.get('away', [])
 
+            # 🆕 [2026-10-12] P1-2：NBA 顯示球員場均數據（key = external_id = ESPN id）
+            _pstats = features.get('nba_player_stats') or {}
+
             def _fmt_roster(players, limit=6):
                 lines = []
-                for p in players[:limit]:
+                if _pstats and league.upper() == 'NBA':
+                    # 有數據時：只列「有數據者」並依場均得分排序（主力優先）
+                    def _ppg(p):
+                        s = _pstats.get(str(p.get('external_id')))
+                        return s.get('ppg', 0.0) if s else 0.0
+                    pool = [p for p in players if _pstats.get(str(p.get('external_id')))]
+                    shown = sorted(pool, key=_ppg, reverse=True)[:limit]
+                else:
+                    shown = players[:limit]
+                for p in shown:
                     pos = p.get('position') or '?'
                     name = p.get('player_name') or 'Unknown'
                     jersey = p.get('jersey_number') or '?'
-                    lines.append(f"  #{jersey} {pos}: {name}")
+                    s = _pstats.get(str(p.get('external_id'))) if _pstats else None
+                    if s:
+                        lines.append(
+                            f"  #{jersey} {pos}: {name} — 場均 {s['ppg']:.1f}分/{s['rpg']:.1f}籃板/"
+                            f"{s['apg']:.1f}助攻（{s['gp']:.0f}場、{s['mpg']:.1f}分鐘、FG% {s['fg_pct']:.1f}）"
+                        )
+                    else:
+                        lines.append(f"  #{jersey} {pos}: {name}")
                 if not lines:
                     return "  (名單待補)"
                 return "\n".join(lines)
@@ -3397,6 +3435,10 @@ Park Factor: {pf:.2f} ({park_interp})
                 f"主隊 {home_team} 名單（{len(h_players)}人）:\n{_fmt_roster(h_players)}\n"
                 f"客隊 {away_team} 名單（{len(a_players)}人）:\n{_fmt_roster(a_players)}\n"
                 f"{pos_hint}\n"
+                + (f"⚠️ 上述場均數據為 **{features.get('nba_player_stats_season')} 球季例行賽**"
+                   f"（上一季），非本場所屬賽季；季前賽／開季初期請視為「球員基本盤」，"
+                   f"並搭配下方傷兵名單判斷誰實際會上場。\n"
+                   if _pstats and league.upper() == 'NBA' else "")
             )
 
         # 🆕 [2026-07-06] 信心理量規則（優化：明確化標準）

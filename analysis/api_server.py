@@ -201,6 +201,7 @@ def diag_nba_source():
             ("basketball-reference", "https://www.basketball-reference.com/leagues/NBA_2026.html"),
             ("espn-standings", "https://site.web.api.espn.com/apis/v2/sports/basketball/nba/standings?season=2026"),
             ("espn-teams", "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams"),
+            ("espn-core-athlete", "https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/2026/types/2/athletes/4278073/statistics/0?lang=en&region=us"),
         ):
             try:
                 req = _u.Request(url, headers={"User-Agent": "Mozilla/5.0"})

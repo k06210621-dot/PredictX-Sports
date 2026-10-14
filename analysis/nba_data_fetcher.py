@@ -117,6 +117,42 @@ def _espn_win_year(season):
         from datetime import date
         return date.today().year
 
+
+# 🆕 [2026-10-12] 球員個人數據（P1-2）
+#   ✅ 可用來源：ESPN **Core API**（ESPN 官網實際使用的資料源）
+#      sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/{year}
+#        /types/{stype}/athletes/{aid}/statistics/0      （stype: 2=例行賽、3=季後賽）
+#      實測回傳 avgPoints/avgRebounds/avgAssists/avgMinutes/gamesPlayed/
+#      fieldGoalPct/threePointPct/PER 等，資料完整。
+#   ❌ 不可用（皆實測失敗）：
+#      - common v3 athletes/{id}/stats → categories 全空
+#      - common v3 statistics/byathlete → 只回身份、categories 全空
+#      - common v3 teams/{id}/statistics → 404
+#      - site.api /site/v2 .../athletes/{id} → 404
+#   ⚠️ 這是「逐球員」端點，無批量替代 → 用 7 天快取壓低請求量
+#      （首次冷啟約 620 次，涵蓋 30 隊全 roster；之後 7 天內共用）。
+#   external_id 直接用 DB players.external_id（nba_players.py 存的就是 ESPN id）。
+ESPN_CORE_ATHLETE_STATS = ("https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba"
+                           "/seasons/{year}/types/{stype}/athletes/{aid}/statistics/0")
+_PLAYER_CACHE = {}
+_PLAYER_TTL = 7 * 24 * 3600
+
+
+def _player_cache_get(key):
+    ent = _PLAYER_CACHE.get(key)
+    if not ent:
+        return None
+    ts, data = ent
+    if time.time() - ts > _PLAYER_TTL:
+        return None
+    return data
+
+
+def _player_cache_put(key, data):
+    with _SEASON_CACHE_LOCK:
+        _PLAYER_CACHE[key] = (time.time(), data)
+
+
 # DB 隊名 → basketball-reference 隊名別名（BR 用「LA Clippers」等縮寫）
 BR_TEAM_ALIASES = {
     "Los Angeles Clippers": "LA Clippers",
@@ -591,6 +627,78 @@ class NBADataFetcher:
 
         print("  ⚠ NBA BR 與 ESPN 皆失敗 → 本次不注入進階數據（已記錄於 features）")
         return None
+
+    # ---- 球員個人數據（🆕 [2026-10-12] P1-2）----
+    def _rates_season(self, season):
+        """回傳 (espn_year, is_prev)：本季累積 >= 10 場用本季，否則用上季。
+
+        與 team stats 用同一條規則，避免「本季尚未開打就抓本季球員數據」而 404。
+        """
+        MIN_GAMES = 10
+        cy = _espn_win_year(season)
+        st = self._espn_standings(cy)
+        gp = max(((v["wins"] + v["losses"]) for v in st.values()), default=0) if st else 0
+        if gp >= MIN_GAMES:
+            return cy, False
+        return _espn_win_year(_prev_season(season)), True
+
+    def _espn_player_stats(self, aid, year):
+        """單一球員例行賽場均（ESPN Core API，7 天快取）。失敗回 {}。"""
+        key = f"{aid}:{year}"
+        cached = _player_cache_get(key)
+        if cached is not None:
+            return cached
+        try:
+            r = self.session.get(
+                ESPN_CORE_ATHLETE_STATS.format(year=year, stype=2, aid=aid),
+                params={"lang": "en", "region": "us"}, timeout=20)
+            r.raise_for_status()
+            d = r.json()
+            # Core API 結構：splits.categories[].stats[]
+            cats = ((d.get("splits") or {}).get("categories")) or d.get("categories") or []
+            s = {}
+            for c in cats:
+                for item in c.get("stats", []):
+                    n = item.get("name")
+                    if n and n not in s:
+                        try:
+                            s[n] = float(item.get("value"))
+                        except (TypeError, ValueError):
+                            pass
+            if not s:
+                return {}
+            out = {
+                "gp": s.get("gamesPlayed", 0.0),
+                "gs": s.get("gamesStarted", 0.0),
+                "ppg": s.get("avgPoints", 0.0),
+                "rpg": s.get("avgRebounds", 0.0),
+                "apg": s.get("avgAssists", 0.0),
+                "mpg": s.get("avgMinutes", 0.0),
+                "fg_pct": s.get("fieldGoalPct", 0.0),
+                "tp_pct": s.get("threePointPct", 0.0),
+                "per": s.get("PER", 0.0),
+            }
+            _player_cache_put(key, out)
+            return out
+        except Exception:
+            return {}
+
+    def fetch_player_stats(self, external_ids, season=None):
+        """批次取得球員賽季平均 → ({external_id: {gp,ppg,rpg,apg,mpg}}, espn_year)
+
+        用途：讓 prompt 能標示「誰在場上、場均多少」，補上目前只有名字沒有產能的缺口。
+        失敗的球員直接略過（不影響分析主流程）。
+        """
+        season = season or _current_season()
+        year, is_prev = self._rates_season(season)
+        out = {}
+        for ext in external_ids:
+            if not ext:
+                continue
+            st = self._espn_player_stats(str(ext), year)
+            if st:
+                out[str(ext)] = st
+        return out, year
 
     def close(self):
         """關閉 session。"""
