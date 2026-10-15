@@ -3399,16 +3399,24 @@ Park Factor: {pf:.2f} ({park_interp})
 
             def _fmt_roster(players, limit=6):
                 lines = []
+
+                def _ppg(p):
+                    """取該球員場均得分（NBA 與 NCAA 的欄位同為 avgPoints）。"""
+                    s = _pstats.get(str(p.get('external_id'))) if _pstats else None
+                    return s.get('ppg', 0.0) if s else 0.0
+
                 if _pstats and league.upper() == 'NBA':
                     # 有數據時：只列「有數據者」並依場均得分排序（主力優先）
                     # 🆕 [2026-10-12] 再加「出賽 >= 10 場」門檻：季前賽 ESPN 名單
                     #   含訓練營邀請/未經選秀新秀（實測熱火 24 人全標 Active，無法
                     #   從 ESPN 端區分），這些人的場均樣本極小（如 4 場 4.2 分），
                     #   不該出現在「主力」欄位。若合格者不足 3 人則放寬（避免全空）。
-                    def _ppg(p):
-                        s = _pstats.get(str(p.get('external_id')))
-                        return s.get('ppg', 0.0) if s else 0.0
-                    pool = [p for p in players if _pstats.get(str(p.get('external_id')))]
+                    # 🆕 [2026-10-15 P1-b] 主力區塊只取「NBA 來源」者（src != 'ncaa'）。
+                    #   未帶 src 的舊快取視為 nba → 向後相容。
+                    def _src(p):
+                        return (_pstats.get(str(p.get('external_id'))) or {}).get('src')
+                    pool = [p for p in players
+                            if _pstats.get(str(p.get('external_id'))) and _src(p) != 'ncaa']
                     established = [p for p in pool
                                    if (_pstats.get(str(p.get('external_id'))) or {}).get('gp', 0) >= 10]
                     if len(established) >= 3:
@@ -3429,6 +3437,32 @@ Park Factor: {pf:.2f} ({park_interp})
                         )
                     else:
                         lines.append(f"  #{jersey} {pos}: {name}")
+
+                # 🆕 [2026-10-15 P1-b] 新秀／上季無 NBA 數據者 → 獨立區塊，不參與主力排序。
+                #   根因：NCAA 數據與 NBA 層級不同，若混排會讓大學 22.5 分的菜鳥
+                #   排在 NBA 場均 18 分的先發之前，誤導 LLM 判斷球隊核心。
+                rookies = []
+                if _pstats and league.upper() == 'NBA':
+                    rookies = [p for p in players
+                               if (_pstats.get(str(p.get('external_id'))) or {}).get('src') == 'ncaa']
+                if rookies:
+                    lines.append("  ⚠️ 本季新秀／上季無 NBA 數據者"
+                                 "（以下為『大學』數據，層級不同，不可與上列直接比較）:")
+                    for p in sorted(rookies, key=_ppg, reverse=True)[:limit]:
+                        pos = p.get('position') or '?'
+                        nm = p.get('player_name') or 'Unknown'
+                        jn = p.get('jersey_number') or '?'
+                        s = _pstats.get(str(p.get('external_id'))) or {}
+                        lines.append(
+                            f"    #{jn} {pos}: {nm} — 大學 {s.get('gp', 0):.0f}場 "
+                            f"{s.get('ppg', 0):.1f}分/{s.get('rpg', 0):.1f}籃板/"
+                            f"{s.get('apg', 0):.1f}助攻"
+                        )
+                    # 名單完整性聲明（避免 LLM 把列出的少數人當成全隊）
+                    n_nodata = len(players) - len(shown) - len(rookies)
+                    if n_nodata > 0:
+                        lines.append(f"    （另有 {n_nodata} 名球員無任何場均數據，未列出）")
+
                 if not lines:
                     return "  (名單待補)"
                 return "\n".join(lines)
@@ -3447,6 +3481,10 @@ Park Factor: {pf:.2f} ({park_interp})
                 + (f"⚠️ 上述場均數據為 **{features.get('nba_player_stats_season')} 球季例行賽**"
                    f"（上一季），非本場所屬賽季；季前賽／開季初期請視為「球員基本盤」，"
                    f"並搭配下方傷兵名單判斷誰實際會上場。\n"
+                   f"⚠️ 【名單完整性】本名單僅列出有場均數據者。標示「大學數據」者為本季"
+                   f"新秀或上季無 NBA 出賽紀錄，其數字屬**大學層級**，不可與上列 NBA 數據"
+                   f"直接比較或據此判定為球隊主力；未列出者亦不代表不在陣中"
+                   f"（可能為訓練營邀請、傷兵或無公開數據）。\n"
                    if _pstats and league.upper() == 'NBA' else "")
             )
 
