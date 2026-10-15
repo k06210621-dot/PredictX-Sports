@@ -4902,6 +4902,50 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                 except (TypeError, ValueError):
                     pass
 
+                # 🆕 [2026-10-15] 籃球聯盟（NBA / WNBA）專屬信心校準下限
+                # 依據（全歷史已結算場次，鍵=最終儲存機率差距，與上方一致性修正同基準）：
+                #   WNBA gap>=0.18 → 77.8% (n=158, 95%CI[70.8,83.6])
+                #        gap>=0.25 → 82.0% (n=122)、gap>=0.40 → 94.3% (n=53, CI[84.6,98.1])
+                #   NBA  gap>=0.18 → 69.5% (n=82)、gap>=0.25 → 70.9% (n=55)、gap>=0.40 → 75.0%
+                #   對照 MLB 60.1% (n=819)、NPB 63.3% (n=283)、CPBL 60.5% (n=86)
+                # 現行校準對籃球無任何專屬調整 → 兩聯盟系統性低估：
+                #   NBA gap>=0.18 群現行平均僅 7.1 分、WNBA 7.7 分（實測應為 8-9）。
+                # bootstrap(10000 次重抽) 檢定：WNBA vs 其他聯盟（gap>=0.225）
+                #   差異 +18.5pp，95%CI [+11.0, +25.7]（顯著）。
+                # 設計約束：
+                #   1) 只抬下限（max）、不下修任何既有信心 → 對棒球三聯盟與既有行為零影響。
+                #   2) 門檻皆高於 min_prob_diff_map 的下限（8→0.18 / 9→0.23 / 10→0.30），
+                #      故不會與 App 顯示的勝率差距脫鉤（不會重演 P0-1 的問題）。
+                #   3) 放置於一致性「上限」修正之後，避免被壓回。
+                try:
+                    _blg = (features.get('league') or '').upper()
+                    # ⚠ 機率為 4 位小數儲存，相減會產生浮點誤差
+                    #   （例：0.70-0.30=0.39999999999999997 < 0.40）→ 必須先四捨五入，
+                    #   否則邊界場次會落錯等級（同 2026-09-15 float-key 校準失效的教訓）。
+                    _bg = round(abs(
+                        float(result.get("home_win_probability", 0.0))
+                        - float(result.get("away_win_probability", 0.0))
+                    ), 4)
+                    _bc = float(result.get("confidence") or 0.0)
+                    _bfloor = None
+                    if _blg == 'WNBA':
+                        if _bg >= 0.40:
+                            _bfloor = 10.0
+                        elif _bg >= 0.25:
+                            _bfloor = 9.0
+                        elif _bg >= 0.18:
+                            _bfloor = 8.0
+                    elif _blg == 'NBA':
+                        if _bg >= 0.25:
+                            _bfloor = 9.0
+                        elif _bg >= 0.18:
+                            _bfloor = 8.0
+                    if _bfloor is not None and _bc < _bfloor:
+                        result["confidence"] = round(_bfloor, 1)
+                        print(f"  🏀 {_blg} 信心校準下限: conf {_bc:.1f} -> {_bfloor:.1f} (最終勝率差距={_bg:.3f})")
+                except (TypeError, ValueError):
+                    pass
+
                 return result
         
         # Fallback: 若 AI 輸出異常，使用數據計算的替代方案
