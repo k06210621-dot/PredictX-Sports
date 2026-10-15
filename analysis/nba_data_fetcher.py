@@ -134,6 +134,21 @@ def _espn_win_year(season):
 #   external_id 直接用 DB players.external_id（nba_players.py 存的就是 ESPN id）。
 ESPN_CORE_ATHLETE_STATS = ("https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba"
                            "/seasons/{year}/types/{stype}/athletes/{aid}/statistics/0")
+
+# 🆕 [2026-10-15 P1-a] 新秀 fallback：ESPN Core API「大學男籃」端點。
+# 根因（實測 134 名缺數據球員）：NBA 端點只有 2025-26 數據，2026-27 新秀與
+#   上季未在 NBA 出賽的老將一律 404 —— 資料源本質限制，非抓取 bug。
+#   驗證：我們有數據者 ESPN 10/10 也有；我們缺者 ESPN 0/18 也有；
+#        KJ Martin / Trey Lyles / Ben Simmons / Georges Niang 在 2024-25 皆有
+#        數據、2025-26 全 404。
+# 效益（134 名逐一探測）：75 名(56%) 可由此補上 → 覆蓋率 77.7% → 90.2%，
+#   且涵蓋全部高使用率新秀（Dybantsa 25.3 / Acuff 22.9 / Boozer 22.5 分）。
+# 已排除的無效來源：nba-g-league / nba-developmental / nba-summer-league 皆 404。
+# ⚠️ 大學數據與 NBA 數據層級不同 → 回傳時標記 src="ncaa"，
+#    呈現層必須獨立區塊、不參與「主力」排序（避免 22.5 分新秀排在 NBA 先發之前）。
+ESPN_CORE_COLLEGE_STATS = ("https://sports.core.api.espn.com/v2/sports/basketball"
+                           "/leagues/mens-college-basketball/seasons/{year}"
+                           "/types/{stype}/athletes/{aid}/statistics/0")
 _PLAYER_CACHE = {}
 _PLAYER_TTL = 7 * 24 * 3600
 
@@ -642,16 +657,25 @@ class NBADataFetcher:
             return cy, False
         return _espn_win_year(_prev_season(season)), True
 
-    def _espn_player_stats(self, aid, year):
-        """單一球員例行賽場均（ESPN Core API，7 天快取）。失敗回 {}。"""
-        key = f"{aid}:{year}"
+    def _core_stats_fetch(self, url_tpl, key, tag, aid, year):
+        """ESPN Core API 通用「取球員場均」實作（7 天快取）。
+
+        - 404 / 空 categories → 該球員在此賽季確實無資料，靜默略過並快取空結果
+          （避免每次分析重複打 ~15-20 個必定失敗的請求）。
+          快取安全：`_rates_season` 在球季切換時會換 year → cache key 不同，
+          不會因負向快取而延後取得新賽季數據。
+        - 其他例外（網路／解析）→ 不快取，並印出可見化訊息（區分「無資料」與「真的壞了」）。
+        """
         cached = _player_cache_get(key)
         if cached is not None:
             return cached
         try:
             r = self.session.get(
-                ESPN_CORE_ATHLETE_STATS.format(year=year, stype=2, aid=aid),
+                url_tpl.format(year=year, stype=2, aid=aid),
                 params={"lang": "en", "region": "us"}, timeout=20)
+            if r.status_code == 404:
+                _player_cache_put(key, {})
+                return {}
             r.raise_for_status()
             d = r.json()
             # Core API 結構：splits.categories[].stats[]
@@ -666,6 +690,7 @@ class NBADataFetcher:
                         except (TypeError, ValueError):
                             pass
             if not s:
+                _player_cache_put(key, {})
                 return {}
             out = {
                 "gp": s.get("gamesPlayed", 0.0),
@@ -680,13 +705,30 @@ class NBADataFetcher:
             }
             _player_cache_put(key, out)
             return out
-        except Exception:
+        except Exception as e:
+            # 🆕 [2026-10-15 P2] 可見化：不再靜默吞掉非 404 的失敗
+            print(f"  ⚠ ESPN Core {tag} 取球員數據失敗 aid={aid} year={year}: "
+                  f"{type(e).__name__}: {str(e)[:80]}", flush=True)
             return {}
 
+    def _espn_player_stats(self, aid, year):
+        """單一球員 NBA 例行賽場均（ESPN Core API，7 天快取）。失敗回 {}。"""
+        return self._core_stats_fetch(ESPN_CORE_ATHLETE_STATS, f"{aid}:{year}", "NBA", aid, year)
+
+    def _espn_college_stats(self, aid, year):
+        """🆕 [2026-10-15 P1-a] 新秀 fallback：ESPN Core API 大學男籃例行賽場均。
+
+        用途：2026-27 新秀與上季未在 NBA 出賽者在 NBA 端點一律 404，
+        改用大學數據補上（實測可補 75/134 名、覆蓋率 77.7% → 90.2%）。
+        ⚠️ 回傳值語意與 NBA 不同層級，呼叫端必須標記 src='ncaa' 並獨立呈現。
+        """
+        return self._core_stats_fetch(ESPN_CORE_COLLEGE_STATS, f"{aid}:{year}:ncaa", "NCAA", aid, year)
+
     def fetch_player_stats(self, external_ids, season=None):
-        """批次取得球員賽季平均 → ({external_id: {gp,ppg,rpg,apg,mpg}}, espn_year)
+        """批次取得球員賽季平均 → ({external_id: {gp,ppg,rpg,apg,mpg,src}}, espn_year)
 
         用途：讓 prompt 能標示「誰在場上、場均多少」，補上目前只有名字沒有產能的缺口。
+        🆕 [2026-10-15 P1-a] 兩段式：NBA 端點 → 失敗者改用 NCAA 端點補。
         失敗的球員直接略過（不影響分析主流程）。
         """
         season = season or _current_season()
@@ -696,6 +738,13 @@ class NBADataFetcher:
             if not ext:
                 continue
             st = self._espn_player_stats(str(ext), year)
+            if st:
+                st["src"] = "nba"
+            else:
+                # 新秀／上季未在 NBA 出賽者：改用大學數據補（層級不同，已標記 src）
+                st = self._espn_college_stats(str(ext), year)
+                if st:
+                    st["src"] = "ncaa"
             if st:
                 out[str(ext)] = st
         return out, year
