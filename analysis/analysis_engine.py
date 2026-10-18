@@ -2628,7 +2628,11 @@ class AnalysisEngine:
 """ + fmt_wnba_players(away_players, away_team) + """
 
 💡 註：以上為 ESPN 官方例行賽場均（**非估算值**），GP=出賽場次、MIN=場均上場分鐘。
-   出賽數偏低者代表本季缺陣較多，判讀主力強度時請一併考慮 GP。"""
+   出賽數偏低者代表本季缺陣較多，判讀主力強度時請一併考慮 GP。
+
+📌 摘要強制要求：summary 的中文段與英文段，**各至少點名 2 位雙方主力球員**並引用其場均數據
+   （例：「Allisha Gray 場均 19.0 分、3.5 籃板」「Gabby Williams 場均 14.4 分」），
+   說明該球員的對位優勢或劣勢如何影響本場結果。只寫團隊數據而未點名球員視為不合格。"""
         # 天氣資料
         weather_data = features.get('weather', {})
         if weather_data:
