@@ -213,8 +213,9 @@ def fetch_cpbl_unavailable(home_team_name, away_team_name):
     try:
         latest = _cpbl_latest_moves()
     except Exception as e:
-        _logger.warning(f"CPBL moves fetch failed: {e}")
+        print(f"  ⚠ CPBL moves fetch failed: {type(e).__name__}: {str(e)[:120]}", flush=True)
         return result
+    print(f"  [CPBL trans] 解析 {len(latest)} 名球員異動紀錄", flush=True)
 
     home_en = (home_team_name or "").strip()
     away_en = (away_team_name or "").strip()
