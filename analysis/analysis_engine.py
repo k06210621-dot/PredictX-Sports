@@ -1627,6 +1627,15 @@ class AnalysisEngine:
                 wnba_data = fetcher.fetch_and_store_game_data(game_id, home_name, away_name)
                 if wnba_data:
                     features['wnba_advanced'] = wnba_data
+                    # 🆕 [2026-10-18] WNBA 球員場均對照表（key=external_id），
+                    #   供 _fmt_roster 顯示 15/14 人名單的場均，避免只剩名字。
+                    try:
+                        _pmap = fetcher.get_player_stats_map([home_name, away_name])
+                        if _pmap:
+                            features['wnba_player_stats'] = _pmap
+                            print(f"  🏀 WNBA 球員場均: {len(_pmap)} 人（名單將顯示 PPG/RPG/APG）")
+                    except Exception as _e:
+                        print(f"  ⚠ WNBA player stats map error: {_e}")
                     for _ in wnba_data.get('sources', []):
                         self.log_source("official_api")
                     h = wnba_data['team_stats']['home']
@@ -2589,24 +2598,37 @@ class AnalysisEngine:
                     line_items = []
                     for i, p in enumerate(players[:5], 1):
                         name = p.get('name', '?')
-                        pts = p.get('pts', 0)
-                        reb = p.get('reb', 0)
-                        ast = p.get('ast', 0)
+                        pts = p.get('pts', 0) or 0
+                        reb = p.get('reb', 0) or 0
+                        ast = p.get('ast', 0) or 0
+                        gp = p.get('games_played', 0) or 0
                         fg_pct = p.get('fg_pct')
-                        fg_str = f"{fg_pct:.1%}" if fg_pct and fg_pct > 0 else '?.?%'
-                        line_items.append(f"    #{i} {name}: PTS={pts:.1f}, REB={reb:.1f}, AST={ast:.1f}, FG%={fg_str}")
+                        fg_str = f"{fg_pct:.1f}%" if fg_pct and fg_pct > 0 else 'N/A'
+                        extra = []
+                        if p.get('min') is not None:
+                            extra.append(f"MIN={p['min']:.1f}")
+                        if p.get('stl') is not None:
+                            extra.append(f"STL={p['stl']:.1f}")
+                        if p.get('blk') is not None:
+                            extra.append(f"BLK={p['blk']:.1f}")
+                        extra_s = (", " + ", ".join(extra)) if extra else ""
+                        line_items.append(
+                            f"    #{i} {name}: PTS={pts:.1f}, REB={reb:.1f}, AST={ast:.1f}, "
+                            f"FG%={fg_str}, GP={gp:.0f}{extra_s}"
+                        )
                     return "\n".join(line_items)
 
                 wnba_advanced_section += """
 
-===== 主力球員 Top 5（團隊估算，依 PTS 排序）=====
+===== 主力球員 Top 5（ESPN 官方 2026 例行賽場均，依 PTS 排序）=====
 主隊 """ + home_team + """:
 """ + fmt_wnba_players(home_players, home_team) + """
 
 客隊 """ + away_team + """:
 """ + fmt_wnba_players(away_players, away_team) + """
 
-💡 註：WNBA ESPN API 不提供球員數據，此為主隊/客隊主力球員的估算值（基於團隊 PPG 分配）。"""
+💡 註：以上為 ESPN 官方例行賽場均（**非估算值**），GP=出賽場次、MIN=場均上場分鐘。
+   出賽數偏低者代表本季缺陣較多，判讀主力強度時請一併考慮 GP。"""
         # 天氣資料
         weather_data = features.get('weather', {})
         if weather_data:
@@ -3394,8 +3416,10 @@ Park Factor: {pf:.2f} ({park_interp})
             h_players = roster.get('home', [])
             a_players = roster.get('away', [])
 
-            # 🆕 [2026-10-12] P1-2：NBA 顯示球員場均數據（key = external_id = ESPN id）
-            _pstats = features.get('nba_player_stats') or {}
+            # 🆕 [2026-10-12] P1-2：NBA/WNBA 顯示球員場均數據（key = external_id = ESPN id）
+            _BASKET_LEAGUES = ('NBA', 'WNBA')
+            _pstats = (features.get('nba_player_stats')
+                       or features.get('wnba_player_stats') or {})
 
             def _fmt_roster(players, limit=6):
                 lines = []
@@ -3405,7 +3429,7 @@ Park Factor: {pf:.2f} ({park_interp})
                     s = _pstats.get(str(p.get('external_id'))) if _pstats else None
                     return s.get('ppg', 0.0) if s else 0.0
 
-                if _pstats and league.upper() == 'NBA':
+                if _pstats and league.upper() in _BASKET_LEAGUES:
                     # 有數據時：只列「有數據者」並依場均得分排序（主力優先）
                     # 🆕 [2026-10-12] 再加「出賽 >= 10 場」門檻：季前賽 ESPN 名單
                     #   含訓練營邀請/未經選秀新秀（實測熱火 24 人全標 Active，無法
@@ -3478,14 +3502,22 @@ Park Factor: {pf:.2f} ({park_interp})
                 f"主隊 {home_team} 名單（{len(h_players)}人）:\n{_fmt_roster(h_players)}\n"
                 f"客隊 {away_team} 名單（{len(a_players)}人）:\n{_fmt_roster(a_players)}\n"
                 f"{pos_hint}\n"
-                + (f"⚠️ 上述場均數據為 **{features.get('nba_player_stats_season')} 球季例行賽**"
-                   f"（上一季），非本場所屬賽季；季前賽／開季初期請視為「球員基本盤」，"
-                   f"並搭配下方傷兵名單判斷誰實際會上場。\n"
-                   f"⚠️ 【名單完整性】本名單僅列出有場均數據者。標示「大學數據」者為本季"
-                   f"新秀或上季無 NBA 出賽紀錄，其數字屬**大學層級**，不可與上列 NBA 數據"
-                   f"直接比較或據此判定為球隊主力；未列出者亦不代表不在陣中"
-                   f"（可能為訓練營邀請、傷兵或無公開數據）。\n"
-                   if _pstats and league.upper() == 'NBA' else "")
+                + (
+                    (f"⚠️ 上述場均數據為 **{features.get('nba_player_stats_season')} 球季例行賽**"
+                     f"（上一季），非本場所屬賽季；季前賽／開季初期請視為「球員基本盤」，"
+                     f"並搭配下方傷兵名單判斷誰實際會上場。\n"
+                     f"⚠️ 【名單完整性】本名單僅列出有場均數據者。標示「大學數據」者為本季"
+                     f"新秀或上季無 NBA 出賽紀錄，其數字屬**大學層級**，不可與上列 NBA 數據"
+                     f"直接比較或據此判定為球隊主力；未列出者亦不代表不在陣中"
+                     f"（可能為訓練營邀請、傷兵或無公開數據）。\n")
+                    if _pstats and league.upper() == 'NBA'
+                    else (
+                        (f"⚠️ 上述場均數據為 **2026 WNBA 例行賽（ESPN 官方統計）**，"
+                         f"已依場均得分排序並標示出賽場次；出賽數偏低者代表本季缺陣較多，"
+                         f"請據此判斷主力是否健康在陣。\n")
+                        if _pstats and league.upper() == 'WNBA' else ""
+                    )
+                )
             )
 
         # 🆕 [2026-07-06] 信心理量規則（優化：明確化標準）

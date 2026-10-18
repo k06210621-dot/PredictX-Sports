@@ -412,6 +412,55 @@ class WNBADataFetcher:
         
         return top_players
 
+    def get_player_stats_map(self, team_names, min_gp: int = 1):
+        """回傳 {external_id: {gp,ppg,rpg,apg,mpg,fg_pct,spg,bpg,src}}
+
+        資料來源：data/wnba_players_2026.json（ESPN Core API 抓取，全 15 隊 214 人）
+        用途：讓 analysis_engine 的 _fmt_roster 能對 WNBA 也顯示場均，
+              避免球員名單只有名字、LLM 無法判斷誰是主力。
+        """
+        data_file = Path(__file__).parent.parent / 'data' / 'wnba_players_2026.json'
+        if not data_file.exists():
+            return {}
+        try:
+            with open(data_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except Exception as e:
+            print(f"  ⚠ WNBA player stats map load failed: {e}", flush=True)
+            return {}
+
+        teams_data = data.get('teams', {})
+        wanted = set()
+        for tn in (team_names or []):
+            if not tn:
+                continue
+            if tn in teams_data:
+                wanted.add(tn)
+                continue
+            for k in teams_data:
+                if tn.lower() in k.lower() or k.lower() in tn.lower():
+                    wanted.add(k)
+                    break
+
+        out = {}
+        for tn in wanted:
+            for p in teams_data.get(tn, []):
+                ext = p.get('external_id')
+                if not ext or (p.get('gp') or 0) < min_gp:
+                    continue
+                out[str(ext)] = {
+                    'gp': p.get('gp') or 0,
+                    'ppg': p.get('ppg') if p.get('ppg') is not None else 0.0,
+                    'rpg': p.get('rpg') if p.get('rpg') is not None else 0.0,
+                    'apg': p.get('apg') if p.get('apg') is not None else 0.0,
+                    'mpg': p.get('min') or 0.0,
+                    'fg_pct': p.get('fg_pct') or 0.0,
+                    'spg': p.get('spg') or 0.0,
+                    'bpg': p.get('bpg') or 0.0,
+                    'src': 'espn',
+                }
+        return out
+
     def fetch_and_store_game_data(self, game_id, home_team_name, away_team_name):
         """為一場 WNBA 比賽取得進階數據"""
         all_stats = self._fetch_league_stats()
