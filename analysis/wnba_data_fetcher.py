@@ -348,18 +348,29 @@ class WNBADataFetcher:
                     # 轉換為預定期格式，使用 .get() 安全存取（第1頁數據欄位較少）
                     top_players = []
                     for p in players_raw[:top_n]:
+                        # 🆕 [2026-10-18] 優先使用真實場均（ESPN Core API 抓取），
+                        #   舊版把進階比率硬乘係數當成場均（pts=pie×0.5、reb=reb_pct×10、
+                        #   ast=ast_pct×5），會產生「場均 155 籃板」這種不可能數值並污染 prompt。
+                        #   舊欄位僅在真實值缺失時作為最後備援。
+                        _ppg = p.get('ppg')
+                        _rpg = p.get('rpg')
+                        _apg = p.get('apg')
                         top_players.append({
                             'name': p.get('name', '?'),
-                            'position': '',
-                            'pts': (p.get('pie', 0) or 0) * 0.5,
-                            'reb': (p.get('reb_pct', 0) or 0) * 10,
-                            'ast': (p.get('ast_pct', 0) or 0) * 5,
-                            'fg_pct': p.get('efg_pct') or p.get('ts_pct', 0),
+                            'position': p.get('position', '') or '',
+                            'pts': _ppg if _ppg is not None else (p.get('pie', 0) or 0) * 0.5,
+                            'reb': _rpg if _rpg is not None else (p.get('reb_pct', 0) or 0) * 10,
+                            'ast': _apg if _apg is not None else (p.get('ast_pct', 0) or 0) * 5,
+                            'stl': p.get('spg'),
+                            'blk': p.get('bpg'),
+                            'min': p.get('min'),
+                            'fg_pct': p.get('fg_pct') or p.get('efg_pct') or p.get('ts_pct', 0),
                             'games_played': p.get('gp', 0),
                             'team': p.get('team', team_name),
                             'pie': p.get('pie', 0) or 0,
                             'ts_pct': p.get('ts_pct', 0) or 0,
                             'netrtg': p.get('netrtg', 0) or 0,
+                            'src': 'espn' if _ppg is not None else 'legacy_derived',
                         })
                     print(f"  ✓ Loaded {len(top_players)} real players from stats.wnba.com for {team_name}")
                     return top_players
