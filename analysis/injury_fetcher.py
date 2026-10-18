@@ -192,6 +192,52 @@ def _cpbl_latest_moves():
     return latest
 
 
+def _cpbl_unavailable_from_db(home_en, away_en):
+    """從 predictx.cpbl_unavailable 讀取缺陣名單（生產環境主要來源）。
+
+    Railway egress 對 CPBL 官網常被阻擋（實測解析 0 筆），
+    故改由本機排程抓取後寫入 DB，引擎端只讀 DB。
+    """
+    import os
+    try:
+        import psycopg2
+    except Exception:
+        return None
+    db_url = (os.getenv("DATABASE_PUBLIC_URL") or os.getenv("DATABASE_URL")
+              or os.getenv("POSTGRES_URL") or "")
+    if not db_url:
+        return None
+    try:
+        conn = psycopg2.connect(db_url)
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT t.english_name, u.player_name, u.reason, u.move_date::text
+            FROM predictx.cpbl_unavailable u
+            JOIN predictx.teams t ON u.team_id = t.team_id
+        """)
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+    except Exception as e:
+        print(f"  ⚠ CPBL unavailable DB read failed: {type(e).__name__}: {str(e)[:80]}", flush=True)
+        return None
+
+    result = {"home": [], "away": []}
+    for team_en, name, reason, move_date in rows:
+        item = {
+            "name": name,
+            "status": reason,
+            "desc": f"CPBL 官網球員異動：{reason}（{move_date}），已不在現行名單",
+            "date": move_date,
+        }
+        if team_en == home_en:
+            result["home"].append(item)
+        elif team_en == away_en:
+            result["away"].append(item)
+    for side in ("home", "away"):
+        result[side].sort(key=lambda x: x.get("date") or "", reverse=True)
+    return result
+
+
 def fetch_cpbl_unavailable(home_team_name, away_team_name):
     """CPBL 缺陣名單（保守版）。
 
@@ -209,6 +255,16 @@ def fetch_cpbl_unavailable(home_team_name, away_team_name):
         "統一7-ELEVEn獅": "Uni-President 7-ELEVEn Lions",
     }
     OUT_REASONS = ("註銷", "註冊註銷", "除役")
+    home_en = (home_team_name or "").strip()
+    away_en = (away_team_name or "").strip()
+
+    # 1) 優先讀 DB 快取（生產環境可靠來源）
+    db_res = _cpbl_unavailable_from_db(home_en, away_en)
+    if db_res is not None:
+        print(f"  [CPBL 缺陣] DB 快取：home={len(db_res['home'])} away={len(db_res['away'])}", flush=True)
+        return db_res
+
+    # 2) 備援：直接爬官網（僅在本機等可存取環境有效）
     result = {"home": [], "away": []}
     try:
         latest = _cpbl_latest_moves()
