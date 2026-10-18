@@ -477,6 +477,20 @@ class WNBADataFetcher:
         home_stats = all_stats.get(home_key, {})
         away_stats = all_stats.get(away_key, {})
 
+        # 🆕 [2026-10-18] 全聯盟排名（依勝率），供 prompt standings 使用。
+        #   根因：DB 賽程含季後賽/Cup，直接以 DB 實算會把季後賽計入戰績
+        #   （實測 GSV 例行賽 32-12，含季後賽變 36-12），故排名/勝率一律以
+        #   ESPN 官方例行賽為準。
+        try:
+            _ranked = sorted(all_stats.items(), key=lambda kv: -float(kv[1].get('win_pct') or 0))
+            _rank_map = {nm: i + 1 for i, (nm, _) in enumerate(_ranked)}
+            for _k in (home_key, away_key):
+                if _k in all_stats:
+                    all_stats[_k]['rank'] = _rank_map.get(_k)
+                    all_stats[_k]['season_label'] = '本季例行賽（ESPN 官方）'
+        except Exception:
+            pass
+
         # 🆕 取得主力球員 Top 5（估算）
         home_top_players = self.get_top_players(home_key, 5)
         away_top_players = self.get_top_players(away_key, 5)

@@ -1627,6 +1627,32 @@ class AnalysisEngine:
                 wnba_data = fetcher.fetch_and_store_game_data(game_id, home_name, away_name)
                 if wnba_data:
                     features['wnba_advanced'] = wnba_data
+                    # 🆕 [2026-10-18] standings 改用 ESPN 官方例行賽戰績。
+                    #   根因：DB 賽程含季後賽與 Cup，DB 實算會把季後賽計入
+                    #   （實測 GSV 例行賽 32-12 → 含季後賽 36-12、排名也錯），
+                    #   導致 prompt 出現「排名第一、勝率 0.789」等錯誤敘述。
+                    try:
+                        for _side in ('home', 'away'):
+                            _ts = (wnba_data.get('team_stats') or {}).get(_side) or {}
+                            if _ts.get('wins') is None or _ts.get('losses') is None:
+                                continue
+                            _st = dict(features.get(f'{_side}_standings') or {})
+                            _w = int(_ts['wins']); _l = int(_ts['losses'])
+                            _st.update({
+                                'wins': _w,
+                                'losses': _l,
+                                'win_pct': round(_w / max(1, _w + _l), 3),
+                                'games_played': _w + _l,
+                                'rank': _ts.get('rank') or _st.get('rank'),
+                                'season_label': '本季例行賽（ESPN 官方）',
+                                'source': 'espn_regular_season',
+                            })
+                            features[f'{_side}_standings'] = _st
+                        print(f"  📊 WNBA standings 已改用 ESPN 例行賽："
+                              f"home {features['home_standings']['wins']}-{features['home_standings']['losses']}"
+                              f" / away {features['away_standings']['wins']}-{features['away_standings']['losses']}")
+                    except Exception as _e:
+                        print(f"  ⚠ WNBA standings override error: {_e}")
                     # 🆕 [2026-10-18] WNBA 球員場均對照表（key=external_id），
                     #   供 _fmt_roster 顯示 15/14 人名單的場均，避免只剩名字。
                     try:
