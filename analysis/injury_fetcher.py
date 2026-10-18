@@ -145,6 +145,101 @@ def fetch_espn_injuries(league, home_team_name, away_team_name):
     return result
 
 
+def _cpbl_latest_moves():
+    """抓 CPBL 官網球員異動，回傳 {(球員, 中文隊名): (日期, 原因)}（取最新一筆）。
+
+    官網表格為「新→舊」排序，因此每位球員第一次出現即為最新異動。
+    """
+    import re
+    from bs4 import BeautifulSoup
+
+    HDR = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                      "AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        "Accept-Language": "zh-TW",
+        "X-Requested-With": "XMLHttpRequest",
+        "Referer": "https://www.cpbl.com.tw/player/trans",
+    }
+    s = requests.Session()
+    r = s.get("https://www.cpbl.com.tw/player/trans", headers=HDR, timeout=25)
+    soup = BeautifulSoup(r.text, "lxml")
+    form = soup.find("form", id="MainForm") or soup.find("form")
+    if not form:
+        return {}
+    fields = {el.get("name"): el.get("value", "")
+              for el in form.find_all(["input", "select"]) if el.get("name")}
+    resp = s.post("https://www.cpbl.com.tw/player/trans", data=fields, headers=HDR, timeout=30)
+    sp = BeautifulSoup(resp.text, "lxml")
+    table = sp.find("table")
+    if not table:
+        return {}
+
+    latest = {}
+    cur_date = None
+    for tr in table.find_all("tr")[1:]:
+        cells = [c.get_text(strip=True) for c in tr.find_all(["td", "th"])]
+        if len(cells) >= 4:
+            cur_date = cells[0]
+            name, team, reason = cells[1], cells[2], cells[3]
+        elif len(cells) == 3 and cur_date:
+            name, team, reason = cells[0], cells[1], cells[2]
+        else:
+            continue
+        name = name.lstrip('#').strip()
+        key = (name, team)
+        if key not in latest:          # 新→舊，第一次即最新
+            latest[key] = (cur_date, reason)
+    return latest
+
+
+def fetch_cpbl_unavailable(home_team_name, away_team_name):
+    """CPBL 缺陣名單（保守版）。
+
+    資料源：CPBL 官網「球員異動」。
+    ⚠️ CPBL 無官方醫療傷兵名單；此處僅採**確定離開名單**的異動：
+       「註銷 / 註冊註銷 / 除役」。
+       「降二軍」不納入（僅為輪替，且官網資料可能落後於實際先發）。
+    """
+    CN2EN = {
+        "中信兄弟": "CTBC Brothers",
+        "樂天桃猿": "Rakuten Monkeys",
+        "味全龍": "Wei Chuan Dragons",
+        "富邦悍將": "Fubon Guardians",
+        "台鋼雄鷹": "TSG Hawks",
+        "統一7-ELEVEn獅": "Uni-President 7-ELEVEn Lions",
+    }
+    OUT_REASONS = ("註銷", "註冊註銷", "除役")
+    result = {"home": [], "away": []}
+    try:
+        latest = _cpbl_latest_moves()
+    except Exception as e:
+        _logger.warning(f"CPBL moves fetch failed: {e}")
+        return result
+
+    home_en = (home_team_name or "").strip()
+    away_en = (away_team_name or "").strip()
+    for (name, cn_team), (date_s, reason) in latest.items():
+        if reason not in OUT_REASONS:
+            continue
+        en = CN2EN.get(cn_team)
+        if not en:
+            continue
+        item = {
+            "name": name,
+            "status": reason,
+            "desc": f"CPBL 官網球員異動：{reason}（{date_s}），已不在現行名單",
+            "date": date_s.replace("/", "-"),
+        }
+        if en == home_en:
+            result["home"].append(item)
+        elif en == away_en:
+            result["away"].append(item)
+
+    for side in ("home", "away"):
+        result[side].sort(key=lambda x: x.get("date") or "", reverse=True)
+    return result
+
+
 def fetch_injuries(league, home_team_name, away_team_name):
     """
     統一入口：依聯盟自動選擇資料源。
@@ -155,6 +250,8 @@ def fetch_injuries(league, home_team_name, away_team_name):
         return fetch_mlb_injuries(home_team_name, away_team_name)
     elif league in ("NBA", "WNBA"):
         return fetch_espn_injuries(league, home_team_name, away_team_name)
+    elif league == "CPBL":
+        return fetch_cpbl_unavailable(home_team_name, away_team_name)
     else:
-        # CPBL/NPB 暫不支援
+        # NPB 暫不支援
         return {"home": [], "away": []}

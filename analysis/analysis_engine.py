@@ -2767,7 +2767,9 @@ class AnalysisEngine:
                     lines.append(f"  • {p['name']}{pos} ({p['status']}){desc}")
                 return "\n".join(lines)
 
-            injury_section = f"""===== 傷兵名單（來源：{'MLB statsapi' if league.upper() == 'MLB' else 'ESPN'}）=====
+            _inj_src = {'MLB': 'MLB statsapi', 'CPBL': 'CPBL 官網球員異動'}.get(
+                league.upper(), 'ESPN')
+            injury_section = f"""===== 傷兵／缺陣名單（來源：{_inj_src}）=====
 主隊 {home_team} 傷兵:
 {_format_injury_list(injury_data.get('home', []))}
 
