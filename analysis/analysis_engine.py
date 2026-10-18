@@ -1690,8 +1690,8 @@ class AnalysisEngine:
                 print(f"  ⚠ Weather fetch error: {e}")
                 self.conn.rollback()
 
-        # 7.5 傷兵名單（MLB / NBA / WNBA）
-        if league and league.upper() in ('MLB', 'NBA', 'WNBA'):
+        # 7.5 傷兵名單（MLB / NBA / WNBA / CPBL）
+        if league and league.upper() in ('MLB', 'NBA', 'WNBA', 'CPBL'):
             try:
                 from injury_fetcher import fetch_injuries
                 home_name = game['home_team_en']
