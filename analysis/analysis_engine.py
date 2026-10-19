@@ -2614,7 +2614,15 @@ class AnalysisEngine:
             else:
                 nba_advanced_section = ""
 
-        # WNBA 進階數據（從 basketball-reference.com 爬取）
+        # 🆕 [2026-10-21 P0-A] NBA 摘要強制引用主力球員（能力 + 對位）
+        if nba_advanced_section and league and league.upper() == 'NBA':
+            nba_advanced_section += """
+
+📌 摘要強制要求：summary 的中文段與英文段，**各至少點名 2 位雙方主力球員**，
+   引用其整季場均（得分/籃板/助攻）與 PER
+   （例：「Jalen Brunson 場均 26.1 分、7.2 助攻、PER 20.8」），
+   並說明該球員的對位優勢或劣勢如何影響本場結果。只寫團隊數據而未點名球員視為不合格。
+📌 引用規則：球員數據一律用下方名單的**整季場均**；「近期表現」區塊的數字只代表最近 5 場，不可混用。"""
         wnba_advanced = features.get('wnba_advanced', {})
         if wnba_advanced:
             h = wnba_advanced['team_stats']['home']
@@ -3527,9 +3535,18 @@ Park Factor: {pf:.2f} ({park_interp})
                     jersey = p.get('jersey_number') or '?'
                     s = _pstats.get(str(p.get('external_id'))) if _pstats else None
                     if s:
+                        # 🆕 [2026-10-21 P0-A] 名單補上 3P% 與 PER，供摘要引用球員能力
+                        _extra = []
+                        _tp = s.get('tp_pct')
+                        _per = s.get('per')
+                        if _tp:
+                            _extra.append(f"3P% {_tp:.1f}")
+                        if _per:
+                            _extra.append(f"PER {_per:.1f}")
+                        _extra_s = ("、" + "、".join(_extra)) if _extra else ""
                         lines.append(
                             f"  #{jersey} {pos}: {name} — 場均 {s['ppg']:.1f}分/{s['rpg']:.1f}籃板/"
-                            f"{s['apg']:.1f}助攻（{s['gp']:.0f}場、{s['mpg']:.1f}分鐘、FG% {s['fg_pct']:.1f}）"
+                            f"{s['apg']:.1f}助攻（{s['gp']:.0f}場、{s['mpg']:.1f}分鐘、FG% {s['fg_pct']:.1f}{_extra_s}）"
                         )
                     else:
                         lines.append(f"  #{jersey} {pos}: {name}")

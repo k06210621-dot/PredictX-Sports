@@ -264,6 +264,24 @@ def main():
             try:
                 result = engine.analyze_game(game_id)
                 if result:
+                    # 🆕 [2026-10-21 P0-A] NBA 摘要球員引用驗證（僅記錄，不影響輸出）
+                    try:
+                        _feats = result.get('features') or {}
+                        if (_feats.get('league') or '').upper() == 'NBA':
+                            _names = {
+                                p.get('player_name')
+                                for _side in ('home', 'away')
+                                for p in (_feats.get('roster', {}).get(_side) or [])
+                                if p.get('player_name')
+                            }
+                            _summ = result.get('summary') or ''
+                            _hit = [n for n in _names if n in _summ]
+                            if len(_hit) < 4:
+                                print(f"  ⚠ NBA 摘要球員引用不足：{len(_hit)} 人（要求每隊 ≥2，共 ≥4）: {_hit}")
+                            else:
+                                print(f"  ✅ NBA 摘要引用 {len(_hit)} 位球員: {_hit[:6]}")
+                    except Exception:
+                        pass
                     saved, push_thread = save_analysis(conn, game_id, result)
                     if saved:
                         print(f"  [{idx+1}/{len(pending)}] ✓ {game_id[:8]}...")
