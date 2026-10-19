@@ -34,6 +34,46 @@ _SEASON_CACHE = {}              # season -> (timestamp, stats_map)
 _SEASON_CACHE_TTL = 6 * 3600    # 6 小時
 _SEASON_CACHE_LOCK = threading.Lock()
 
+# 🆕 [2026-10-21] 賽季階段快取（date -> slug）
+#   用途：以 ESPN 官方 seasonType 判定「這場是否為季前賽」，
+#   取代舊版用「本季資料不足 10 場」推論的方式（開季前 3 週會誤標季前賽）。
+_SEASON_PHASE_CACHE = {}
+_SEASON_PHASE_TTL = 24 * 3600
+
+
+def season_phase(date_str: str):
+    """回傳指定日期（美東日 YYYY-MM-DD）的 NBA 賽季階段。
+
+    值：'preseason' / 'regular-season' / 'postseason' / 'all-star' / None（無法判定）
+    """
+    import time as _t
+    key = (date_str or "")[:10]
+    if not key:
+        return None
+    now = _t.time()
+    cached = _SEASON_PHASE_CACHE.get(key)
+    if cached and now - cached[0] < _SEASON_PHASE_TTL:
+        return cached[1]
+    try:
+        ds = key.replace("-", "")
+        r = requests.get(
+            f"https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates={ds}",
+            headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
+            timeout=15,
+        )
+        events = (r.json() or {}).get("events", []) if r.status_code == 200 else []
+        slug = None
+        for e in events:
+            s = (e.get("season") or {})
+            slug = s.get("slug") or s.get("type")
+            if slug:
+                break
+        _SEASON_PHASE_CACHE[key] = (now, slug)
+        return slug
+    except Exception:
+        _SEASON_PHASE_CACHE[key] = (now, None)
+        return None
+
 # 供診斷端點讀取的統計
 FETCH_STATS = {
     "cache_hit": 0,

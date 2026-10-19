@@ -96,5 +96,7 @@ class NBAIngester(BaseIngester):
                 "status": mapped,
                 "home_team_score": home_score,
                 "away_team_score": away_score,
+                # 🆕 [2026-10-21 P0-2] 賽季階段（preseason/regular-season/post-season/play-in-season）
+                "season_type": (event.get("season") or {}).get("slug"),
             })
         return games

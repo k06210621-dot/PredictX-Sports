@@ -81,6 +81,8 @@ class BaseIngester(ABC):
             # 🆕 先發投手對位（MLB 用）
             "home_pitcher": game.get("home_pitcher"),
             "away_pitcher": game.get("away_pitcher"),
+            # 🆕 [2026-10-21 P0-2] 賽季階段（NBA: preseason/regular-season/post-season/play-in-season）
+            "season_type": game.get("season_type"),
         }
 
     def upload(self, games: List[Dict[str, Any]]) -> bool:

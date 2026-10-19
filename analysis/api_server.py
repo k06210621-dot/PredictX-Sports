@@ -884,6 +884,7 @@ def insert_games():
             away_name = g.get('away_team')
             season = g.get('season', 2026)
             status = g.get('status', 'SCHEDULED')
+            season_type = g.get('season_type')  # 🆕 P0-2：preseason/regular-season/...
             home_score = g.get('home_team_score')
             away_score = g.get('away_team_score')
             # 🆕 投手欄位（MLB ingester 從 statsapi.mlb.com hydrate=probablePitcher 抓）
@@ -948,9 +949,9 @@ def insert_games():
                 existing = cur.fetchone()
                 if not existing:
                     cur.execute(
-                        """INSERT INTO predictx.games (season, match_date, status, home_team_id, away_team_id, home_team_score, away_team_score, home_pitcher_name, away_pitcher_name, pitcher_updated_at)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, CASE WHEN %s IS NOT NULL OR %s IS NOT NULL THEN CURRENT_TIMESTAMP ELSE NULL END)""",
-                        (season, match_date, status, home_id, away_id, home_score, away_score, home_pitcher_name, away_pitcher_name, home_pitcher_name, away_pitcher_name)
+                        """INSERT INTO predictx.games (season, match_date, status, home_team_id, away_team_id, home_team_score, away_team_score, home_pitcher_name, away_pitcher_name, season_type, pitcher_updated_at)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CASE WHEN %s IS NOT NULL OR %s IS NOT NULL THEN CURRENT_TIMESTAMP ELSE NULL END)""",
+                        (season, match_date, status, home_id, away_id, home_score, away_score, home_pitcher_name, away_pitcher_name, season_type, home_pitcher_name, away_pitcher_name)
                     )
                     inserted += 1
                 else:
@@ -960,6 +961,10 @@ def insert_games():
                     if status:
                         update_fields.append("status = %s")
                         update_vals.append(status)
+                    # 🆕 P0-2：賽季階段（有值才更新，避免舊 client 覆蓋成 NULL）
+                    if season_type:
+                        update_fields.append("season_type = %s")
+                        update_vals.append(season_type)
                     if home_score is not None:
                         update_fields.append("home_team_score = %s")
                         update_vals.append(home_score)

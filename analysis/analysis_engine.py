@@ -914,6 +914,7 @@ class AnalysisEngine:
               AND g.status IN ('final', 'FINAL')
               AND g.home_team_score IS NOT NULL
               AND g.away_team_score IS NOT NULL
+              AND COALESCE(g.season_type, 'regular') <> 'preseason'
               AND (%s::date IS NULL OR g.match_date::date < %s::date)
             ORDER BY g.match_date DESC
             LIMIT %s
@@ -1055,6 +1056,7 @@ class AnalysisEngine:
                 OR (g.home_team_id = %s AND g.away_team_id = %s))
               AND g.status IN ('final', 'FINAL')
               AND g.home_team_score IS NOT NULL
+              AND COALESCE(g.season_type, 'regular') <> 'preseason'
               AND (%s::date IS NULL OR g.match_date::date < %s::date)
         """
         self.cur.execute(query, (home_team_id, away_team_id, home_team_id, away_team_id, away_team_id, home_team_id, before_date, before_date))
@@ -1091,6 +1093,7 @@ class AnalysisEngine:
               AND g.status IN ('final', 'FINAL')
               AND g.home_team_score IS NOT NULL
               AND g.away_team_score IS NOT NULL
+              AND COALESCE(g.season_type, 'regular') <> 'preseason'
               AND (%s::date IS NULL OR g.match_date::date < %s::date)
             ORDER BY g.match_date DESC
             LIMIT %s
@@ -1329,6 +1332,7 @@ class AnalysisEngine:
                 JOIN predictx.games g ON (g.home_team_id = t.team_id OR g.away_team_id = t.team_id)
                 WHERE t.league = %s AND g.status IN ('final', 'FINAL')
                   AND g.home_team_score IS NOT NULL AND g.away_team_score IS NOT NULL
+                  AND COALESCE(g.season_type, 'regular') <> 'preseason'
                   AND (%s::date IS NULL OR g.match_date::date >= %s::date)
                   AND (%s::date IS NULL OR g.match_date::date < %s::date)
                 GROUP BY t.team_id, t.english_name
@@ -1603,9 +1607,28 @@ class AnalysisEngine:
                     #   即代表該聯盟本季尚未累積足夠例行賽 → 一律按「季前賽期間」提醒 LLM，
                     #   因為此時 prompt 內的所有「近期戰績/聯盟排名/H2H」都是上季殘留，
                     #   對季前賽（練兵陣容、主力限時）參考性低。
+                    # 🆕 [2026-10-21 P0-1] 賽季階段改用 ESPN 官方 seasonType 判定。
+                    #   舊版以「本季資料 <10 場」推論季前賽 → 例行賽開季前 3 週全部誤標
+                    #   （實證：2026-10-20 ET 開幕戰 3 場被標成季前賽）。
+                    _phase = None
+                    try:
+                        from nba_data_fetcher import season_phase
+                        _phase = season_phase(str(game.get('match_date') or ''))
+                    except Exception as _pe:
+                        print(f"  ⚠ season_phase 判定失敗: {_pe}")
+                    if _phase:
+                        features['nba_season_phase'] = _phase
+                        if _phase == 'preseason':
+                            features['is_preseason_period'] = True
+                            print("  🗓️ NBA 季前賽（ESPN seasonType=preseason）")
+                        else:
+                            print(f"  🗓️ NBA 賽季階段：{_phase}")
+                    else:
+                        print("  ⚠ NBA 賽季階段無法判定（ESPN 無回應）→ 不標記季前賽")
+                    # 資料樣本為上季：僅標記，不代表本場是季前賽
                     if nba_data.get('is_prev_season'):
-                        features['is_preseason_period'] = True
-                        print(f"  🗓️ NBA 季前賽期間（本季無進階數據，使用 {nba_data.get('data_season')} 上季數據）")
+                        features['using_prev_season_data'] = True
+                        print(f"  ℹ️ NBA 使用上季樣本（{nba_data.get('data_season')}），賽季階段={_phase or 'unknown'}")
                 else:
                     # 🆕 [2026-10-12] 可見化：BR 與 ESPN 兩來源皆失敗時明確標記。
                     #   實證教訓：10/10–10/15 共 29 場「靜默缺塊」潛伏多日才被發現，
