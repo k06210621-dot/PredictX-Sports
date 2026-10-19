@@ -900,7 +900,7 @@ class AnalysisEngine:
         賽前分析（match_date 為未來）時行為不變 —— 所有已完賽場次都早於比賽日。
         """
         query = """
-            SELECT g.match_date, g.home_team_score, g.away_team_score, g.status,
+            SELECT g.match_date, g.home_team_score, g.away_team_score, g.status, g.season_type,
                    ht.chinese_name as home_name, at.chinese_name as away_name,
                    CASE
                        WHEN g.home_team_id = %s THEN 'home'
@@ -981,7 +981,8 @@ class AnalysisEngine:
                 "opponent": g['away_name'] if g['side'] == 'home' else g['home_name'],
                 "result": result,
                 "score": f"{gf}-{ga}" if gf is not None and ga is not None else "N/A",
-                "side": g['side']  # 🆕 標註主客場
+                "side": g['side'],  # 🆕 標註主客場
+                "season_type": g.get('season_type'),  # 🆕 P0-2：賽季階段
             })
 
         # 🆕 [2026-08-17] 計算當前連勝/連敗 streak
@@ -1011,6 +1012,8 @@ class AnalysisEngine:
             "avg_goals_for": round(total_goals_for / len(results), 1) if results else 0,
             "avg_goals_against": round(total_goals_against / len(results), 1) if results else 0,
             "goal_diff": round((total_goals_for - total_goals_against) / len(results), 1) if results else 0,
+            # 🆕 P0-2：近況樣本的賽季階段（供 prompt 標註，避免把上季季後賽寫成本季）
+            "season_types": sorted({g.get('season_type') for g in results if g.get('season_type')}),
             # 🆕 [2026-08-17] 當前連勝/連敗 streak（正=連勝, 負=連敗）
             "streak": streak,
             # 🆕 主客場分離數據（讓 AI prompt 注入後能更精準預測）
@@ -2293,6 +2296,12 @@ class AnalysisEngine:
             if not form or not form['recent_games']:
                 return "無近期比賽數據"
             lines = [f"戰績: {form['win_loss']}, 勝率: {form['win_rate']}"]
+            # 🆕 P0-2：若近況樣本全非本季例行賽（開季前的上季季後賽），明確標註
+            _st = form.get('season_types') or []
+            if _st and all(x != 'regular-season' for x in _st):
+                _label = "上季季後賽" if 'post-season' in _st else "上季"
+                lines.insert(0, f"⚠️ **注意：以下近況全部來自{_label}（本季尚無例行賽樣本）**，"
+                                f"不可稱為「本季戰績」；引用時請明確標示為「{_label}」。")
             lines.append(f"場均得分: {form['avg_goals_for']}, 場均失分: {form['avg_goals_against']}, 淨勝差: {form['goal_diff']}")
             # 🆕 [2026-08-17] 連勝/連敗 streak（心理因素/氣勢指標）
             streak = form.get('streak', 0)
