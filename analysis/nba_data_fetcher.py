@@ -606,9 +606,30 @@ class NBADataFetcher:
                 return None
             rec = std.get(espn_nm, {})
             pts = rates.pop("_pts", 0.0)
-            pace = rates["pace"]
+            pace = rates.get("pace", 0.0) or 0.0
+            # 🆕 [2026-10-24 P0-2] 缺值防護：ESPN 偶爾缺 Points/Pace（實測 PHI pts=0），
+            # 會產生 off_rtg=0、net_rating=-def_rtg（例 -113.4），OffRtg diff 高達 115.3
+            # 直接污染分析。缺值時先退回該隊上季率，仍無效則整體略過進階數據。
+            if not pts or pts <= 0 or not pace or pace <= 0:
+                alt = self._espn_team_rates(ids[espn_nm], prev_year) if prev_year != std_year else None
+                if alt and alt.get("_pts", 0) > 0 and alt.get("pace", 0) > 0:
+                    rates = alt
+                    pts = rates.pop("_pts", 0.0)
+                    pace = rates["pace"]
+                    print(f"  ⚠ ESPN 本季進階率缺 Points（{espn_nm}）→ 改用上季率")
+                else:
+                    print(f"  ⚠ ESPN 進階率缺 Points/Pace（{espn_nm}）→ 略過進階數據")
+                    return None
             off = pts / pace * 100 if pace else 0.0
-            dfn = rec.get("pa", 0.0) / pace * 100 if pace else 0.0
+            pa = rec.get("pa", 0.0) or 0.0
+            if not pa or pa <= 0:
+                print(f"  ⚠ ESPN standings 缺失分（{espn_nm}）→ 略過進階數據")
+                return None
+            dfn = pa / pace * 100
+            # 合理性檢查（NBA OffRtg/DefRtg 正常約 90~130）
+            if not (80 <= off <= 140 and 80 <= dfn <= 140):
+                print(f"  ⚠ ESPN 進階率不合理（{espn_nm} off={off:.1f} def={dfn:.1f}）→ 略過進階數據")
+                return None
             out[local_nm] = {
                 "off_rtg": round(off, 1),
                 "def_rtg": round(dfn, 1),

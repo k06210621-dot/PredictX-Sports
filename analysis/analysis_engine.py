@@ -2295,7 +2295,7 @@ class AnalysisEngine:
         def format_form(form):
             if not form or not form['recent_games']:
                 return "無近期比賽數據"
-            lines = [f"戰績: {form['win_loss']}, 勝率: {form['win_rate']}"]
+            lines = [f"近 5 場戰績: {form['win_loss']}, 近 5 場勝率: {form['win_rate']}（⚠️ 此為最近 5 場，不是本季戰績）"]
             # 🆕 P0-2：若近況樣本全非本季例行賽（開季前的上季季後賽），明確標註
             _st = form.get('season_types') or []
             if _st and all(x != 'regular-season' for x in _st):
@@ -2623,6 +2623,14 @@ class AnalysisEngine:
    （例：「Jalen Brunson 場均 26.1 分、7.2 助攻、PER 20.8」），
    並說明該球員的對位優勢或劣勢如何影響本場結果。只寫團隊數據而未點名球員視為不合格。
 📌 引用規則：球員數據一律用下方名單的**整季場均**；「近期表現」區塊的數字只代表最近 5 場，不可混用。"""
+
+        if league and league.upper() == 'NBA':
+            nba_advanced_section += """
+
+📌 本季戰績規則（強制）：
+   1. summary 提到「本季／開季」勝敗場數時，**只能引用上方「本季戰績」區塊（standings）的 wins-losses**。
+   2. 禁止把「近 5 場」「近 10 場」「季前賽」「上一季」的勝敗數字寫成本季戰績。
+   3. 若上方沒有本季戰績，就不要寫出具體勝敗場數，改用「開季樣本仍少」等描述。"""
         wnba_advanced = features.get('wnba_advanced', {})
         if wnba_advanced:
             h = wnba_advanced['team_stats']['home']
@@ -2989,7 +2997,7 @@ Park Factor: {pf:.2f} ({park_interp})
             _gp_txt = f"（{_gp} 場）" if _gp else ""
             _rk, _tt = s.get('rank'), s.get('total_teams')
             _rank_txt = f"第 {_rk}/{_tt} 名, " if _rk else ""
-            out = (f"{_rank_txt}{s['wins']}勝{s['losses']}敗{_gp_txt}, "
+            out = (f"本季戰績: {_rank_txt}{s['wins']}勝{s['losses']}敗{_gp_txt}, "
                    f"勝率 {s['win_pct']:.3f}, 得分 {s.get('goals_for', 0)}, "
                    f"失分 {s.get('goals_against', 0)}, 淨勝分 {s.get('goal_diff', 0):+d}")
             _pv = s.get('prev_season')

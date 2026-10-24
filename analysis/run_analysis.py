@@ -282,6 +282,31 @@ def main():
                                 print(f"  ✅ NBA 摘要引用 {len(_hit)} 位球員: {_hit[:6]}")
                     except Exception:
                         pass
+                    # 🆕 [2026-10-24 P0-1] NBA 本季戰績驗證：summary 的「本季/開季 X勝Y敗」
+                    # 必須與 features.standings 一致；不符僅記錄警告，不自動改寫內容。
+                    try:
+                        _feats = result.get('features') or {}
+                        if (_feats.get('league') or '').upper() == 'NBA':
+                            import re as _re
+                            _summ = result.get('summary') or ''
+                            _claims = {
+                                (int(_m.group(1)), int(_m.group(2)))
+                                for _m in _re.finditer(
+                                    r'(?:本季|開季)[^。；\n]{0,30}?(\d{1,2})\s*勝\s*(\d{1,2})\s*敗',
+                                    _summ)
+                            }
+                            _valid = set()
+                            for _side in ('home', 'away'):
+                                _st = _feats.get(f'{_side}_standings') or {}
+                                if _st.get('wins') is not None and _st.get('losses') is not None:
+                                    _valid.add((int(_st['wins']), int(_st['losses'])))
+                            _bad = sorted(c for c in _claims if c not in _valid)
+                            if _claims and _bad:
+                                print(f"  ⚠ NBA 摘要本季戰績與 standings 不符: 摘要={_bad} 實際={sorted(_valid)}")
+                            elif _claims:
+                                print(f"  ✅ NBA 摘要本季戰績一致: {sorted(_claims)}")
+                    except Exception:
+                        pass
                     saved, push_thread = save_analysis(conn, game_id, result)
                     if saved:
                         print(f"  [{idx+1}/{len(pending)}] ✓ {game_id[:8]}...")
