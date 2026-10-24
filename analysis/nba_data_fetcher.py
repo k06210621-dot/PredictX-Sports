@@ -84,6 +84,11 @@ FETCH_STATS = {
     "last_error": None,
 }
 
+# 🆕 [2026-10-24 P1] BR 熔斷：401/403/429 屬非 transient（IP 封鎖/限流），
+# 一旦命中就 6 小時內不再嘗試，避免每場白燒 6 次請求與約 30 秒。
+_BR_BLOCKED_UNTIL = 0.0
+_BR_BLOCK_REASON = ""
+
 
 def _cache_get(season):
     """回傳快取中的賽季資料（過期回 None）"""
@@ -355,12 +360,28 @@ class NBADataFetcher:
         FETCH_STATS["cache_miss"] += 1
 
         url = _br_url(season)
+        # 🆕 [2026-10-24 P1] 403/401/429 = IP 封鎖/限流，非 transient：
+        #   ① 熔斷期間直接略過（0 請求）
+        #   ② 命中時立即設定 6 小時熔斷，不再做 3 次重試
+        global _BR_BLOCKED_UNTIL, _BR_BLOCK_REASON
+        if time.time() < _BR_BLOCKED_UNTIL:
+            return {}
         resp = None
         last_err = None
         for attempt in range(1, _retries + 1):
             try:
                 resp = self.session.get(url, timeout=25)
                 FETCH_STATS["last_br_status"] = resp.status_code
+                if resp.status_code in (401, 403, 429):
+                    _BR_BLOCKED_UNTIL = time.time() + 6 * 3600
+                    _BR_BLOCK_REASON = f"HTTP {resp.status_code}"
+                    FETCH_STATS["br_fail"] += 1
+                    print(f"  ⚠ NBA BR HTTP {resp.status_code}（IP 封鎖/限流）→ 熔斷 6 小時，改走 ESPN")
+                    return {}
+                if 400 <= resp.status_code < 500 and resp.status_code not in (408, 425):
+                    FETCH_STATS["br_fail"] += 1
+                    print(f"  ⚠ NBA BR HTTP {resp.status_code}（非 transient）→ 直接放棄 {season}")
+                    return {}
                 resp.raise_for_status()
                 last_err = None
                 break
