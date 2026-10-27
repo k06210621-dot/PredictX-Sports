@@ -69,6 +69,10 @@ def main():
         help="指定日期 (YYYY-MM-DD)，預設為昨日"
     )
     parser.add_argument(
+        "--window-days", type=int, default=7,
+        help="回溯補抓天數（D-N～D-1，預設 7 天；--date 指定時忽略此參數）"
+    )
+    parser.add_argument(
         "--leagues", type=str, default=",".join(LEAGUE_REGISTRY.keys()),
         help=f"指定聯盟（逗號分隔）, 預設全部。可選: {','.join(LEAGUE_REGISTRY.keys())}"
     )
@@ -79,30 +83,39 @@ def main():
     args = parser.parse_args()
 
     target_date = args.date.strip()
-    # 預設行為：以「APP 顯示的日期」為基準（台北昨日）
-    if not target_date:
-        target_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    single_mode = bool(target_date)
+    if single_mode:
+        app_dates = [target_date]
+    else:
+        # 🆕 [2026-10-27 P2] 預設回溯 7 天做冪等重查，避免單日漏抓永久缺資料
+        today = datetime.now()
+        app_dates = [
+            (today - timedelta(days=i)).strftime("%Y-%m-%d")
+            for i in range(max(1, args.window_days), 0, -1)
+        ]
 
     selected = [s.strip().upper() for s in args.leagues.split(",") if s.strip()]
     for code in selected:
         if code not in LEAGUE_REGISTRY:
-            LOGGER.error(f"❌ 不支援聯盟: {code}（可用: {','.join(LEAGUE_REGISTRY.keys())})")
+            LOGGER.error(f"❌ 不支援聯盟: {code}（可用: {','.join(LEAGUE_REGISTRY.keys())}）")
             return 1
 
     # 時區換算：MLB/NBA 的資料存 match_date = 美東日期，
     # /api/games 查詢會 +1 顯示為台北日期。
     # 因此 ingest 端抓的 target_date 應為「美東日期」= APP 顯示日期 - 1 天。
     US_DATE_LEAGUES = {"MLB", "NBA"}
-    if any(code in US_DATE_LEAGUES for code in selected):
-        app_yesterday = datetime.strptime(target_date, "%Y-%m-%d")
-        us_date = (app_yesterday - timedelta(days=1)).strftime("%Y-%m-%d")
-        LOGGER.info(f"⏰ MLB/NBA 時區換算：APP 顯示 {target_date} → 抓美東 {us_date}")
-    else:
-        us_date = target_date
+
+    def to_league_date(code: str, app_date: str) -> str:
+        if code in US_DATE_LEAGUES:
+            return (datetime.strptime(app_date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+        return app_date
 
     LOGGER.info("=" * 60)
-    LOGGER.info(f"=== 昨日補抓 Pipeline START === {datetime.now().isoformat()}")
-    LOGGER.info(f"Target date: {target_date} | leagues: {selected} | dry_run={args.dry_run}")
+    LOGGER.info(f"=== 補抓 Pipeline START === {datetime.now().isoformat()}")
+    LOGGER.info(
+        f"APP 日期: {app_dates[0]} ~ {app_dates[-1]}（{len(app_dates)} 天）| "
+        f"leagues: {selected} | dry_run={args.dry_run}"
+    )
     LOGGER.info("=" * 60)
 
     start = time.time()
@@ -112,20 +125,27 @@ def main():
         cls, desc = LEAGUE_REGISTRY[code]
         LOGGER.info(f"\n[{code}] {desc}")
         ingester = cls()
-        # 各聯盟用各自的 target_date（MLB/NBA 已自動 -1 天）
-        league_target = us_date if code in US_DATE_LEAGUES else target_date
-        try:
-            ok = ingester.backfill_yesterday(target_date=league_target, dry_run=args.dry_run)
-            results[code] = "OK" if ok else "PARTIAL_FAIL"
-        except Exception as e:
-            LOGGER.error(f"[{code}] ❌ 整體失敗: {e}", exc_info=True)
-            results[code] = "FAIL"
-        finally:
+        day_results = {}
+        for app_date in app_dates:
+            league_target = to_league_date(code, app_date)
             try:
-                if hasattr(ingester, "close"):
-                    ingester.close()
-            except Exception:
-                pass
+                ok = ingester.backfill_yesterday(target_date=league_target, dry_run=args.dry_run)
+            except Exception as e:
+                LOGGER.error(f"[{code}] ❌ {app_date}（抓 {league_target}）失敗: {e}")
+                ok = False
+            day_results[app_date] = "OK" if ok else "FAIL"
+        ok_count = sum(1 for v in day_results.values() if v == "OK")
+        results[code] = "OK" if ok_count == len(day_results) else (
+            "PARTIAL_FAIL" if ok_count else "FAIL"
+        )
+        LOGGER.info(
+            f"[{code}] 補抓結果: " + " ".join(f"{d}={s}" for d, s in day_results.items())
+        )
+        try:
+            if hasattr(ingester, "close"):
+                ingester.close()
+        except Exception:
+            pass
 
     elapsed = time.time() - start
     LOGGER.info("\n" + "=" * 60)

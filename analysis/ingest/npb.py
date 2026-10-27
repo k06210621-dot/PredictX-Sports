@@ -29,6 +29,10 @@ LOGGER = logging.getLogger("ingest.npb")
 # NPB 月曆頁面 URL（month 為兩位數，含補零）
 NPB_MONTHLY_URL = "https://www.npb.jp/games/{year}/schedule_{month}_detail.html"
 
+# 🆕 [2026-10-27 P2] npb.jp 熔斷：連線失敗後 6 小時內直接走 Yahoo，避免逐日重試
+_NPB_BLOCKED_UNTIL = 0.0
+_NPB_BLOCK_REASON = ""
+
 # 日文球隊簡稱 → 英文全名 映射（從 <div class="team1"> 解析）
 NPB_TEAMS_JP = {
     "巨人":      "Yomiuri Giants",
@@ -111,10 +115,16 @@ class NPBIngester(BaseIngester):
         主來源：npb.jp 月曆頁（目前常態性連線逾時）
         備援：baseball.yahoo.co.jp 賽程頁（2026-10-27 實測可用）
         """
+        global _NPB_BLOCKED_UNTIL, _NPB_BLOCK_REASON
+        import time
+        if time.time() < _NPB_BLOCKED_UNTIL:
+            return self._fetch_games_yahoo(target_date)
         try:
             return self._fetch_games_npb(target_date)
         except Exception as e:
-            LOGGER.warning(f"NPB 官方月曆失敗（{target_date}）: {e} → 改用 Yahoo 備援")
+            _NPB_BLOCKED_UNTIL = time.time() + 6 * 3600
+            _NPB_BLOCK_REASON = str(e)[:120]
+            LOGGER.warning(f"NPB 官方月曆失敗（{target_date}）: {e} → 改用 Yahoo 備援（熔斷 6 小時）")
             return self._fetch_games_yahoo(target_date)
 
     def _fetch_games_npb(self, target_date: str) -> List[Dict[str, Any]]:
