@@ -92,7 +92,9 @@ class BaseIngester(ABC):
             if g.get("home_team") and g.get("away_team") and g.get("match_date")
         ]
         if not normalized:
-            LOGGER.info(f"[{self.league_code}] 無資料需上傳")
+            LOGGER.warning(
+                f"[{self.league_code}] ⚠ 0 場（EMPTY）— 來源無資料，未上傳"
+            )
             return True
 
         endpoint = f"{self.cloud_url}/api/insert_games"

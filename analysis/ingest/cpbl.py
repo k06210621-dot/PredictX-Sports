@@ -14,10 +14,11 @@ TheSportsDB 免費版 API:
 """
 
 import os
+import re
 import json
 import logging
 from typing import List, Dict, Any
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from zoneinfo import ZoneInfo
 import requests
 from .base import BaseIngester
@@ -45,11 +46,28 @@ def _normalize_team_name(english_name: str) -> str:
     return TEAM_NAME_MAP.get(english_name, english_name)
 
 
+# 🆕 [2026-10-27 P1] 官方賽程中文隊名 → DB 統一隊名
+OFFICIAL_TEAM_MAP = {
+    "中信兄弟": "CTBC Brothers",
+    "味全龍": "Wei Chuan Dragons",
+    "統一7-ELEVEn獅": "Uni-President 7-ELEVEn Lions",
+    "統一7-11獅": "Uni-President 7-ELEVEn Lions",
+    "統一獅": "Uni-President 7-ELEVEn Lions",
+    "樂天桃猿": "Rakuten Monkeys",
+    "富邦悍將": "Fubon Guardians",
+    "台鋼雄鷹": "TSG Hawks",
+}
+
+OFFICIAL_SCHEDULE_URL = "https://www.cpbl.com.tw/schedule"
+OFFICIAL_GAMEDATA_URL = "https://www.cpbl.com.tw/schedule/getgamedatas"
+PLACEHOLDER_PITCHERS = {"", "尚未公布", "未定", "TBD", "tbd", "-", "--", "---"}
+
+
 class CPBLIngester(BaseIngester):
     league_code = "CPBL"
     league_days_ahead = 1  # CPBL 先發投手通常在開打前 1.5 天發布（PTT wewe0403 預告）；
                             # 抓今天 + 明天（day+0, day+1）即可，day+2 的 SP 還未公布。
-    source_name = "thesportsdb_api"
+    source_name = "cpbl_official+thesportsdb_fallback"
 
     def __init__(self):
         super().__init__()
@@ -61,6 +79,15 @@ class CPBLIngester(BaseIngester):
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
             "Accept": "application/json",
         })
+        # 🆕 [2026-10-27 P1] CPBL 官方賽程 session（TheSportsDB 季後賽覆蓋不全）
+        self.official_session = requests.Session()
+        self.official_session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+            "Accept-Language": "zh-TW",
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": OFFICIAL_SCHEDULE_URL,
+        })
+        self._official_tokens: Dict[str, Any] = {}
 
     def _api_get(self, endpoint: str, params: Dict[str, Any] = None) -> Dict:
         """呼叫 TheSportsDB API"""
@@ -82,7 +109,132 @@ class CPBLIngester(BaseIngester):
             LOGGER.error(f"TheSportsDB API {endpoint} 失敗: {e}")
             return {}
 
+    # ------------------------------------------------------------------
+    # 🆕 [2026-10-27 P1] 官方賽程（主來源）
+    # ------------------------------------------------------------------
+    def _get_official_token(self, year: int, month: int) -> str:
+        """取得 cpbl.com.tw getgamedatas 的 RequestVerificationToken（快取 30 分鐘）"""
+        import time
+        key = f"{year}-{month:02d}"
+        ent = self._official_tokens.get(key)
+        if ent and time.time() - ent[0] < 1800:
+            return ent[1]
+        resp = self.official_session.get(
+            OFFICIAL_SCHEDULE_URL, params={"year": year, "month": month}, timeout=20
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(f"CPBL 官方賽程頁 HTTP {resp.status_code}")
+        m = re.search(r"getgamedatas.*?RequestVerificationToken:\s*'([^']+)'", resp.text, re.S)
+        if not m:
+            raise RuntimeError("CPBL 官方賽程頁找不到 RequestVerificationToken")
+        self._official_tokens[key] = (time.time(), m.group(1))
+        return m.group(1)
+
+    def _fetch_official_month(self, year: int, month: int) -> List[Dict[str, Any]]:
+        """抓取官方整月賽程（GameDatas）"""
+        token = self._get_official_token(year, month)
+        resp = self.official_session.post(
+            OFFICIAL_GAMEDATA_URL,
+            data={"calendar": f"{year}/{month:02d}/01", "location": "", "kindCode": "", "teamNo": ""},
+            headers={"RequestVerificationToken": token},
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(f"CPBL getgamedatas HTTP {resp.status_code}")
+        payload = resp.json()
+        return json.loads(payload.get("GameDatas") or "[]")
+
+    def _fetch_games_official(self, target_date: str) -> List[Dict[str, Any]]:
+        """
+        官方賽程 → 標準 games 格式
+        - PresentStatus 0 = 延賽
+        - 未來日期一律 SCHEDULED 且清空比分
+        - 今日：開打後 3 小時視為 FINAL（避免 0-0 未開打誤判）
+        """
+        from datetime import datetime as _dt, date as _date
+        from zoneinfo import ZoneInfo
+        dt = _dt.strptime(target_date, "%Y-%m-%d")
+        today = _dt.now(ZoneInfo("Asia/Taipei")).date()
+        raw = self._fetch_official_month(dt.year, dt.month)
+        games: List[Dict[str, Any]] = []
+        for g in raw:
+            if str(g.get("GameDate") or "")[:10] != target_date:
+                continue
+            home = OFFICIAL_TEAM_MAP.get((g.get("HomeTeamName") or "").strip())
+            away = OFFICIAL_TEAM_MAP.get((g.get("VisitingTeamName") or "").strip())
+            if not home or not away:
+                LOGGER.debug(f"CPBL 官方跳過未知隊名: {g.get('HomeTeamName')} vs {g.get('VisitingTeamName')}")
+                continue
+            try:
+                hs = int(g.get("HomeScore")) if g.get("HomeScore") is not None else None
+                as_ = int(g.get("VisitingScore")) if g.get("VisitingScore") is not None else None
+            except (TypeError, ValueError):
+                hs = as_ = None
+            try:
+                status_code = int(g.get("PresentStatus") or 0)
+            except (TypeError, ValueError):
+                status_code = 0
+            start = None
+            try:
+                start = _dt.fromisoformat(str(g.get("GameDateTimeS"))[:19]).replace(tzinfo=ZoneInfo("Asia/Taipei"))
+            except Exception:
+                pass
+
+            if status_code == 0:
+                status = "POSTPONED"
+                hs = as_ = None
+            elif dt.date() > today:
+                status = "SCHEDULED"
+                hs = as_ = None
+            elif dt.date() < today:
+                status = "FINAL" if (hs is not None and as_ is not None) else "SCHEDULED"
+            else:
+                now = _dt.now(ZoneInfo("Asia/Taipei"))
+                if start and now < start:
+                    status = "SCHEDULED"
+                    hs = as_ = None
+                elif start and now < start + timedelta(hours=3):
+                    status = "LIVE"
+                elif hs is not None and as_ is not None:
+                    status = "FINAL"
+                else:
+                    status = "LIVE"
+
+            game = {
+                "season": int(g.get("Year") or dt.year),
+                "match_date": target_date,
+                "home_team": home,
+                "away_team": away,
+                "status": status,
+                "home_team_score": hs,
+                "away_team_score": as_,
+            }
+            hp = (g.get("HomePitcherName") or "").strip()
+            ap = (g.get("VisitingPitcherName") or "").strip()
+            if hp and hp not in PLACEHOLDER_PITCHERS:
+                game["home_pitcher"] = hp
+            if ap and ap not in PLACEHOLDER_PITCHERS:
+                game["away_pitcher"] = ap
+            games.append(game)
+        return games
+
     def fetch_games(self, target_date: str) -> List[Dict[str, Any]]:
+        """
+        抓取指定日期（YYYY-MM-DD）的 CPBL 賽事
+        主來源：cpbl.com.tw 官方 getgamedatas（含季後賽、延賽狀態、先發投手）
+        備援：TheSportsDB（免費源季後賽覆蓋不全，2026-10-24~26 實測 0 場）
+        """
+        try:
+            games = self._fetch_games_official(target_date)
+            if games:
+                LOGGER.info(f"CPBL 官方 {target_date} → {len(games)} 場")
+                return games
+            LOGGER.info(f"CPBL 官方 {target_date} → 0 場（休兵或尚無賽程），以 TheSportsDB 交叉確認")
+        except Exception as e:
+            LOGGER.warning(f"CPBL 官方來源失敗（{target_date}）: {e} → 改用 TheSportsDB")
+        return self._fetch_games_thesportsdb(target_date)
+
+    def _fetch_games_thesportsdb(self, target_date: str) -> List[Dict[str, Any]]:
         """
         抓取指定日期（YYYY-MM-DD）的 CPBL 賽事
         使用 TheSportsDB eventsday.php 端點

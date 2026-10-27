@@ -60,7 +60,7 @@ def _resolve_team(jp_short: str):
 class NPBIngester(BaseIngester):
     league_code = "NPB"
     league_days_ahead = 2  # 抓今天 + 未來 2 天
-    source_name = "npb_official_monthly"
+    source_name = "npb_official_monthly+yahoo_fallback"
 
     # 快取：避免同一個月重複抓取
     _cached_html: Dict[str, str] = {}
@@ -85,7 +85,7 @@ class NPBIngester(BaseIngester):
             return self._cached_soup[cache_key]
 
         url = NPB_MONTHLY_URL.format(year=year, month=month_str)
-        resp = self.session.get(url, timeout=30)
+        resp = self.session.get(url, timeout=8)
         if resp.status_code != 200:
             raise RuntimeError(f"NPB 月曆頁 HTTP {resp.status_code} ({url})")
 
@@ -106,6 +106,18 @@ class NPBIngester(BaseIngester):
         return soup
 
     def fetch_games(self, target_date: str) -> List[Dict[str, Any]]:
+        """
+        抓取指定日期的 NPB 全部賽事
+        主來源：npb.jp 月曆頁（目前常態性連線逾時）
+        備援：baseball.yahoo.co.jp 賽程頁（2026-10-27 實測可用）
+        """
+        try:
+            return self._fetch_games_npb(target_date)
+        except Exception as e:
+            LOGGER.warning(f"NPB 官方月曆失敗（{target_date}）: {e} → 改用 Yahoo 備援")
+            return self._fetch_games_yahoo(target_date)
+
+    def _fetch_games_npb(self, target_date: str) -> List[Dict[str, Any]]:
         """
         抓取指定日期的 NPB 全部賽事（12 隊，含跨聯盟）
 
@@ -150,6 +162,86 @@ class NPBIngester(BaseIngester):
         # 🆕 補先發投手（從 lottonavi.com 爬取）
         self._enrich_pitchers(games, target_date)
 
+        return games
+
+    def _fetch_games_yahoo(self, target_date: str) -> List[Dict[str, Any]]:
+        """
+        🆕 [2026-10-27 P1] Yahoo NPB 賽程備援解析
+        URL: https://baseball.yahoo.co.jp/npb/schedule/?date=YYYY-MM-DD
+        每個 tr.bb-scheduleTable__row 為一日賽程（含日期表頭），需按日期過濾。
+        """
+        from datetime import date as _date
+        dt = datetime.strptime(target_date, "%Y-%m-%d")
+        url = f"https://baseball.yahoo.co.jp/npb/schedule/?date={target_date}"
+        resp = self.session.get(url, timeout=20, headers={"Accept-Language": "ja,en"})
+        if resp.status_code != 200:
+            raise RuntimeError(f"Yahoo NPB HTTP {resp.status_code} ({url})")
+
+        soup = BeautifulSoup(resp.text, "lxml")
+        games: List[Dict[str, Any]] = []
+        for tr in soup.select("tr.bb-scheduleTable__row"):
+            head = tr.select_one(".bb-scheduleTable__head")
+            if not head:
+                continue
+            m = re.search(r"(\d{1,2})月(\d{1,2})日", head.get_text(" ", strip=True))
+            if not m or int(m.group(1)) != dt.month or int(m.group(2)) != dt.day:
+                continue
+            home_el = tr.select_one(".bb-scheduleTable__homeName")
+            away_el = tr.select_one(".bb-scheduleTable__awayName")
+            if not home_el or not away_el:
+                continue
+            home = _resolve_team(home_el.get_text(strip=True))
+            away = _resolve_team(away_el.get_text(strip=True))
+            if not home or not away:
+                continue
+
+            def _score(sel: str):
+                el = tr.select_one(sel)
+                t = el.get_text(strip=True) if el else ""
+                return int(t) if t.isdigit() else None
+
+            home_score = _score(".bb-scheduleTable__homeScore")
+            away_score = _score(".bb-scheduleTable__awayScore")
+            status_el = tr.select_one(".bb-scheduleTable__status")
+            status_txt = status_el.get_text(" ", strip=True) if status_el else ""
+
+            if "中止" in status_txt or "ノーゲーム" in status_txt:
+                status = "POSTPONED"
+                home_score = away_score = None
+            elif "試合終了" in status_txt:
+                status = "FINAL"
+            elif "試合中" in status_txt:
+                status = "LIVE"
+            else:
+                status = "SCHEDULED"
+
+            if dt.date() > _date.today():
+                status = "SCHEDULED"
+            if status == "SCHEDULED":
+                home_score = away_score = None
+
+            game = {
+                "season": dt.year,
+                "match_date": target_date,
+                "home_team": home,
+                "away_team": away,
+                "status": status,
+                "home_team_score": home_score,
+                "away_team_score": away_score,
+            }
+            # 未開打場次可從 (予)投手 取得先發
+            for key, sel in (("home_pitcher", ".bb-scheduleTable__homePlayer"),
+                             ("away_pitcher", ".bb-scheduleTable__awayPlayer")):
+                for li in tr.select(f"{sel} li"):
+                    mm = re.search(r"\(予\)\s*(.+)$", li.get_text(strip=True))
+                    if mm:
+                        game[key] = mm.group(1).strip()
+                        break
+            games.append(game)
+
+        LOGGER.info(f"NPB Yahoo {target_date} → {len(games)} 場")
+        if games and any(g.get("status") == "SCHEDULED" and not g.get("home_pitcher") and not g.get("away_pitcher") for g in games):
+            self._enrich_pitchers(games, target_date)
         return games
 
     def _enrich_pitchers(self, games: List[Dict[str, Any]], target_date: str):
