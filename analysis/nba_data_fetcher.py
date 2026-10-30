@@ -703,8 +703,19 @@ class NBADataFetcher:
             print(f"  ⚠ Cannot match NBA teams: {home_team_name}(→{home_key}) / "
                   f"{away_team_name}(→{away_key}) → 嘗試 ESPN 備援")
 
-        # ---- 備援：ESPN ----
-        espn = self._fetch_from_espn(home_team_name, away_team_name, season)
+        # ---- 備援：ESPN（🆕 [2026-10-30] 失敗重試 1 次，降低批次瞬時失敗）----
+        espn = None
+        for _attempt in (1, 2):
+            try:
+                espn = self._fetch_from_espn(home_team_name, away_team_name, season)
+            except Exception as _e:
+                print(f"  ⚠ ESPN 備援第 {_attempt} 次例外: {_e}")
+                espn = None
+            if espn:
+                break
+            if _attempt == 1:
+                import time as _t
+                _t.sleep(2)
         if espn:
             stats, data_season, is_prev = espn
             self.fetched_sources.append("espn.com")

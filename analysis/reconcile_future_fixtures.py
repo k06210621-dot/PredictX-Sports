@@ -97,7 +97,7 @@ def reconcile_future_fixtures(leagues=None, days_ahead: int = 7, apply: bool = F
         if not cls:
             continue
         ingester = cls()
-        stats = {"checked_dates": 0, "cancelled": 0, "warnings": 0, "source_failed": 0, "cancelled_games": []}
+        stats = {"checked_dates": 0, "cancelled": 0, "postponed": 0, "warnings": 0, "source_failed": 0, "cancelled_games": []}
         try:
             db_games = _api_get(f"/api/games?league={league}&days=14")
         except Exception as e:
@@ -167,12 +167,73 @@ def reconcile_future_fixtures(leagues=None, days_ahead: int = 7, apply: bool = F
                         stats["cancelled"] += 1
                         stats["cancelled_games"].append(rec)
             else:
+                off_by_pair = {
+                    ((o.get("home_team") or "").strip(), (o.get("away_team") or "").strip()): o
+                    for o in official
+                }
                 for g in by_date[d]:
                     pair = ((g.get("home_team") or "").strip(), (g.get("away_team") or "").strip())
-                    if pair not in official_pairs:
+                    matched = off_by_pair.get(pair)
+
+                    # 官方同日有此對戰：若官方標延賽，同步 DB 狀態
+                    if matched:
+                        off_status = (matched.get("status") or "").upper()
+                        if off_status == "POSTPONED" and (g.get("status") or "").upper() != "POSTPONED":
+                            LOGGER.warning(
+                                f"[{league}] {d} 官方標示延賽，同步 POSTPONED: {pair[1]} @ {pair[0]}"
+                            )
+                            if apply:
+                                try:
+                                    _api_post("/api/insert_games", {"games": [{
+                                        "season": d.year,
+                                        "match_date": str(d),
+                                        "home_team": pair[0],
+                                        "away_team": pair[1],
+                                        "status": "POSTPONED",
+                                    }]})
+                                    stats["postponed"] += 1
+                                except Exception as e:
+                                    LOGGER.error(f"[{league}] 同步延賽失敗 {g.get('game_id')}: {e}")
+                            else:
+                                stats["postponed"] += 1
+                        continue
+
+                    # 官方同日沒有此對戰
+                    if d < today:
+                        # 過去的 SCHEDULED + 官方無此對戰 → 幽靈（條件式賽程未舉行）
+                        rec = {
+                            "game_id": g.get("game_id"),
+                            "league": league,
+                            "db_date": str(d),
+                            "display_date": g.get("match_date"),
+                            "home_team": g.get("home_team"),
+                            "away_team": g.get("away_team"),
+                        }
+                        LOGGER.warning(
+                            f"[{league}] 過去幽靈（官方無此對戰）: {d} "
+                            f"{rec['away_team']} @ {rec['home_team']} → CANCELLED"
+                        )
+                        if apply:
+                            try:
+                                _api_post("/api/insert_games", {"games": [{
+                                    "season": d.year,
+                                    "match_date": str(d),
+                                    "home_team": rec["home_team"],
+                                    "away_team": rec["away_team"],
+                                    "status": "CANCELLED",
+                                }]})
+                                stats["cancelled"] += 1
+                                stats["cancelled_games"].append(rec)
+                            except Exception as e:
+                                LOGGER.error(f"[{league}] 取消失敗 {rec['game_id']}: {e}")
+                        else:
+                            stats["cancelled"] += 1
+                            stats["cancelled_games"].append(rec)
+                    else:
+                        # 未來場次：可能臨時改期，只警告
                         stats["warnings"] += 1
                         LOGGER.warning(
-                            f"[{league}] {d} DB 有但官方賽程缺此場（不自動取消）: "
+                            f"[{league}] {d} DB 有但官方賽程缺此場（未來場次，僅警告）: "
                             f"{pair[1]} @ {pair[0]}"
                         )
         summary[league] = stats
