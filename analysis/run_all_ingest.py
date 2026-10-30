@@ -189,6 +189,14 @@ def main():
         LOGGER.info(f"  {code} 補抓: {status}")
     LOGGER.info("=" * 60)
 
+    # 🆕 [2026-10-30 P1] 未來賽程對帳：清除「如有必要」但未舉行的幽靈賽事
+    try:
+        from reconcile_future_fixtures import reconcile_future_fixtures
+        rec = reconcile_future_fixtures(leagues=selected, days_ahead=7, apply=True)
+        LOGGER.info(f"賽程對帳結果: {rec}")
+    except Exception as e:
+        LOGGER.error(f"賽程對帳失敗（不影響 ingestion）: {e}")
+
     # 若全部失敗, exit 1（讓 cron 觸發告警）
     all_failed = all(s == "FAIL" for s in results.values()) and \
                  all(s == "FAIL" for s in backfill_results.values())
