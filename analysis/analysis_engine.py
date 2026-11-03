@@ -2241,6 +2241,43 @@ class AnalysisEngine:
         
         return features
 
+    def _get_nba_home_win_rate(self, days=120, min_games=30):
+        """🆕 [2026-11-03] 本季 NBA 主場勝率（動態），取代寫死的 ~60% 先驗。
+
+        只取本季例行賽（排除季前賽/季後賽），樣本 < min_games 時回 (None, 0)，
+        由呼叫端退回歷史均值 0.55。查詢失敗不影響分析流程。
+        """
+        conn = self.conn
+        if conn is None:
+            return None, 0
+        try:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute(f"""
+                SELECT COUNT(*) AS n,
+                       SUM(CASE WHEN g.home_team_score > g.away_team_score THEN 1 ELSE 0 END) AS hw
+                FROM predictx.games g
+                JOIN predictx.teams t ON g.home_team_id = t.team_id
+                WHERE t.league = 'NBA'
+                  AND g.status = 'FINAL'
+                  AND g.season_type ILIKE '%regular%'
+                  AND g.home_team_score IS NOT NULL
+                  AND g.away_team_score IS NOT NULL
+                  AND g.match_date >= CURRENT_DATE - INTERVAL '{int(days)} days'
+            """)
+            row = cur.fetchone()
+            cur.close()
+            n = int((row or {}).get('n') or 0)
+            hw = int((row or {}).get('hw') or 0)
+            if n >= min_games:
+                return hw / n, n
+        except Exception as e:
+            print(f"  ⚠ NBA 主場勝率查詢失敗（non-fatal）: {e}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return None, 0
+
     def generate_win_probability_prompt(self, features):
         """
         構建勝率預測的 Prompt（強化版：注入真實數據 + Chain-of-Thought + rolling accuracy）
@@ -3031,6 +3068,12 @@ Park Factor: {pf:.2f} ({park_interp})
         # 與 home_advantage_full 對照表及 step4 主場指引使用同一組數字
         league_upper_check = (league or "").upper()
         home_advantage_note = ""
+
+        # 🆕 [2026-11-03] NBA 主場先驗動態化（原本寫死 ~60%，本季實測僅 51.9%）
+        nba_home_rate, nba_home_n = (None, 0)
+        if "NBA" in league_upper_check and not features.get('is_preseason_period'):
+            nba_home_rate, nba_home_n = self._get_nba_home_win_rate()
+
         if "MLB" in league_upper_check:
             home_advantage_note = (
                 "\n- MLB 主場勝率 ~52%（實證無顯著優勢）。請勿因「主場」一詞就預設主隊有利——"
@@ -3049,7 +3092,7 @@ Park Factor: {pf:.2f} ({park_interp})
             )
         elif "WNBA" in league_upper_check:
             home_advantage_note = (
-                "\n- WNBA 主場勝率 ~58-60%（與 NBA 接近，顯著優勢）。對實力接近的對戰，"
+                "\n- WNBA 主場勝率 ~58-60%（高於本季 NBA 的 ~52%）。對實力接近的對戰，"
                 "主隊可加 +0.04~+0.07 的合理主場加成，但受傷兵/體能因素影響大，"
                 "請特別注意背靠背球隊。"
             )
@@ -3067,10 +3110,18 @@ Park Factor: {pf:.2f} ({park_interp})
                     "並在信心度上反映高度不確定性。"
                 )
             else:
-                home_advantage_note = (
-                    "\n- NBA 主場勝率 ~60%（顯著優勢）。對實力接近的對戰，主隊可加 +0.05~+0.08 的合理主場加成，"
-                    "除非客隊有絕對數據優勢（戰績差距 > 15 場）。"
-                )
+                if nba_home_rate is not None:
+                    home_advantage_note = (
+                        f"\n- NBA **本季主場勝率實測 {nba_home_rate*100:.1f}%**（{nba_home_n} 場例行賽，動態更新）。"
+                        "主場只有輕微優勢：五五波時主隊僅給 **+0.01~+0.03**，"
+                        "**勿套用「~60% / +0.05~+0.08」的舊假設**；"
+                        "客隊數據明顯較好時，home_win_probability 應 < 0.50。"
+                    )
+                else:
+                    home_advantage_note = (
+                        "\n- NBA 主場勝率歷史均值 ~55%（本季樣本不足，暫用均值）。"
+                        "五五波時主隊僅給 +0.01~+0.03，勿套用 ~60% 的舊假設。"
+                    )
 
         # CPBL 專屬分析指引 + 球員/戰績數據
         cpbl_analysis_guide = ""
@@ -3660,8 +3711,13 @@ Park Factor: {pf:.2f} ({park_interp})
         #   LLM 兩處都讀到時會傾向採用較明確的加法建議（實測偏誤 +13pp）。
         if features.get('is_preseason_period'):
             _nba_row = "| NBA  | ~43-44%（季前賽） | **主場效應減弱** | **不加成**（貼近 0.50，勿套用例行賽規則） |"
+        elif nba_home_rate is not None:
+            _nba_row = (
+                f"| NBA  | ~{nba_home_rate*100:.0f}%（本季實測，{nba_home_n} 場） "
+                "| 輕微優勢 | 主隊 +0.01~+0.03 |"
+            )
         else:
-            _nba_row = "| NBA  | ~60%       | 顯著優勢    | 主隊 +0.05~+0.08 |"
+            _nba_row = "| NBA  | ~55%（歷史均值） | 輕微優勢 | 主隊 +0.01~+0.03 |"
         home_advantage_full = f"""⚾ 各聯盟歷史主場勝率參考（純對照，不用於機率計算）：
 
 | 聯盟 | 歷史主場勝率 | 主場效應強度 | 五五波微調建議 |
@@ -3704,7 +3760,7 @@ Park Factor: {pf:.2f} ({park_interp})
 - 起點 0.50（五五波基準）
 - **主場加成請以「下方主場對照表」為唯一權威來源**，三個引用點（home_advantage_note、對照表、本 Step 4）數字必須一致
 - **🆕 通用主場加成指引**（不再因聯盟而異，所有規則以對照表為準）：
-  - 對手實力明顯較弱（差距 ≥ 15% 勝率或 ≥ 2.0 ERA 或三振能力差距明顯）→ 按對照表上限給主場加成（MLB ≤+0.02、NPB ≤+0.04、WNBA ≤+0.07、CPBL ≤+0.05；NBA 季前賽期間為 0）
+  - 對手實力明顯較弱（差距 ≥ 15% 勝率或 ≥ 2.0 ERA 或三振能力差距明顯）→ 按對照表上限給主場加成（MLB ≤+0.02、NPB ≤+0.04、WNBA ≤+0.07、CPBL ≤+0.05、NBA ≤+0.03；NBA 季前賽期間為 0）
   - 對手實力明顯較強 → 主場加成可忽略甚至逆轉
   - 雙方實力接近 → 按對照表「五五波微調」範圍給主場加成
 - **CPBL 特別規則**：主隊有 +0.03~+0.05 微幅主場加成，但當主隊戰績或投手明顯較弱時，home_win_probability 應 < 0.50，**不要硬湊主場 tiebreaker**
@@ -4424,20 +4480,22 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                     home_prob = 0.5
                     away_prob = 0.5
                 
-                # 防止 0.5/0.5 五五波：根據主場優勢統計微調
-                # 🆕 主場優勢基準：棒球 ~53-54%、NBA ~60%、CPBL ~55-60%、NPB ~53%
-                # 五五波時應預設主隊略佔優（home 0.52-0.55），而非客隊
+                # 🆕 主場優勢基準：棒球 ~53-54%、NBA 本季動態（~51-52%）、CPBL 動態、NPB ~53%
+                # 五五波時應預設主隊略佔優，幅度以「實際主場勝率」為準
                 if abs(home_prob - 0.5) < 0.01 and abs(away_prob - 0.5) < 0.01:
                     # 用 league 判斷主場優勢強度
                     lg = (features.get('league') or '').upper()
                     # 🆕 [2026-09-25 O-1] CPBL 五五波基準改動態（滾動 14 天實際主場勝率）
                     #   9/14 後實際主場勝率翻轉至 52.2%，硬編碼 0.42 已反向。
                     cpbl_dynamic = self._get_cpbl_dynamic_home_baseline() if lg == 'CPBL' else 0.42
-                    # 🆕 [2026-10-09] NBA 季前賽期間主場優勢大幅減弱（實測僅 43.5%），
-                    #   硬編碼 0.58 會在五五波時把機率硬拉向主隊，須改成中性。
-                    nba_fifty = 0.50 if features.get('is_preseason_period') else 0.58
+                    # 🆕 [2026-11-03] NBA 改動態（原硬編碼 0.58 = 60% 主場勝率，本季實測僅 51.4%）
+                    if features.get('is_preseason_period'):
+                        nba_fifty = 0.50
+                    else:
+                        _nba_rate, _nba_n = self._get_nba_home_win_rate()
+                        nba_fifty = round(_nba_rate, 3) if _nba_rate is not None else 0.55
                     home_advantage_map = {
-                        'NBA': nba_fifty,   # 例行賽主場勝率約 60%；季前賽期間視為中性 0.50
+                        'NBA': nba_fifty,   # 🆕 本季動態主場勝率；季前賽期間視為中性 0.50
                         'WNBA': 0.58,  # WNBA 主場勝率與 NBA 接近
                         'CPBL': cpbl_dynamic,  # 🆕 O-1 動態基準（原硬編碼 0.42，2026-09-17 校準值已過時）
                         'MLB': 0.52,   # MLB 主場勝率約 53-54%（[2026-08-09] 校準下調至 0.52，預期命中率 +3pp）
@@ -5112,6 +5170,19 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                         print(f"  🏀 {_blg} 信心校準下限: conf {_bc:.1f} -> {_bfloor:.1f} (最終勝率差距={_bg:.3f})")
                 except (TypeError, ValueError):
                     pass
+
+                # 🆕 [2026-11-03] NBA 使用上季樣本（本季 <10 場）→ 信心上限 8.5
+                # 必須放在籃球「信心下限」之後，否則 gap>=0.25 會被抬回 9.0。
+                if (features.get('league') or '').upper() == 'NBA' and features.get('using_prev_season_data'):
+                    _pc = float(result.get('confidence') or 0.0)
+                    if _pc > 8.5:
+                        result['confidence'] = 8.5
+                        print(f"  📉 NBA 上季樣本 → 信心上限 8.5（{_pc:.1f} → 8.5）")
+                    _note = "\n\n📎 資料註記：本場球隊進階與球員數據採用 2025-26（上一季）樣本。"
+                    _summary = (result.get('summary') or '').rstrip()
+                    if _note.strip() not in _summary:
+                        result['summary'] = _summary + _note
+                    result['data_quality_note'] = '2025-26（上一季）樣本'
 
                 return result
         
