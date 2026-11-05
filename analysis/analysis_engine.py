@@ -3122,6 +3122,16 @@ Park Factor: {pf:.2f} ({park_interp})
                         "\n- NBA 主場勝率歷史均值 ~55%（本季樣本不足，暫用均值）。"
                         "五五波時主隊僅給 +0.01~+0.03，勿套用 ~60% 的舊假設。"
                     )
+                # 🆕 [2026-11-03] 實力差距優先於戰紀（開季初期戰績雜訊大）
+                home_advantage_note += (
+                    "\n- ⚠️ **實力差距優先於戰績**：評估雙方強弱時，請以進階數據的**淨效率（Net Rating）差距**"
+                    "與本季**場均得失分差距**為主，**勝敗紀錄僅作輔助**（開季初期僅 5-8 場，"
+                    "「4勝1敗」的隊伍可能有負淨效率，不可直接視為強隊）。"
+                    "\n  - 淨效率差距 **< +4** → 視為實力接近：home_win_probability 應落在 **0.45~0.58**，"
+                    "**不得給高信心**（8 分以上）。"
+                    "\n  - 淨效率差距 **+4 ~ +8** → 最多 8 分。"
+                    "\n  - 淨效率差距 **≥ +8** → 才可給 8 分以上的高信心。"
+                )
 
         # CPBL 專屬分析指引 + 球員/戰績數據
         cpbl_analysis_guide = ""
@@ -5183,6 +5193,44 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                     if _note.strip() not in _summary:
                         result['summary'] = _summary + _note
                     result['data_quality_note'] = '2025-26（上一季）樣本'
+
+                # 🆕 [2026-11-03] NBA 信心依「實力差距（淨效率差）」分級校準
+                # 實證（本季 118 場已結算且具進階數據）：
+                #   淨效率差 >= +8 → 93.3% 命中（n=30）→ 可給高信心
+                #   +4~+8 → 52.4%（n=21）／0~+4 → 56.7%（n=30）／< 0 → 46.2%（n=26）
+                # 原先不論差距大小一律給 8~9 分 → 高信心場命中率僅 66.7%（n=66）。
+                # 本規則只調整「信心層」，不動勝率／比分／方向，也不改推播門檻本身。
+                try:
+                    if (features.get('league') or '').upper() == 'NBA':
+                        _adv = ((features.get('nba_advanced') or {}).get('team_stats') or {})
+                        _hstat = _adv.get('home') or {}
+                        _astat = _adv.get('away') or {}
+                        if _hstat and _astat:
+                            _hp = float(result.get('home_win_probability') or 0.5)
+                            _ap = float(result.get('away_win_probability') or 0.5)
+                            _fav_home = _hp >= _ap
+                            _nf = float((_hstat if _fav_home else _astat).get('net_rating') or 0.0)
+                            _nd = float((_astat if _fav_home else _hstat).get('net_rating') or 0.0)
+                            _edge = _nf - _nd
+                            _cap, _flr = 10.0, 0.0
+                            if _edge >= 8:
+                                _flr = 8.0
+                            elif _edge >= 6:
+                                _cap = 9.0
+                            elif _edge >= 4:
+                                _cap = 8.0
+                            elif _edge >= 0:
+                                _cap = 6.5
+                            else:
+                                _cap = 5.5
+                            _c0 = float(result.get('confidence') or 0.0)
+                            _new = min(_c0, _cap)
+                            if _new < _flr:
+                                _new = _flr
+                            print(f"  🎯 NBA 實力差距校準: 淨效率差={_edge:+.1f} → 信心 {_c0:.1f} → {_new:.1f}")
+                            result['confidence'] = round(_new, 1)
+                except (TypeError, ValueError):
+                    pass
 
                 return result
         
