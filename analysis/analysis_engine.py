@@ -1722,7 +1722,10 @@ class AnalysisEngine:
                 from injury_fetcher import fetch_injuries
                 home_name = game['home_team_en']
                 away_name = game['away_team_en']
-                injuries = fetch_injuries(league, home_name, away_name)
+                injuries = fetch_injuries(
+                    league, home_name, away_name,
+                    match_date=str(game.get('match_date') or '')[:10] or None,
+                )
                 if injuries.get('home') or injuries.get('away'):
                     features['injuries'] = injuries
                     h_cnt = len(injuries.get('home', []))
@@ -2862,9 +2865,10 @@ class AnalysisEngine:
 {_format_injury_list(injury_data.get('away', []))}
 
 💡 分析指引：
+- 標示 **(Out / IL)** 者為「確定缺陣」，對戰力影響最大；標示 **(Questionable / Day-To-Day)** 者為「狀態存疑」，
+  實證約有一半仍會出賽，**請勿等同缺陣**，僅作輕微下修（1-2% 以內）
 - 先發投手若在傷兵名單中，該隊勝率應明顯下修（IL10: -5%，IL15: -8%，IL60: -10%）
 - 核心打者（主力先發）缺陣影響較大，替補球員缺陣影響較小
-- Day-To-Day 不確定性高，保守估計勝率下修 2-3%
 - 若兩隊都有傷兵，請比較「誰的傷兵對戰力影響更大」再決定調整方向
 """
         else:
@@ -4672,8 +4676,16 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                 injury_data = features.get('injuries', {})
                 _lg = (features.get('league') or '').upper()
                 if injury_data and _lg in ('MLB', 'NBA', 'WNBA'):
-                    home_injuries = len(injury_data.get('home', []))
-                    away_injuries = len(injury_data.get('away', []))
+                    # 🆕 [2026-11-05] 加權計數：確認缺陣計 1.0；狀態存疑（Questionable/Day-To-Day）
+                    #   僅計 0.4 —— 實證近 12 場：Questionable 球員有 55.6% 實際出賽，
+                    #   且 status=Out 者仍有 7.7% 實際出賽（已於 injury_fetcher 校正為 QUESTIONABLE）。
+                    def _inj_weight(_p):
+                        _st = str(_p.get('status', '') or '').upper()
+                        if _st in ('OUT', 'IL', 'IL10', 'IL15', 'IL60', 'INJURED LIST'):
+                            return 1.0
+                        return 0.4
+                    home_injuries = round(sum(_inj_weight(p) for p in (injury_data.get('home') or [])), 1)
+                    away_injuries = round(sum(_inj_weight(p) for p in (injury_data.get('away') or [])), 1)
                     injury_diff = home_injuries - away_injuries
                     
                     injury_adjustment = 0.0
@@ -4687,10 +4699,10 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                         if injury_diff > 0:
                             # 主隊傷兵更多，下修主隊勝率
                             injury_adjustment = -injury_adjustment
-                            injury_log.append(f"主隊傷兵多{injury_diff}人 → 勝率調整 {injury_adjustment:+.2f}")
+                            injury_log.append(f"主隊缺陣較多（加權 {injury_diff:g} 人） → 勝率調整 {injury_adjustment:+.2f}")
                         else:
                             # 客隊傷兵更多，上修主隊勝率
-                            injury_log.append(f"客隊傷兵多{abs(injury_diff)}人 → 勝率調整 {injury_adjustment:+.2f}")
+                            injury_log.append(f"客隊缺陣較多（加權 {abs(injury_diff):g} 人） → 勝率調整 {injury_adjustment:+.2f}")
                         
                         # 應用調整
                         if injury_adjustment != 0.0:

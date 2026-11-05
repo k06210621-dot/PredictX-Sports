@@ -17,6 +17,7 @@
 """
 import requests
 import logging
+from datetime import datetime
 
 _logger = logging.getLogger(__name__)
 
@@ -103,10 +104,16 @@ def fetch_mlb_injuries(home_team_name, away_team_name):
     return result
 
 
-def fetch_espn_injuries(league, home_team_name, away_team_name):
+def fetch_espn_injuries(league, home_team_name, away_team_name, match_date=None):
     """
     從 ESPN 抓 NBA/WNBA 傷兵名單。
     回傳 {"home": [...], "away": [...]}
+
+    🆕 [2026-11-05] 狀態校正與去陳舊：
+      - ESPN 的 status 欄位常與說明文字矛盾（status=Out 但 desc 寫 "questionable/probable"）。
+        實證近 12 場：52 筆 Out 有 4 筆（7.7%）球員實際有上場分鐘。
+        → desc 說「存疑/可出賽」時降級為 QUESTIONABLE，避免模型誤判為確定缺陣。
+      - 條目日期早於比賽日 10 天以上者，實證 12.9% 屬已復出球員 → 丟棄。
     """
     result = {"home": [], "away": []}
     url = ESPN_INJURY_URLS.get(league.upper())
@@ -134,15 +141,46 @@ def fetch_espn_injuries(league, home_team_name, away_team_name):
                     if status and status.upper() in ("OUT", "IL", "IL10", "IL15", "IL60",
                                                       "DAY-TO-DAY", "INJURED LIST",
                                                       "QUESTIONABLE", "DOUBTFUL"):
-                        result[side].append({
+                        entry = {
                             "name": athlete.get("displayName", "?"),
                             "status": status,
                             "desc": inj.get("shortComment", ""),
                             "date": inj.get("date", ""),
-                        })
+                        }
+                        entry = _normalize_injury_entry(entry, match_date)
+                        if entry:
+                            result[side].append(entry)
                 break
 
     return result
+
+
+# 🆕 [2026-11-05] 傷兵狀態校正常數
+_CONFIRMED_OUT_STATUS = {"OUT", "IL", "IL10", "IL15", "IL60", "INJURED LIST"}
+_UNCERTAIN_WORDS = ("questionable", "probable", "expected to play", "likely to play", "doubtful")
+
+
+def _normalize_injury_entry(entry, match_date=None, stale_days=10):
+    """校正單筆傷兵條目；回傳 None 代表應丟棄（陳舊已復出）。"""
+    status = str(entry.get("status", "")).upper()
+    desc = str(entry.get("desc", "") or "").lower()
+
+    # 1) status=Out 但說明為「存疑/可出賽」→ 降級為 QUESTIONABLE
+    if status in _CONFIRMED_OUT_STATUS and any(w in desc for w in _UNCERTAIN_WORDS):
+        entry["raw_status"] = entry.get("status")
+        entry["status"] = "QUESTIONABLE"
+        entry["desc"] = (entry.get("desc", "") + "（原標示缺陣，但報導為狀態存疑）").strip()
+
+    # 2) 陳舊條目（早於比賽日 stale_days 以上）→ 丟棄
+    if match_date:
+        try:
+            _md = datetime.strptime(str(match_date)[:10], "%Y-%m-%d").date()
+            _ed = datetime.strptime(str(entry.get("date", ""))[:10], "%Y-%m-%d").date()
+            if (_md - _ed).days > stale_days:
+                return None
+        except Exception:
+            pass
+    return entry
 
 
 def _cpbl_latest_moves():
@@ -297,16 +335,17 @@ def fetch_cpbl_unavailable(home_team_name, away_team_name):
     return result
 
 
-def fetch_injuries(league, home_team_name, away_team_name):
+def fetch_injuries(league, home_team_name, away_team_name, match_date=None):
     """
     統一入口：依聯盟自動選擇資料源。
     回傳 {"home": [...], "away": [...]}
+    match_date（可選）：用於過濾陳舊傷兵條目。
     """
     league = (league or "").upper()
     if league == "MLB":
         return fetch_mlb_injuries(home_team_name, away_team_name)
     elif league in ("NBA", "WNBA"):
-        return fetch_espn_injuries(league, home_team_name, away_team_name)
+        return fetch_espn_injuries(league, home_team_name, away_team_name, match_date)
     elif league == "CPBL":
         return fetch_cpbl_unavailable(home_team_name, away_team_name)
     else:
