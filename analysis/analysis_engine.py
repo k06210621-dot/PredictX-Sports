@@ -5212,6 +5212,21 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                             _nf = float((_hstat if _fav_home else _astat).get('net_rating') or 0.0)
                             _nd = float((_astat if _fav_home else _hstat).get('net_rating') or 0.0)
                             _edge = _nf - _nd
+                            # 🆕 次級訊號：本季「場均得失分差距」（goal_diff / games_played）
+                            #   若與淨效率差距互相矛盾（favorite 本季場均分差反而落後）→ 下降一階
+                            #   實證：edge +4~+8 且本季分差<0 → 命中 25.0%（n=4）
+                            #        edge <0   且本季分差<0 → 命中 12.5%（n=8）
+                            _gedge = None
+                            try:
+                                _hst = features.get('home_standings') or {}
+                                _ast = features.get('away_standings') or {}
+                                def _gd(_s):
+                                    return float(_s.get('goal_diff') or 0) / max(1.0, float(_s.get('games_played') or 1))
+                                _gf = _gd(_hst if _fav_home else _ast)
+                                _gd_other = _gd(_ast if _fav_home else _hst)
+                                _gedge = _gf - _gd_other
+                            except (TypeError, ValueError, ZeroDivisionError):
+                                _gedge = None
                             _cap, _flr = 10.0, 0.0
                             if _edge >= 8:
                                 _flr = 8.0
@@ -5223,11 +5238,15 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                                 _cap = 6.5
                             else:
                                 _cap = 5.5
+                            if _gedge is not None and _gedge < 0:
+                                _step = {10.0: 9.0, 9.0: 8.0, 8.0: 6.5, 6.5: 5.5, 5.5: 4.5}
+                                _cap = min(_cap, _step.get(_cap, _cap))
                             _c0 = float(result.get('confidence') or 0.0)
                             _new = min(_c0, _cap)
                             if _new < _flr:
                                 _new = _flr
-                            print(f"  🎯 NBA 實力差距校準: 淨效率差={_edge:+.1f} → 信心 {_c0:.1f} → {_new:.1f}")
+                            print(f"  🎯 NBA 實力差距校準: 淨效率差={_edge:+.1f}／本季場均分差差="
+                                  f"{(_gedge if _gedge is not None else 0):+.1f} → 信心 {_c0:.1f} → {_new:.1f}")
                             result['confidence'] = round(_new, 1)
                 except (TypeError, ValueError):
                     pass
