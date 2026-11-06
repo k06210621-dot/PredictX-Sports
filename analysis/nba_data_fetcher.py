@@ -519,49 +519,76 @@ class NBADataFetcher:
             print(f"  ⚠ ESPN standings 取得失敗: {e}")
         return out
 
-    def _espn_team_rates(self, tid, year):
+    def _espn_team_rates(self, tid, year, retries=1):
+        """取 ESPN 隊伍進階率（pace / eFG% / TS% / TOV% / ORB% / 场均得分）。
+
+        🆕 [2026-11-06] 回應不完整時自動重試（預設 1 次，間隔 2 秒）：
+          實證 ESPN 端點偶發回傳不完整內容（缺 avgPoints 或 FGA），
+          造成整場進階數據被放棄（2026-11-05 ATL/CLE/OKC/POR 4 場）。
+        """
         key = f"team:{tid}:{year}"
         cached = _espn_cache_get(key)
         if cached is not None:
             return cached
-        try:
-            r = self.session.get(ESPN_TEAM_STATS_URL.format(tid=tid),
-                                 params={"season": year}, timeout=25)
-            r.raise_for_status()
-            cats = (r.json().get("results") or {}).get("stats", {}).get("categories", [])
-            s = {}
-            for c in cats:
-                for item in c.get("stats", []):
-                    try:
-                        s[item["name"]] = float(item.get("value"))
-                    except (TypeError, ValueError):
-                        pass
-            fga = s.get("avgFieldGoalsAttempted", 0.0)
-            fgm = s.get("avgFieldGoalsMade", 0.0)
-            tpm = s.get("avgThreePointFieldGoalsMade", 0.0)
-            fta = s.get("avgFreeThrowsAttempted", 0.0)
-            oreb = s.get("avgOffensiveRebounds", 0.0)
-            dreb = s.get("avgDefensiveRebounds", 0.0)
-            tov = s.get("avgTurnovers", 0.0)
-            pts = s.get("avgPoints", 0.0)
-            if fga <= 0:
+        rates = {}
+        for attempt in range(1, retries + 2):
+            try:
+                r = self.session.get(ESPN_TEAM_STATS_URL.format(tid=tid),
+                                     params={"season": year}, timeout=25)
+                r.raise_for_status()
+                cats = (r.json().get("results") or {}).get("stats", {}).get("categories", [])
+                s = {}
+                for c in cats:
+                    for item in c.get("stats", []):
+                        try:
+                            s[item["name"]] = float(item.get("value"))
+                        except (TypeError, ValueError):
+                            pass
+                fga = s.get("avgFieldGoalsAttempted", 0.0)
+                fgm = s.get("avgFieldGoalsMade", 0.0)
+                tpm = s.get("avgThreePointFieldGoalsMade", 0.0)
+                fta = s.get("avgFreeThrowsAttempted", 0.0)
+                oreb = s.get("avgOffensiveRebounds", 0.0)
+                dreb = s.get("avgDefensiveRebounds", 0.0)
+                tov = s.get("avgTurnovers", 0.0)
+                pts = s.get("avgPoints", 0.0)
+                if fga <= 0:
+                    if attempt <= retries:
+                        print(f"  ⚠ ESPN team {tid} 回應缺 FGA（第 {attempt} 次）→ 重試")
+                        time.sleep(2)
+                        continue
+                    return {}
+                poss = fga + 0.44 * fta - oreb + tov
+                if poss <= 0:
+                    return {}
+                rates = {
+                    "pace": round(poss, 1),
+                    "efg_pct": round((fgm + 0.5 * tpm) / fga, 3),
+                    "ts_pct": round(pts / (2 * (fga + 0.44 * fta)), 3) if (fga + 0.44 * fta) > 0 else 0.0,
+                    "tov_pct": round(tov / (fga + 0.44 * fta + tov), 3) if (fga + 0.44 * fta + tov) > 0 else 0.0,
+                    "orb_pct": round(oreb / (oreb + dreb), 3) if (oreb + dreb) > 0 else 0.0,
+                    "_pts": pts,
+                    # 🆕 [2026-11-06] 保留推算用原始量（供呼叫端在補上 pts 後重算 TS%）
+                    "_fga": fga,
+                    "_fta": fta,
+                }
+                if pts <= 0:
+                    # avgPoints 缺漏：仍保留其他率值，交由呼叫端以 standings 场均得分補
+                    if attempt <= retries:
+                        print(f"  ⚠ ESPN team {tid} 回應缺 avgPoints（第 {attempt} 次）→ 重試")
+                        time.sleep(2)
+                        continue
+                    print(f"  ⚠ ESPN team {tid} 缺 avgPoints → 保留率值，交由 standings 補")
+                break
+            except Exception as e:
+                print(f"  ⚠ ESPN team {tid} 取得失敗: {e}")
+                if attempt <= retries:
+                    time.sleep(2)
+                    continue
                 return {}
-            poss = fga + 0.44 * fta - oreb + tov
-            if poss <= 0:
-                return {}
-            rates = {
-                "pace": round(poss, 1),
-                "efg_pct": round((fgm + 0.5 * tpm) / fga, 3),
-                "ts_pct": round(pts / (2 * (fga + 0.44 * fta)), 3) if (fga + 0.44 * fta) > 0 else 0.0,
-                "tov_pct": round(tov / (fga + 0.44 * fta + tov), 3) if (fga + 0.44 * fta + tov) > 0 else 0.0,
-                "orb_pct": round(oreb / (oreb + dreb), 3) if (oreb + dreb) > 0 else 0.0,
-                "_pts": pts,
-            }
+        if rates:
             _espn_cache_put(key, rates)
-            return rates
-        except Exception as e:
-            print(f"  ⚠ ESPN team {tid} 取得失敗: {e}")
-            return {}
+        return rates
 
     def _fetch_from_espn(self, home_name, away_name, season):
         """ESPN 備援：組出與 BR 相同結構的 team_stats。失敗回 None。
@@ -628,6 +655,20 @@ class NBADataFetcher:
             rec = std.get(espn_nm, {})
             pts = rates.pop("_pts", 0.0)
             pace = rates.get("pace", 0.0) or 0.0
+            # 🆕 [2026-11-06] 備援來源：ESPN team statistics 缺 avgPoints 時，
+            #   改用同一季 standings 的场均得分（avgPointsFor，同基準）計算 OffRtg。
+            #   實證 2026-11-05 ATL/CLE/OKC/POR 因缺 avgPoints 導致整場進階數據被放棄。
+            if (not pts or pts <= 0) and rec.get("pf"):
+                _pf = float(rec.get("pf") or 0.0)
+                if _pf > 0:
+                    pts = _pf
+                    print(f"  ⚠ ESPN 進階率缺 Points（{espn_nm}）→ 改用 standings 场均得分 {_pf:.1f}")
+                    # 🆕 以補上的 pts 重算 TS%（原 ts_pct 因缺 pts 為 0）
+                    _fga = rates.get("_fga", 0.0) or 0.0
+                    _fta = rates.get("_fta", 0.0) or 0.0
+                    _den = 2 * (_fga + 0.44 * _fta)
+                    if _den > 0:
+                        rates["ts_pct"] = round(pts / _den, 3)
             # 🆕 [2026-10-24 P0-2] 缺值防護：ESPN 偶爾缺 Points/Pace（實測 PHI pts=0），
             # 會產生 off_rtg=0、net_rating=-def_rtg（例 -113.4），OffRtg diff 高達 115.3
             # 直接污染分析。缺值時先退回該隊上季率，仍無效則整體略過進階數據。

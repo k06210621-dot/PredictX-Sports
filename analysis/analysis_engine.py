@@ -5187,6 +5187,11 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                             _bfloor = 9.0
                         elif _bg >= 0.18:
                             _bfloor = 8.0
+                    # 🆕 [2026-11-06] NBA 缺進階數據 → 不給「信心下限」抬升
+                    #   沒有 net rating 就沒有「實力差距」佐證，9.0 分屬無依據的高信心。
+                    #   實證 2026-11-05 BRO@ATL 缺進階數據仍被抬到 9.0 並已推播。
+                    if _blg == 'NBA' and features.get('nba_advanced_missing'):
+                        _bfloor = None
                     if _bfloor is not None and _bc < _bfloor:
                         result["confidence"] = round(_bfloor, 1)
                         print(f"  🏀 {_blg} 信心校準下限: conf {_bc:.1f} -> {_bfloor:.1f} (最終勝率差距={_bg:.3f})")
@@ -5262,6 +5267,24 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                             result['confidence'] = round(_new, 1)
                 except (TypeError, ValueError):
                     pass
+
+                # 🆕 [2026-11-06] NBA 進階數據缺失 → 信心上限 7.0
+                #   沒有 net rating → 無法驗證「實力差距」，此時 8~9 分是無依據的高信心。
+                #   實證：2026-11-05 BRO@ATL 缺進階數據仍被校準層推到 9.0 並推播出去。
+                #   本上限放在所有校準之後 → 不會被「信心下限」或「實力差距校準」抬回。
+                if (features.get('league') or '').upper() == 'NBA' and features.get('nba_advanced_missing'):
+                    _mc = float(result.get('confidence') or 0.0)
+                    if _mc > 7.0:
+                        result['confidence'] = 7.0
+                        print(f"  🔴 NBA 缺進階數據 → 信心上限 7.0（{_mc:.1f} → 7.0）")
+                    _note2 = "\n\n📎 資料註記：本場無法取得球隊進階數據（無淨效率差距佐證），信心已上限 7.0。"
+                    _s2 = (result.get('summary') or '').rstrip()
+                    if '本場無法取得球隊進階數據' not in _s2:
+                        result['summary'] = _s2 + _note2
+                    _prev_note = result.get('data_quality_note')
+                    result['data_quality_note'] = (
+                        (f"{_prev_note}＋" if _prev_note else '') + '缺球隊進階數據（信心上限 7.0）'
+                    )
 
                 return result
         
