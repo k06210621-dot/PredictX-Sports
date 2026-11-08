@@ -302,7 +302,10 @@ def run(dry_run: bool = False) -> dict:
             if not is_active or tid not in team_roster_ids:
                 continue
             ext = ext_by_pid.get(pid)
-            if ext is not None and ext not in team_roster_ids[tid]:
+            # ext is None = 球員今天不在任何 30 隊名單上（被裁/釋出/轉 G-League），
+            # 且其 team_id 今天有被掃描 → 應停用。舊寫法 `ext is not None and ...`
+            # 會把整個離隊的球員永遠卡在 is_active=true（開季至今累積百餘筆）。
+            if ext is None or ext not in team_roster_ids[tid]:
                 stale.append((pid, tid))
 
         # ⑦ 批量執行（各 1 次往返）
