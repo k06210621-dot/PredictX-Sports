@@ -59,6 +59,20 @@ REGISTRY = {
 }
 
 
+def _canon_team_name(name):
+    """隊名正規化 + 別名（🆕 [2026-11-11] 修復誤殺：
+    ESPN 用 "LA Clippers"，DB 存 "Los Angeles Clippers"，字串比對不一致
+    導致真實賽事被誤判為「官方無此對戰」→ 誤標 CANCELLED
+    （實證：11/08 NEW@LAC、11/10 LAC@PHX 皆被誤殺）。
+    比對一律走小寫＋去非英數＋別名對齊。"""
+    import re
+    n = re.sub(r"[^a-z0-9]", "", (name or "").lower())
+    _ALIAS = {
+        "laclippers": "losangelesclippers",
+    }
+    return _ALIAS.get(n, n)
+
+
 def _api_get(path: str, timeout: int = 40):
     req = urllib.request.Request(f"{API_BASE}{path}", headers={"Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -132,7 +146,7 @@ def reconcile_future_fixtures(leagues=None, days_ahead: int = 7, apply: bool = F
                 continue
             stats["checked_dates"] += 1
             official_pairs = {
-                ((o.get("home_team") or "").strip(), (o.get("away_team") or "").strip())
+                (_canon_team_name(o.get("home_team")), _canon_team_name(o.get("away_team")))
                 for o in official
             }
 
@@ -168,12 +182,13 @@ def reconcile_future_fixtures(leagues=None, days_ahead: int = 7, apply: bool = F
                         stats["cancelled_games"].append(rec)
             else:
                 off_by_pair = {
-                    ((o.get("home_team") or "").strip(), (o.get("away_team") or "").strip()): o
+                    (_canon_team_name(o.get("home_team")), _canon_team_name(o.get("away_team"))): o
                     for o in official
                 }
                 for g in by_date[d]:
                     pair = ((g.get("home_team") or "").strip(), (g.get("away_team") or "").strip())
-                    matched = off_by_pair.get(pair)
+                    _cpair = (_canon_team_name(pair[0]), _canon_team_name(pair[1]))
+                    matched = off_by_pair.get(_cpair)  # 🆕 2026-11-11 以正規化後名稱比對（防 ESPN/DB 命名差異誤殺）
 
                     # 官方同日有此對戰：若官方標延賽，同步 DB 狀態
                     if matched:
