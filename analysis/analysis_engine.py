@@ -202,8 +202,15 @@ def _extract_rate(text, side="home"):
     return None
 
 
-def _extract_score(text):
+def _extract_score(text, league=None):
     """從 summary 抽取比分字串，如 '5-3' / '3-6'，找不到回 None。
+
+    🆕 [2026-11-14] 聯盟感知（league 參數）：
+    - 原 fallback 的合理值過濾是棒球寫死（雙邊 0-20）；在籃球文本中，
+      真實比分（如 121-105）會被剔除，反而只剩「缺陣1-2週」這類偽比分通過，
+      之後被「summary 比分同步」誤寫進傷停敘述（實證：11/14 CHI@MIN
+      「確定缺陣121-105週」、11/04 UTA@NEW「缺陣120-108週」）。
+    - 修法：NBA/WNBA 的 fallback 雙邊皆需 60-170 才算比分；棒球維持 0-20。
 
     修正 [2026-08-17] Bug fix：
     - 原 regex 過於寬鬆，會抓到「1勝4敗」、「3-2」、「0.525 vs 0.483」等非預測比分
@@ -226,8 +233,12 @@ def _extract_score(text):
     specific_patterns = [
         r"預測比分[為是：:]?\s*(\d+)\s*[-－–]\s*(\d+)",
         r"推演比分[為是：:]?\s*(\d+)\s*[-－–]\s*(\d+)",
+        r"比分推演[為是：:]?\s*(\d+)\s*[-－–]\s*(\d+)",
+        r"預估比分[為是：:]?\s*(\d+)\s*[-－–]\s*(\d+)",
+        r"預計比分[為是：:]?\s*(\d+)\s*[-－–]\s*(\d+)",
         r"expected score[^\d]*?(\d+)\s*[-－–]\s*(\d+)",
         r"projected score[^\d]*?(\d+)\s*[-－–]\s*(\d+)",
+        r"score projection[^\d]*?(\d+)\s*[-－–]\s*(\d+)",
         r"比分[為是：:]?\s*(\d+)\s*[-－–]\s*(\d+)",
     ]
     for pat in specific_patterns:
@@ -248,26 +259,83 @@ def _extract_score(text):
             # 而非預測比分，跳過繼續往前找。實證：NPB 軟銀vs火腿 summary 含
             # 「最近一次交手軟銀以 14-1 大勝」，LLM 推演 4-2 被覆寫成 14-1，
             # 與 summary 自己說的「低比分投手戰」矛盾。
+            # 🆕 [2026-11-14 v2] 位置式關鍵字仲裁（取代單純語境搜尋）：
+            #   1) 語境僅限同一句（以句讀符為界，避免跨句把前句「交手」誤套本句預測）
+            #   2) 同句混合時，語境自「前一個 X-Y 對的結尾（含其尾隨動詞如 大勝）」起算
+            #   3) 預測/歷史關鍵字比位置：靠後出現者勝出
+            #      （「上次交手 8-1 大勝，但本場推估 4-3」→ 取 4-3；「數據顯示上次交手 141-107」→ 跳過）
+            #   4) 列舉連接詞規則：候選與前比分僅隔 、/,/與/and → 屬同一列舉
+            #      （H2H 分數清單「104-91、141-135」「138-120 and 144-122」）→ 跳過
+            #   5) 無任何關鍵字時，尾隨動詞（大勝/取勝…）視為歷史描述
             history_kw = re.compile(
-                r"(大勝|完封|橫掃|吞敗|交手|對戰|上次|近一次|前一次|去年|上季|熱身賽|以\s*\d+\s*[-－–]\s*\d+\s*(大勝|擊敗|險勝|不敵))"
+                r"(大勝|完封|橫掃|吞敗|交手|對戰|對決|上次|近一次|前一次|去年|上季|熱身賽|取勝|勝出|落敗|"
+                r"head-to-head|h2h|meetings?|won the last|previous|season series|including|earlier this season|last time)",
+                re.IGNORECASE,
             )
+            pred_kw = re.compile(
+                r"(預測|推演|預估|推估|預計|推算|推測|預期|顯示|看好|比分|"
+                r"project\w*|predict\w*|forecast\w*|estimat\w*|projection|edge)",
+                re.IGNORECASE,
+            )
+            trailing_verb = re.compile(
+                r"(大勝|完封|橫掃|吞敗|不敵|險勝|擊敗|慘敗|逆轉|絕殺|取勝|勝出|落敗|收下|拿下)"
+            )
+            connector = re.compile(r"^\s*(?:、|,|，|與|和|and)\s*$", re.IGNORECASE)
+            all_pair_objs = list(re.finditer(r"\d+\s*[-－–]\s*\d+", text))
             accepted = None
             for h, a in reversed(matches):
                 h_int, a_int = int(h), int(a)
-                if not (0 <= h_int <= 20 and 0 <= a_int <= 20):
-                    continue
-                # 找該匹配在原文的位置，檢查前後 24 字元語境
+                # 🆕 [2026-11-14] 聯盟感知合理值：籃球比分通常 60~170，
+                #   否則籃球文本中的真實比分（如 121-105）會被剔除、
+                #   「缺陣1-2週」類偽比分反而通過 → summary 被同步誤寫。
+                if (league or '').upper() in ('NBA', 'WNBA'):
+                    if not (60 <= h_int <= 180 and 60 <= a_int <= 180):
+                        continue
+                else:
+                    if not (0 <= h_int <= 20 and 0 <= a_int <= 20):
+                        continue
+                # 找該匹配在原文的位置
                 m_obj = None
                 for m_obj in re.finditer(rf"({h})\s*[-－–]\s*({a})", text):
                     if m_obj.group(1) == h and m_obj.group(2) == a:
                         break
-                ctx = ""
-                if m_obj:
-                    start = max(0, m_obj.start() - 24)
-                    end = min(len(text), m_obj.end() + 24)
-                    ctx = text[start:end]
-                if history_kw.search(ctx):
-                    continue  # 歷史比分，跳過
+                if not m_obj:
+                    continue
+                # 句子邊界（中英句讀符；'.' 涵蓋英文句）
+                _prev_text = text[:m_obj.start()]
+                _ps = max(_prev_text.rfind('。'), _prev_text.rfind('；'), _prev_text.rfind('！'),
+                          _prev_text.rfind('\n'), _prev_text.rfind('.'))
+                start = _ps + 1 if _ps >= 0 else 0
+                # 前一個 X-Y 對：語境自其結尾起算（含尾隨動詞）；若僅隔連接詞 → 列舉接續 → 跳過
+                _prev_pair = None
+                for m2 in all_pair_objs:
+                    if m2.end() <= m_obj.start():
+                        _prev_pair = m2
+                    else:
+                        break
+                if _prev_pair is not None:
+                    _gap = text[_prev_pair.end():m_obj.start()]
+                    if connector.match(_gap):
+                        continue  # 列舉接續，與前比分同類（通常為 H2H 清單）
+                    _cut = _prev_pair.end()
+                    _tkw = trailing_verb.search(text[_cut:_cut + 8])
+                    if _tkw:
+                        _cut += _tkw.end()
+                    start = max(start, _cut)
+                prefix = text[start:m_obj.start()]
+                # 位置仲裁：預測/歷史關鍵字誰靠後出現誰勝出
+                _h_last = -1
+                for m3 in history_kw.finditer(prefix):
+                    _h_last = max(_h_last, m3.end())
+                _p_last = -1
+                for m3 in pred_kw.finditer(prefix):
+                    _p_last = max(_p_last, m3.end())
+                if _h_last >= 0 and _h_last > _p_last:
+                    continue  # 歷史描述
+                if _p_last < 0:
+                    # 無任何關鍵字 → 保守檢查尾隨動詞
+                    if trailing_verb.search(text[m_obj.end():m_obj.end() + 10]):
+                        continue
                 accepted = f"{h_int}-{a_int}"
                 break
             return accepted
@@ -4987,7 +5055,7 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                     result["away_win_probability"] = round(away_prob, 4)
 
                 # 2) 從 summary 抽取比分，例如 "5-3" / "3-6"，記住後最後覆寫
-                summary_predicted_score = _extract_score(summary_text)
+                summary_predicted_score = _extract_score(summary_text, league=features.get('league'))
 
                 # 🆕 校正 predicted_score：確保與勝率一致
                 # 若 home_prob > away_prob → home_score 應 > away_score，反之亦然
@@ -5027,7 +5095,13 @@ JSON 數字欄位必須嚴格對應 summary/step4 的方向。
                     if cur_m and sum_m:
                         cur_h, cur_a = int(cur_m.group(1)), int(cur_m.group(2))
                         sum_h, sum_a = int(sum_m.group(1)), int(sum_m.group(2))
-                        if (cur_h, cur_a) != (sum_h, sum_a):
+                        # 🆕 [2026-11-14] 等值反向：summary 以客隊在前書寫
+                        # （如「尼克 118-108 帶走勝利」「Model projection: Thunder win 121-107」），
+                        # 數值與模型完全一致、僅書寫順序不同 → 視為一致，**絕對不改寫**；
+                        # 否則方向矛盾分支會把「尼克 118-108」覆寫成「尼克 108-118」造成語意錯亂。
+                        if (cur_h, cur_a) == (sum_a, sum_h):
+                            print(f"  ℹ️ summary 比分客先書寫 {sum_h}-{sum_a} ≡ 模型 {cur_h}-{cur_a}，視為一致不改寫")
+                        elif (cur_h, cur_a) != (sum_h, sum_a):
                             # 方向防護：summary 比分方向與勝率矛盾時，不採用也不改寫（避免誤抓戰績字樣）
                             home_fav = home_prob > away_prob
                             sum_direction_ok = (home_fav and sum_h > sum_a) or ((not home_fav) and sum_a > sum_h)
